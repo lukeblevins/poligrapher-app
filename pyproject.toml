@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "poligrapher-app"
+version = "0.1.0"
+description = "Gradio web app for privacy policy analysis using PoliGraph"
+requires-python = ">=3.11"
+authors = [
+    { name = "Luke Blevins" },
+]
+dependencies = [
+    "poligrapher @ git+https://github.com/lukeblevins/PoliGraph.git",
+    "gdpr-policy-scorer @ git+https://github.com/lukeblevins/gdpr-policy-scorer.git",
+    "gradio==3.48.0",
+    "pandas>=2.0",
+    "networkx>=3.0",
+    "matplotlib>=3.7",
+    "beautifulsoup4>=4.12",
+    "httpx>=0.24",
+    "pymupdf4llm==0.0.27",
+    "playwright>=1.45",
+    "pyyaml>=6.0",
+    "fastapi>=0.100",
+    "pydantic>=2.0",
+    "psycopg2>=2.9",
+    "toml>=0.10",
+    "pillow>=10.0",
+    "markdown>=3.4",
+    "textstat",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["poligrapher_app"]
