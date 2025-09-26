@@ -4,7 +4,7 @@ os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 import gradio as gr
 import logging
 import pandas as pd
-from datetime import date
+from datetime import date, datetime, timezone
 import subprocess
 import sys
 from shutil import copy
@@ -17,6 +17,7 @@ from poligrapher_app.policy_analysis import (
     PolicyAnalysisResult,
     PolicyDocumentInfo,
     PolicyDocumentProvider,
+    PipelineStatus,
 )
 
 logger = logging.getLogger(__name__)
@@ -108,8 +109,17 @@ def get_providers(csv_file: str):
                 has_results=False,
                 generate_if_missing=False,
             )
+            errors_raw = row.get("Pipeline Errors")
+            if isinstance(errors_raw, str) and errors_raw.strip():
+                doc.load_errors_from_string(errors_raw)
+            elif pd.notna(errors_raw):
+                doc.load_errors_from_string(str(errors_raw))
+            else:
+                doc.load_errors_from_string(None)
             # Recompute from existing artifacts (source of truth)
             doc.has_results = doc.has_graph() and doc.has_image()
+            if doc.pipeline_failed:
+                doc.has_results = False
 
             # Parse GraphKind and Score if present
             gk_val = row.get("Graph Kind")
@@ -159,6 +169,8 @@ def _providers_to_dataframe() -> pd.DataFrame:
                         if result
                         else None
                     ),
+                    "Pipeline Status": doc.pipeline_status.value,
+                    "Pipeline Errors": doc.serialize_errors(),
                 }
             )
     return pd.DataFrame(
@@ -172,6 +184,8 @@ def _providers_to_dataframe() -> pd.DataFrame:
             "Status",
             "Score",
             "Graph Kind",
+            "Pipeline Status",
+            "Pipeline Errors",
         ],
     )
 
@@ -201,6 +215,8 @@ def _save_providers_to_csv(path: str = CSV_PATH, allow_empty: bool = False):
             "Status",
             "Score",
             "Graph Kind",
+            "Pipeline Status",
+            "Pipeline Errors",
         ]
         key_cols = ["Provider", "Policy URL", "Date", "Source"]
         # Load existing if present
@@ -591,6 +607,7 @@ with gr.Blocks() as block2:
                 "",  # clear industry input
                 info_md,  # company_info
                 None,  # png_image (no image yet)
+                gr.update(value="", visible=False),  # policy_errors
                 pol_df,  # policies_df
                 selected_name,  # selected_provider
                 gr.update(open=True),  # open policies accordion
@@ -603,6 +620,7 @@ with gr.Blocks() as block2:
             "",  # clear industry input
             gr.update(),  # company_info (no change)
             gr.update(),  # png_image (no change)
+            gr.update(),  # policy_errors (no change)
             gr.update(),  # policies_df (no change)
             gr.update(),  # selected_provider (no change)
             gr.update(),  # policies_accordion (no change)
@@ -619,6 +637,8 @@ with gr.Blocks() as block2:
     # save_new_provider click wiring is added after dependent components are defined below
     with gr.Row():
         company_info = gr.Markdown("", visible=True)
+    with gr.Row():
+        policy_errors = gr.Markdown("", visible=False)
     with gr.Row():
         with gr.Column(scale=1):
             png_image = gr.Image(label="Knowledge Graph", visible=True, type="pil")
@@ -889,6 +909,7 @@ with gr.Blocks() as block2:
             new_provider_industry,
             company_info,
             png_image,
+            policy_errors,
             policies_df,
             selected_provider,
             policies_accordion,
@@ -1001,18 +1022,49 @@ with gr.Blocks() as block2:
         queue=True,
     )
 
-    def on_policy_select(selection: gr.SelectData, current_provider: str):
-        """Policy selection handler using SelectData.index (Gradio 3.48.0).
+    def _format_timestamp(ts: str) -> str:
+        try:
+            dt = datetime.fromisoformat(ts)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            dt_utc = dt.astimezone(timezone.utc)
+            return dt_utc.strftime("%Y-%m-%d %H:%M:%S %Z")
+        except Exception:
+            return ts
 
-        selection.index -> (row, col) or list/tuple; we only need row.
-        The policies_df DataFrame is accessible via the component state when the
-        event fires, so we read the selected row index from SelectData and map
-        to the corresponding policy in the provider's documents. Return explicit
-        None or gr.update(value=None) for the image so Gradio updates correctly.
-        """
+    _PIPELINE_STATUS_LABELS = {
+        PipelineStatus.SUCCEEDED: "✅ Succeeded",
+        PipelineStatus.FAILED: "❌ Failed",
+        PipelineStatus.PENDING: "⏳ Pending",
+    }
+
+    def _format_pipeline_errors_markdown(doc: PolicyDocumentInfo) -> str:
+        status_label = _PIPELINE_STATUS_LABELS.get(
+            doc.pipeline_status, doc.pipeline_status.value.title()
+        )
+        lines = [f"**Pipeline status:** {status_label}"]
+        entries = doc.get_errors()
+        if not entries:
+            lines.append("")
+            lines.append("_No pipeline errors recorded for this document._")
+            return "\n".join(lines)
+        lines.append("")
+        lines.append("**Recorded errors:**")
+        for entry in entries:
+            timestamp = entry.get("timestamp")
+            message = entry.get("message", "")
+            ts_display = _format_timestamp(timestamp) if timestamp else "Timestamp unavailable"
+            lines.append(f"- `{ts_display}` — {message}")
+        return "\n".join(lines)
+
+    def on_policy_select(selection: gr.SelectData, current_provider: str):
+        """Policy selection handler using SelectData.index (Gradio 3.48.0)."""
+
+        default_error = gr.update(value="", visible=False)
+
         # Guard: no selection
         if selection is None:
-            return "", gr.update(value=None)
+            return "", gr.update(value=None), default_error
 
         try:
             # selection.index may be a tuple (row, col) or an int/list
@@ -1022,18 +1074,18 @@ with gr.Blocks() as block2:
                 row_idx = selection.index
             # invalid index
             if row_idx is None or row_idx == "":
-                return "", gr.update(value=None)
+                return "", gr.update(value=None), default_error
         except Exception:
-            return "", gr.update(value=None)
+            return "", gr.update(value=None), default_error
 
         # Rebuild the policies dataframe for the current provider and index into it
         df = _build_policies_df(current_provider)
         try:
             if row_idx >= len(df):
-                return "", gr.update(value=None)
+                return "", gr.update(value=None), default_error
             row_series = df.iloc[int(row_idx)]
         except Exception:
-            return "", gr.update(value=None)
+            return "", gr.update(value=None), default_error
 
         prov_name = (current_provider or "").strip() or "Unknown"
         policy_url = row_series.get("Policy URL", "")
@@ -1043,7 +1095,7 @@ with gr.Blocks() as block2:
 
         prov_obj = next((p for p in providers if p.name == prov_name), None)
         if prov_obj is None:
-            return info_md, gr.update(value=None)
+            return info_md, gr.update(value=None), default_error
 
         # Prefer the exact selected document (URL + Date + Source)
         def _src_value(s):
@@ -1062,47 +1114,54 @@ with gr.Blocks() as block2:
             ),
             None,
         )
+
+        error_output = default_error
+        image_obj = None
+
         if doc is not None:
+            error_output = gr.update(
+                value=_format_pipeline_errors_markdown(doc), visible=True
+            )
             png_path = os.path.join(doc.output_dir, "knowledge_graph.png")
             if os.path.exists(png_path):
                 try:
-                    img = PILImage.open(png_path)
-                    return info_md, img
+                    image_obj = PILImage.open(png_path)
                 except Exception:
-                    return info_md, gr.update(value=None)
+                    image_obj = None
 
-        # Fallback: show the first available image for the provider
-        for d in prov_obj.documents:
-            alt_png = os.path.join(d.output_dir, "knowledge_graph.png")
-            if os.path.exists(alt_png):
-                try:
-                    img = PILImage.open(alt_png)
-                    return info_md, img
-                except Exception:
-                    break
+        if image_obj is None:
+            for d in prov_obj.documents:
+                alt_png = os.path.join(d.output_dir, "knowledge_graph.png")
+                if os.path.exists(alt_png):
+                    try:
+                        image_obj = PILImage.open(alt_png)
+                        break
+                    except Exception:
+                        continue
 
-        return info_md, gr.update(value=None)
+        image_output = image_obj if image_obj is not None else gr.update(value=None)
+        return info_md, image_output, error_output
 
     policies_df.select(
         fn=on_policy_select,
         inputs=[selected_provider],
-        outputs=[company_info, png_image],
+        outputs=[company_info, png_image, policy_errors],
     )
 
     def on_company_select(_df: pd.DataFrame, selection: gr.SelectData):
         """Provider/company selection handler using SelectData.index."""
         if selection is None:
-            return "", None, _build_policies_df(""), "", gr.update(open=False)
+            return "", None, gr.update(value="", visible=False), _build_policies_df(""), "", gr.update(open=False)
         try:
             if isinstance(selection.index, (list, tuple)):
                 row_idx = selection.index[0]
             else:
                 row_idx = selection.index
             if row_idx is None or row_idx == "" or row_idx >= len(_df):
-                return "", None, _build_policies_df(""), "", gr.update(open=False)
+                return "", None, gr.update(value="", visible=False), _build_policies_df(""), "", gr.update(open=False)
             row_series = _df.iloc[row_idx]
         except Exception:
-            return "", None, _build_policies_df(""), "", gr.update(open=False)
+            return "", None, gr.update(value="", visible=False), _build_policies_df(""), "", gr.update(open=False)
         company_name = row_series.get("Provider", "")
         policies_df_val = _build_policies_df(company_name)
         # Show the first available policy image for the provider, if any
@@ -1132,6 +1191,7 @@ with gr.Blocks() as block2:
         return (
             info_md,
             first_image,
+            gr.update(value="", visible=False),
             policies_df_val,
             company_name,
             gr.update(open=True),
@@ -1143,6 +1203,7 @@ with gr.Blocks() as block2:
         outputs=[
             company_info,
             png_image,
+            policy_errors,
             policies_df,
             selected_provider,
             policies_accordion,

@@ -35,8 +35,9 @@ CSV columns + path logic across the UI. This keeps downstream code declarative
 and easier to test.
 """
 
-from datetime import date
+from datetime import date, datetime, timezone
 from enum import Enum
+import json
 from typing import Iterable
 import os
 
@@ -106,7 +107,7 @@ class PolicyDocumentInfo:
     source: DocumentCaptureSource
     capture_date: date
     has_results: bool = False
-    errors: list[str]
+    errors: list[dict]
 
     def __init__(
         self,
@@ -122,7 +123,39 @@ class PolicyDocumentInfo:
         self.source = source
         self.capture_date = capture_date
         self.has_results = has_results
-        self.errors = list(errors) if errors else []
+        self.errors = []
+        if errors:
+            self.extend_errors(errors)
+
+    @staticmethod
+    def _make_error_entry(message: str) -> dict:
+        return {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "message": message,
+        }
+
+    @staticmethod
+    def _normalize_error_value(value) -> str | None:
+        if isinstance(value, str):
+            normalized = value.strip()
+            return normalized or None
+        if isinstance(value, dict):
+            msg = value.get("message")
+            if isinstance(msg, str) and msg.strip():
+                return msg.strip()
+        return None
+
+    def _add_error(self, message: str, timestamp: str | None = None):
+        if not message:
+            return
+        if any(entry.get("message") == message for entry in self.errors):
+            return
+        entry = {
+            "message": message,
+            "timestamp": timestamp or datetime.now(timezone.utc).isoformat(),
+        }
+        self.errors.append(entry)
+        self.has_results = False
 
     def has_graph(self) -> bool:
         """True if a graph YAML exists for this document.
@@ -218,9 +251,7 @@ class PolicyDocumentInfo:
         normalized = (message or "").strip()
         if not normalized:
             return
-        if normalized not in self.errors:
-            self.errors.append(normalized)
-        self.has_results = False
+        self._add_error(normalized)
 
     def extend_errors(self, messages: Iterable[str]):
         """Record multiple error messages at once."""
@@ -228,17 +259,81 @@ class PolicyDocumentInfo:
         if not messages:
             return
         for message in messages:
-            self.record_error(message)
+            timestamp = None
+            if isinstance(message, dict):
+                timestamp = message.get("timestamp") if isinstance(message.get("timestamp"), str) else None
+                message = message.get("message")
+            normalized = self._normalize_error_value(message)
+            if normalized:
+                self._add_error(normalized, timestamp)
 
     def clear_errors(self):
         """Reset any recorded pipeline errors."""
 
         self.errors.clear()
 
-    def get_errors(self) -> list[str]:
+    def get_errors(self) -> list[dict]:
         """Return a copy of the recorded pipeline errors."""
 
-        return list(self.errors)
+        return [dict(entry) for entry in self.errors]
+
+    def get_error_messages(self) -> list[str]:
+        """Return just the error messages in insertion order."""
+
+        return [entry.get("message", "") for entry in self.errors]
+
+    def serialize_errors(self) -> str:
+        """Serialize recorded errors for persistence."""
+
+        return json.dumps(self.errors, ensure_ascii=False)
+
+    def load_errors_from_string(self, data: str | None):
+        """Replace recorded errors from a serialized string."""
+
+        if not data:
+            self.errors.clear()
+            return
+        try:
+            parsed = json.loads(data)
+        except json.JSONDecodeError:
+            parsed = data
+
+        cleaned: list[dict] = []
+
+        def _add_if_new(msg: str, timestamp: str | None = None):
+            if not msg:
+                return
+            if any(entry.get("message") == msg for entry in cleaned):
+                return
+            cleaned.append(
+                {
+                    "message": msg,
+                    "timestamp": timestamp or datetime.now(timezone.utc).isoformat(),
+                }
+            )
+
+        if isinstance(parsed, list):
+            for item in parsed:
+                if isinstance(item, dict):
+                    msg = self._normalize_error_value(item)
+                    ts = item.get("timestamp") if isinstance(item, dict) else None
+                    if msg:
+                        _add_if_new(msg, ts if isinstance(ts, str) else None)
+                else:
+                    msg = self._normalize_error_value(item)
+                    if msg:
+                        _add_if_new(msg)
+        elif isinstance(parsed, dict):
+            msg = self._normalize_error_value(parsed)
+            ts_val = parsed.get("timestamp") if isinstance(parsed, dict) else None
+            if msg:
+                _add_if_new(msg, ts_val if isinstance(ts_val, str) else None)
+        else:
+            msg = self._normalize_error_value(parsed)
+            if msg:
+                _add_if_new(msg)
+
+        self.errors = cleaned
 
 class PolicyAnalysisResult:
     """Represents the outcome of analyzing a document with a specific graph kind.
