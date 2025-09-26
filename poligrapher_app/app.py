@@ -916,9 +916,17 @@ with gr.Blocks() as block2:
                     logger.info("🖼️ Image created for %s", doc.path)
                 except BaseException as e:
                     logger.warning("⚠️ Image generation failed for %s: %s", doc.path, e)
+                    doc.record_error(f"Image generation failed: {e}")
             # Final status evaluation
             success = doc.has_graph() and doc.has_image()
             doc.has_results = success
+            if success:
+                doc.clear_errors()
+            else:
+                if not doc.has_graph():
+                    doc.record_error("Graph YAML missing after generation attempt")
+                if doc.has_graph() and (not doc.has_image()):
+                    doc.record_error("Graph image missing after generation attempt")
             # Persist status change if success or partial
             _save_providers_to_csv()
             if not success:
@@ -926,6 +934,7 @@ with gr.Blocks() as block2:
         except BaseException as e:
             logger.error("❌ Graph generation failed for %s: %s", doc.path, e)
             doc.has_results = False
+            doc.record_error(f"Graph generation error: {e}")
             success = False
         return success
 

@@ -220,8 +220,17 @@ def generate_graph(policy: PolicyDocumentInfo):
         case _:
             raise ValueError(f"Unknown document source: {policy.source}")
 
-    generate_graph_from_html(policy.path, policy.output_dir, capture_pdf)
-    return True
+    try:
+        generate_graph_from_html(policy.path, policy.output_dir, capture_pdf)
+    except SystemExit as exc:
+        policy.record_error(f"Pipeline exited early: {exc}")
+        raise RuntimeError("Graph generation pipeline exited") from exc
+    except BaseException as exc:
+        policy.record_error(f"Graph generation failed: {exc}")
+        raise
+    else:
+        policy.clear_errors()
+        return True
 
 
 def infer_graph_kind(policy: PolicyDocumentInfo) -> GraphKind:

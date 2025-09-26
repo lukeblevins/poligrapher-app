@@ -37,6 +37,7 @@ and easier to test.
 
 from datetime import date
 from enum import Enum
+from typing import Iterable
 import os
 
 from bs4 import BeautifulSoup
@@ -63,6 +64,19 @@ class GraphKind(Enum):
     STANDARD = "standard"
     LLM = "llm"
     NONE = "none"
+
+class PipelineStatus(Enum):
+    """Lifecycle state of the pipeline for a captured document."""
+
+    PENDING = "pending"
+    """The pipeline has not produced artifacts and no blocking errors were recorded."""
+
+    SUCCEEDED = "succeeded"
+    """Expected graph artifacts are present and no blocking errors exist."""
+
+    FAILED = "failed"
+    """Blocking errors were recorded that prevented graph generation."""
+
 
 class PolicyDocumentInfo:
     """Encapsulates a single captured policy artifact set.
@@ -92,13 +106,23 @@ class PolicyDocumentInfo:
     source: DocumentCaptureSource
     capture_date: date
     has_results: bool = False
+    errors: list[str]
 
-    def __init__(self, path: str, output_dir: str, source: DocumentCaptureSource, capture_date: date, has_results: bool):
+    def __init__(
+        self,
+        path: str,
+        output_dir: str,
+        source: DocumentCaptureSource,
+        capture_date: date,
+        has_results: bool,
+        errors: Iterable[str] | None = None,
+    ):
         self.path = path  # Raw source path for traceability
         self.output_dir = output_dir  # Pipeline workdir root
         self.source = source
         self.capture_date = capture_date
         self.has_results = has_results
+        self.errors = list(errors) if errors else []
 
     def has_graph(self) -> bool:
         """True if a graph YAML exists for this document.
@@ -171,6 +195,50 @@ class PolicyDocumentInfo:
         elif self.source == DocumentCaptureSource.WEBPAGE:
             return self._extract_text_from_webpage(self.output_dir)
         return ""
+
+    @property
+    def pipeline_status(self) -> PipelineStatus:
+        """Return the pipeline lifecycle status for this document."""
+
+        if self.errors:
+            return PipelineStatus.FAILED
+        if self.has_graph():
+            return PipelineStatus.SUCCEEDED
+        return PipelineStatus.PENDING
+
+    @property
+    def pipeline_failed(self) -> bool:
+        """Convenience boolean for quickly checking pipeline failure."""
+
+        return self.pipeline_status is PipelineStatus.FAILED
+
+    def record_error(self, message: str):
+        """Record a pipeline error message preventing graph generation."""
+
+        normalized = (message or "").strip()
+        if not normalized:
+            return
+        if normalized not in self.errors:
+            self.errors.append(normalized)
+        self.has_results = False
+
+    def extend_errors(self, messages: Iterable[str]):
+        """Record multiple error messages at once."""
+
+        if not messages:
+            return
+        for message in messages:
+            self.record_error(message)
+
+    def clear_errors(self):
+        """Reset any recorded pipeline errors."""
+
+        self.errors.clear()
+
+    def get_errors(self) -> list[str]:
+        """Return a copy of the recorded pipeline errors."""
+
+        return list(self.errors)
 
 class PolicyAnalysisResult:
     """Represents the outcome of analyzing a document with a specific graph kind.
