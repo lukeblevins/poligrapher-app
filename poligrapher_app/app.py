@@ -26,6 +26,20 @@ logger.setLevel(logging.INFO)
 providers: list[PolicyDocumentProvider] = []
 CSV_PATH = "./poligrapher/gradio_app/policy_list.csv"
 
+# CSV import column definitions
+IMPORT_COLUMNS = [
+    "Provider",
+    "Policy URL",
+    "Industry",
+    "Source",
+    "Date",
+    "Status",
+    "Score",
+    "Graph Kind",
+    "Pipeline Errors",
+]
+REQUIRED_IMPORT_COLUMNS = ["Provider", "Policy URL", "Date"]
+
 def add_provider(name: str, industry: str):
     provider = PolicyDocumentProvider(name=name, industry=industry)
     if any(p.name == name for p in providers):
@@ -569,8 +583,10 @@ with gr.Blocks() as block2:
     # Policies UI will be added after company_info & png_image definitions
     with gr.Row():
         new_provider_btn = gr.Button("New Provider")
+        import_btn = gr.Button("Import")
         refresh_all_btn = gr.Button("Refresh")
         score_btn = gr.Button("Score")
+    import_summary_md = gr.Markdown("", visible=False)
     with gr.Group(visible=False, elem_id="add-provider-modal") as add_provider_modal:
         with gr.Column(elem_classes="modal-card"):
             gr.Markdown("### Add Provider")
@@ -584,11 +600,326 @@ with gr.Blocks() as block2:
                 save_new_provider = gr.Button("Save", variant="primary")
                 cancel_new_provider = gr.Button("Cancel")
 
+    import_rows_state = gr.State([])
+
+    with gr.Group(visible=False, elem_id="import-modal") as import_modal:
+        with gr.Column(elem_classes="modal-card"):
+            gr.Markdown("### Import Providers & Policies")
+            import_file = gr.File(
+                label="Select CSV", file_types=[".csv"], interactive=True
+            )
+            import_conflict_mode = gr.Radio(
+                ["Skip duplicates", "Overwrite duplicates"],
+                label="When a provider or policy already exists",
+                value="Skip duplicates",
+            )
+            import_status_md = gr.Markdown("", visible=False)
+            import_table = gr.Dataframe(
+                headers=IMPORT_COLUMNS,
+                value=[],
+                label="Imported Rows (editable)",
+                interactive=False,
+                wrap=True,
+            )
+            with gr.Row(elem_classes="two-btn-row"):
+                import_modal_import_btn = gr.Button("Import", variant="primary")
+                import_modal_cancel_btn = gr.Button("Cancel")
+
     def _show_add_provider_modal():
         return gr.update(visible=True)
 
     def _cancel_add_provider():
         return gr.update(visible=False), "", ""
+
+    def _show_import_modal():
+        return (
+            gr.update(visible=True),
+            gr.update(value=None),
+            gr.update(value=[], interactive=False),
+            gr.update(value="", visible=False),
+            [],
+            gr.update(value="Skip duplicates"),
+            gr.update(value="", visible=False),
+        )
+
+    def _cancel_import_modal():
+        return (
+            gr.update(visible=False),
+            gr.update(value=None),
+            gr.update(value=[], interactive=False),
+            gr.update(value="", visible=False),
+            [],
+        )
+
+    def _normalize_source_value(val) -> DocumentCaptureSource:
+        if isinstance(val, str):
+            cleaned = val.strip().lower()
+            if cleaned in {"pdf", "pdf_remote", "pdf_local", "application/pdf"}:
+                return DocumentCaptureSource.PDF
+            if cleaned in {"webpage", "web", "html", "text/html"}:
+                return DocumentCaptureSource.WEBPAGE
+        return DocumentCaptureSource.WEBPAGE
+
+    def _parse_status_value(value) -> bool:
+        if value is None:
+            return False
+        if isinstance(value, str):
+            cleaned = value.strip().lower()
+            if not cleaned:
+                return False
+            return cleaned in {
+                "1",
+                "true",
+                "yes",
+                "ready",
+                "✅",
+                "succeeded",
+                "complete",
+                "completed",
+            }
+        if isinstance(value, (int, float)):
+            if isinstance(value, float) and pd.isna(value):
+                return False
+            return value != 0
+        return bool(value)
+
+    def _parse_graph_kind(value) -> GraphKind:
+        if value is None:
+            return GraphKind.NONE
+        if isinstance(value, GraphKind):
+            return value
+        if isinstance(value, str):
+            cleaned = value.strip()
+            if not cleaned:
+                return GraphKind.NONE
+            try:
+                return GraphKind(cleaned.lower())
+            except ValueError:
+                try:
+                    return GraphKind[cleaned.upper()]
+                except Exception:
+                    return GraphKind.NONE
+        return GraphKind.NONE
+
+    def _load_import_file(uploaded_file):
+        if uploaded_file is None:
+            return (
+                gr.update(value=[], interactive=False),
+                gr.update(value="", visible=False),
+                [],
+            )
+        try:
+            file_path = getattr(uploaded_file, "name", None) or uploaded_file
+            df = pd.read_csv(file_path).copy()
+            missing = [col for col in REQUIRED_IMPORT_COLUMNS if col not in df.columns]
+            if missing:
+                message = (
+                    "Import failed: missing required columns -> "
+                    + ", ".join(missing)
+                )
+                return (
+                    gr.update(value=[], interactive=False),
+                    gr.update(value=message, visible=True),
+                    [],
+                )
+            for col in IMPORT_COLUMNS:
+                if col not in df.columns:
+                    df[col] = ""
+            df = df.reindex(columns=IMPORT_COLUMNS)
+            df = df.fillna("")
+            rows = df.values.tolist()
+            message = (
+                f"Loaded {len(rows)} row(s) from {os.path.basename(str(file_path))}. "
+                "Edit values before importing as needed."
+            )
+            return (
+                gr.update(value=rows, interactive=True),
+                gr.update(value=message, visible=True),
+                df.to_dict(orient="records"),
+            )
+        except Exception as exc:
+            return (
+                gr.update(value=[], interactive=False),
+                gr.update(value=f"Failed to load CSV: {exc}", visible=True),
+                [],
+            )
+
+    def _on_import_table_change(table_data):
+        if not table_data:
+            return []
+        normalized = []
+        for row in table_data:
+            row_dict = {}
+            for idx, col in enumerate(IMPORT_COLUMNS):
+                row_dict[col] = row[idx] if idx < len(row) else ""
+            normalized.append(row_dict)
+        return normalized
+
+    def _perform_import(rows, conflict_mode, current_provider: str | None):
+        if not rows:
+            return (
+                gr.update(value=_build_display_df()),
+                gr.update(value=_build_policies_df(current_provider)),
+                gr.update(visible=False),
+                gr.update(value=None),
+                gr.update(value=[], interactive=False),
+                gr.update(value="No rows to import. Upload a CSV first.", visible=True),
+                [],
+                gr.update(
+                    value="Import aborted: no data provided.", visible=True
+                ),
+            )
+
+        conflict_policy = "overwrite" if (conflict_mode or "").lower().startswith("overwrite") else "skip"
+
+        pre_provider_names = {p.name for p in providers}
+        total_providers_before = len(pre_provider_names)
+        total_docs_before = sum(len(p.documents) for p in providers)
+
+        provider_changes: dict[str, bool] = {name: False for name in pre_provider_names}
+        new_providers_count = 0
+        added_policies = 0
+        overwritten_policies = 0
+        skipped_policies = 0
+        invalid_rows = 0
+
+        for raw in rows:
+            provider_name = str(raw.get("Provider", "")).strip()
+            policy_url = str(raw.get("Policy URL", "")).strip()
+            source_val = raw.get("Source")
+            capture_date = str(raw.get("Date", "")).strip()
+
+            if not provider_name or not policy_url or not capture_date:
+                invalid_rows += 1
+                continue
+
+            industry_val = str(raw.get("Industry", "")).strip()
+            status_val = _parse_status_value(raw.get("Status"))
+            score_val = raw.get("Score")
+            score_parsed = None
+            if score_val not in ("", None):
+                try:
+                    score_parsed = float(score_val)
+                except Exception:
+                    score_parsed = None
+            graph_kind_val = _parse_graph_kind(raw.get("Graph Kind"))
+            pipeline_errors_val = raw.get("Pipeline Errors")
+
+            source_enum = _normalize_source_value(source_val)
+
+            provider_obj = next((p for p in providers if p.name == provider_name), None)
+            if provider_obj is None:
+                provider_obj = PolicyDocumentProvider(
+                    provider_name, industry=industry_val or "Unknown"
+                )
+                os.makedirs(provider_obj.output_dir, exist_ok=True)
+                providers.append(provider_obj)
+                provider_changes[provider_name] = True
+                new_providers_count += 1
+            else:
+                if industry_val:
+                    provider_obj.industry = industry_val
+                provider_changes.setdefault(provider_name, False)
+
+            existing_doc = next(
+                (
+                    d
+                    for d in provider_obj.documents
+                    if d.path == policy_url
+                    and d.capture_date == capture_date
+                    and getattr(d.source, "value", d.source) == source_enum.value
+                ),
+                None,
+            )
+
+            if existing_doc is not None:
+                if conflict_policy == "skip":
+                    skipped_policies += 1
+                    continue
+                provider_obj.documents = [d for d in provider_obj.documents if d is not existing_doc]
+                provider_obj.results = [r for r in provider_obj.results if r.document is not existing_doc]
+                overwritten_policies += 1
+                provider_changes[provider_name] = True
+
+            else:
+                added_policies += 1
+                provider_changes[provider_name] = True
+
+            # Add the new/updated document without triggering graph generation
+            doc = add_document_to_provider(
+                provider=provider_obj,
+                path=policy_url,
+                source=source_enum,
+                capture_date=capture_date,
+                has_results=False,
+                generate_if_missing=False,
+            )
+
+            doc.has_results = bool(status_val)
+            if pipeline_errors_val not in (None, ""):
+                doc.load_errors_from_string(str(pipeline_errors_val))
+
+            if score_parsed is not None or graph_kind_val is not GraphKind.NONE:
+                provider_obj.add_result(
+                    PolicyAnalysisResult(
+                        document=doc,
+                        score=score_parsed if score_parsed is not None else 0.0,
+                        kind=graph_kind_val,
+                    )
+                )
+
+        total_providers_after = len({p.name for p in providers})
+        total_docs_after = sum(len(p.documents) for p in providers)
+
+        updated_existing = sum(
+            1 for name in pre_provider_names if provider_changes.get(name)
+        )
+        unchanged_providers = max(
+            0,
+            total_providers_after - new_providers_count - updated_existing,
+        )
+
+        unchanged_policies = max(
+            0,
+            total_docs_after - added_policies - overwritten_policies,
+        )
+
+        _save_providers_to_csv()
+
+        summary_lines = ["**Import complete.**"]
+        summary_lines.append(f"- New companies added: {new_providers_count}")
+        summary_lines.append(f"- Existing companies updated: {updated_existing}")
+        summary_lines.append(f"- Companies unchanged: {unchanged_providers}")
+        summary_lines.append(
+            f"- Policies added: {added_policies} | overwritten: {overwritten_policies} | unchanged: {unchanged_policies}"
+        )
+        if skipped_policies:
+            summary_lines.append(
+                f"- Policies skipped (duplicates retained): {skipped_policies}"
+            )
+        if invalid_rows:
+            summary_lines.append(
+                f"- Rows ignored due to missing required data: {invalid_rows}"
+            )
+        summary_lines.append(
+            f"- Total companies now tracked: {total_providers_after} (previously {total_providers_before})"
+        )
+        summary_lines.append(
+            f"- Total policies now tracked: {total_docs_after} (previously {total_docs_before})"
+        )
+
+        summary_md = "\n".join(summary_lines)
+
+        return (
+            gr.update(value=_build_display_df()),
+            gr.update(value=_build_policies_df(current_provider)),
+            gr.update(visible=False),
+            gr.update(value=None),
+            gr.update(value=[], interactive=False),
+            gr.update(value="", visible=False),
+            [],
+            gr.update(value=summary_md, visible=True),
+        )
 
     def _save_new_provider(name: str, industry: str):
         selected_name = None
@@ -634,6 +965,7 @@ with gr.Blocks() as block2:
         inputs=[],
         outputs=[add_provider_modal, new_provider_name, new_provider_industry],
     )
+    # import button wiring is added after dependent components are defined below
     # save_new_provider click wiring is added after dependent components are defined below
     with gr.Row():
         company_info = gr.Markdown("", visible=True)
@@ -1020,6 +1352,60 @@ with gr.Blocks() as block2:
         inputs=[selected_provider],
         outputs=[company_df, policies_df],
         queue=True,
+    )
+
+    # Import button handlers
+    import_btn.click(
+        _show_import_modal,
+        inputs=[],
+        outputs=[
+            import_modal,
+            import_file,
+            import_table,
+            import_status_md,
+            import_rows_state,
+            import_conflict_mode,
+            import_summary_md,
+        ],
+    )
+
+    import_modal_cancel_btn.click(
+        _cancel_import_modal,
+        inputs=[],
+        outputs=[
+            import_modal,
+            import_file,
+            import_table,
+            import_status_md,
+            import_rows_state,
+        ],
+    )
+
+    import_file.change(
+        _load_import_file,
+        inputs=[import_file],
+        outputs=[import_table, import_status_md, import_rows_state],
+    )
+
+    import_table.change(
+        _on_import_table_change,
+        inputs=[import_table],
+        outputs=[import_rows_state],
+    )
+
+    import_modal_import_btn.click(
+        _perform_import,
+        inputs=[import_rows_state, import_conflict_mode, selected_provider],
+        outputs=[
+            company_df,
+            policies_df,
+            import_modal,
+            import_file,
+            import_table,
+            import_status_md,
+            import_rows_state,
+            import_summary_md,
+        ],
     )
 
     def _format_timestamp(ts: str) -> str:
