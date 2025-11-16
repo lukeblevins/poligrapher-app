@@ -616,7 +616,7 @@ with gr.Blocks() as block2:
             import_status_md = gr.Markdown("", visible=False)
             import_table = gr.Dataframe(
                 headers=IMPORT_COLUMNS,
-                value=[],
+                value=[["" for _ in IMPORT_COLUMNS]],
                 label="Imported Rows (editable)",
                 interactive=False,
                 wrap=True,
@@ -631,11 +631,14 @@ with gr.Blocks() as block2:
     def _cancel_add_provider():
         return gr.update(visible=False), "", ""
 
+    def _empty_import_table_value():
+        return [["" for _ in IMPORT_COLUMNS]]
+
     def _show_import_modal():
         return (
             gr.update(visible=True),
             gr.update(value=None),
-            gr.update(value=[], interactive=False),
+            gr.update(value=_empty_import_table_value(), interactive=False),
             gr.update(value="", visible=False),
             [],
             gr.update(value="Skip duplicates"),
@@ -646,7 +649,7 @@ with gr.Blocks() as block2:
         return (
             gr.update(visible=False),
             gr.update(value=None),
-            gr.update(value=[], interactive=False),
+            gr.update(value=_empty_import_table_value(), interactive=False),
             gr.update(value="", visible=False),
             [],
         )
@@ -704,7 +707,7 @@ with gr.Blocks() as block2:
     def _load_import_file(uploaded_file):
         if uploaded_file is None:
             return (
-                gr.update(value=[], interactive=False),
+                gr.update(value=_empty_import_table_value(), interactive=False),
                 gr.update(value="", visible=False),
                 [],
             )
@@ -718,7 +721,7 @@ with gr.Blocks() as block2:
                     + ", ".join(missing)
                 )
                 return (
-                    gr.update(value=[], interactive=False),
+                    gr.update(value=_empty_import_table_value(), interactive=False),
                     gr.update(value=message, visible=True),
                     [],
                 )
@@ -739,35 +742,74 @@ with gr.Blocks() as block2:
             )
         except Exception as exc:
             return (
-                gr.update(value=[], interactive=False),
+                gr.update(value=_empty_import_table_value(), interactive=False),
                 gr.update(value=f"Failed to load CSV: {exc}", visible=True),
                 [],
             )
 
-    def _on_import_table_change(table_data):
-        if not table_data:
+    def _coerce_import_rows(table_value):
+        if table_value is None:
             return []
+
+        # Gradio DataFrame input (v3.48) arrives as pandas DataFrame
+        if isinstance(table_value, pd.DataFrame):
+            if table_value.empty:
+                return []
+            df = table_value.copy()
+            for col in IMPORT_COLUMNS:
+                if col not in df.columns:
+                    df[col] = ""
+            df = df.reindex(columns=IMPORT_COLUMNS)
+            df = df.fillna("")
+            return df.to_dict(orient="records")
+
+        # Some versions pass a dict with "data" payload
+        if isinstance(table_value, dict) and "data" in table_value:
+            return _coerce_import_rows(table_value.get("data"))
+
+        # Fall back to list-of-lists/tuples
+        if not isinstance(table_value, (list, tuple)):
+            return []
+        if len(table_value) == 0:
+            return []
+
         normalized = []
-        for row in table_data:
+        for row in table_value:
             row_dict = {}
             for idx, col in enumerate(IMPORT_COLUMNS):
-                row_dict[col] = row[idx] if idx < len(row) else ""
+                value = ""
+                if isinstance(row, (list, tuple)) and idx < len(row):
+                    value = row[idx] if row[idx] is not None else ""
+                else:
+                    value = row.get(col, "") if isinstance(row, dict) else ""
+                row_dict[col] = value
             normalized.append(row_dict)
         return normalized
 
-    def _perform_import(rows, conflict_mode, current_provider: str | None):
+    def _filter_blank_rows(rows):
+        filtered = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            if any(str(row.get(col, "")).strip() for col in IMPORT_COLUMNS):
+                filtered.append(row)
+        return filtered
+
+    def _on_import_table_change(table_value):
+        return _filter_blank_rows(_coerce_import_rows(table_value))
+
+    def _perform_import(rows_state, conflict_mode, current_provider: str | None):
+        rows = _filter_blank_rows(_coerce_import_rows(rows_state))
         if not rows:
             return (
                 gr.update(value=_build_display_df()),
                 gr.update(value=_build_policies_df(current_provider)),
-                gr.update(visible=False),
+                gr.update(visible=True),
                 gr.update(value=None),
-                gr.update(value=[], interactive=False),
+                gr.update(value=_empty_import_table_value(), interactive=False),
                 gr.update(value="No rows to import. Upload a CSV first.", visible=True),
                 [],
-                gr.update(
-                    value="Import aborted: no data provided.", visible=True
-                ),
+                gr.update(value="Import aborted: no data provided.", visible=True),
             )
 
         conflict_policy = "overwrite" if (conflict_mode or "").lower().startswith("overwrite") else "skip"
@@ -915,7 +957,7 @@ with gr.Blocks() as block2:
             gr.update(value=_build_policies_df(current_provider)),
             gr.update(visible=False),
             gr.update(value=None),
-            gr.update(value=[], interactive=False),
+            gr.update(value=_empty_import_table_value(), interactive=False),
             gr.update(value="", visible=False),
             [],
             gr.update(value=summary_md, visible=True),
@@ -1249,6 +1291,76 @@ with gr.Blocks() as block2:
     )
 
     # ---- Shared generation helper ----
+    # ---- Refresh helpers ----
+
+    def _coerce_capture_datetime(value) -> datetime | None:
+        """Best-effort conversion of capture_date field to aware datetime."""
+
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            dt = value
+        elif isinstance(value, date):
+            dt = datetime(value.year, value.month, value.day)
+        else:
+            try:
+                parsed = pd.to_datetime(value)
+            except Exception:
+                return None
+            if pd.isna(parsed):
+                return None
+            dt = parsed.to_pydatetime() if hasattr(parsed, "to_pydatetime") else parsed
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+
+    def _capture_timestamp(value) -> float:
+        dt = _coerce_capture_datetime(value)
+        if dt is None:
+            return float("-inf")
+        try:
+            return dt.timestamp()
+        except Exception:
+            return float("-inf")
+
+    def _latest_document_for_provider(
+        provider: PolicyDocumentProvider,
+    ) -> PolicyDocumentInfo | None:
+        if not provider.documents:
+            return None
+        return max(
+            provider.documents,
+            key=lambda d: (
+                _capture_timestamp(getattr(d, "capture_date", None)),
+                str(getattr(d, "capture_date", "")),
+                getattr(d, "path", ""),
+            ),
+        )
+
+    def _doc_priority_tuple(doc: PolicyDocumentInfo) -> tuple:
+        path_str = str(getattr(doc, "path", "") or "").strip().lower()
+        source_rank = 2
+        if doc.source == DocumentCaptureSource.PDF:
+            if path_str.startswith(("http://", "https://")):
+                source_rank = 1  # remote PDF
+            else:
+                source_rank = 0  # local PDF (including file:// and absolute paths)
+        timestamp = _capture_timestamp(getattr(doc, "capture_date", None))
+        return (source_rank, -timestamp, path_str)
+
+    def _collect_latest_documents(
+        target_provider: str | None = None,
+    ) -> list[PolicyDocumentInfo]:
+        docs: list[PolicyDocumentInfo] = []
+        for provider in providers:
+            if target_provider and provider.name != target_provider:
+                continue
+            latest = _latest_document_for_provider(provider)
+            if latest is not None:
+                docs.append(latest)
+        docs.sort(key=_doc_priority_tuple)
+        return docs
+
     def _ensure_graph_assets(doc: PolicyDocumentInfo, force: bool = False) -> bool:
         """Ensure graph (YAML) and PNG image exist; update has_results accordingly.
 
@@ -1294,11 +1406,14 @@ with gr.Blocks() as block2:
     def _refresh_all(curr_provider):
         """Refresh tables: rescan status, attempt generation for missing, rescan again."""
         _rescan_and_persist_status()
-        for provider in providers:
-            for doc in provider.documents:
-                if not doc.has_results:  # Only attempt for incomplete docs
-                    if not doc.has_graph() or not doc.has_image():
-                        _ensure_graph_assets(doc)
+        for doc in _collect_latest_documents():
+            if doc.pipeline_failed:
+                continue
+            if doc.has_results:
+                continue
+            if doc.has_graph() and doc.has_image():
+                continue
+            _ensure_graph_assets(doc)
         _rescan_and_persist_status()
         return _build_display_df(curr_provider), _build_policies_df(curr_provider)
 
@@ -1308,13 +1423,17 @@ with gr.Blocks() as block2:
         If no provider is selected, this is a no-op aside from a status rescan.
         """
         _rescan_and_persist_status()
-        if curr_provider:
-            prov = next((p for p in providers if p.name == curr_provider), None)
-            if prov is not None:
-                for doc in prov.documents:
-                    if not doc.has_results:
-                        if not doc.has_graph() or not doc.has_image():
-                            _ensure_graph_assets(doc)
+        docs_to_refresh = (
+            _collect_latest_documents(curr_provider) if curr_provider else []
+        )
+        for doc in docs_to_refresh:
+            if doc.pipeline_failed:
+                continue
+            if doc.has_results:
+                continue
+            if doc.has_graph() and doc.has_image():
+                continue
+            _ensure_graph_assets(doc)
         _rescan_and_persist_status()
         return _build_display_df(curr_provider), _build_policies_df(curr_provider)
 
