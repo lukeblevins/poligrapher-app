@@ -1,0 +1,353 @@
+[weights]
+coverage = 0.30
+density = 0.20
+transparency = 0.25
+clarity = 0.25
+
+[tiers]
+compliant = 0.70
+warning = 0.50
+
+[thresholds]
+density_target = 0.15
+density_critical = 0.05
+density_warning = 0.08
+coverage_critical = 0.50
+coverage_warning = 0.60
+coverage_compliant = 0.80
+specificity_warning = 0.50
+specificity_good = 0.70
+vagueness_warning = 0.15
+vagueness_critical = 0.25
+clarity_warning = 0.50
+purpose_attribution_warning = 0.65
+purpose_attribution_critical = 0.40
+components_high = 5
+largest_component_warning = 0.70
+collection_intensity_high = 0.50
+data_entity_ratio_high = 5.0
+clustering_low = 0.10
+centrality_high = 0.80
+node_count_min = 10
+data_category_min = 3
+data_nodes_high = 50
+data_nodes_excessive = 12
+degree_variance_low = 0.25
+edge_node_ratio_high = 3.0
+edge_node_ratio_low = 1.0
+modal_term_count_high = 10
+generic_reference_count_high = 5
+joint_controller_actor_count = 2
+third_party_entity_count_high = 10
+recipient_count_mismatch = 3
+ambiguous_entity_ratio_high = 0.50
+compound_flag_count = 3
+critical_violation_count = 5
+high_violation_count = 10
+score_critical = 0.40
+score_warning = 0.50
+component_floor = 0.60
+
+[lists]
+generic_actor_terms = [
+    "third party",
+    "third-party",
+    "service provider",
+    "service providers",
+    "processor",
+    "processors",
+    "vendor",
+    "vendors",
+    "partner",
+    "partners",
+    "affiliate",
+    "affiliates",
+    "advertiser",
+    "advertisers",
+    "analytics provider",
+    "marketing provider",
+    "marketing partner",
+    "business partner",
+    "cloud provider",
+    "provider",
+    "social media",
+    "content provider",
+    "auth provider",
+    "unknown",
+    "unspecified_actor",
+]
+modal_terms = ["may", "might", "could", "can", "generally", "typically", "sometimes"]
+vague_terms = [
+    "may",
+    "might",
+    "could",
+    "generally",
+    "typically",
+    "sometimes",
+    "various",
+    "certain",
+    "some",
+    "appropriate",
+    "where necessary",
+    "as needed",
+]
+special_category_terms = [
+    "biometric",
+    "health",
+    "medical",
+    "genetic",
+    "race",
+    "racial",
+    "ethnic",
+    "religious",
+    "political",
+    "sexual",
+    "union",
+]
+processor_terms = [
+    "processor",
+    "service provider",
+    "cloud",
+    "hosting",
+    "vendor",
+    "sub-processor",
+    "subprocessor",
+]
+advertising_terms = [
+    "advertising",
+    "advertiser",
+    "marketing",
+    "behavioral advertising",
+    "targeted advertising",
+    "ad partner",
+]
+tracking_terms = [
+    "tracking",
+    "analytics",
+    "cookie",
+    "cookies",
+    "pixel",
+    "sdk",
+    "beacon",
+    "profiling",
+]
+jurisdiction_terms = [
+    "european union",
+    "eea",
+    "united states",
+    "uk",
+    "united kingdom",
+    "canada",
+    "australia",
+    "switzerland",
+    "india",
+    "singapore",
+]
+
+[keywords]
+controller = [
+    "controller",
+    "company",
+    "we are",
+    "privacy notice",
+    "privacy policy",
+]
+dpo = [
+    "data protection officer",
+    "dpo",
+    "privacy office",
+    "privacy officer",
+    "privacy contact",
+]
+purposes = [
+    "purpose",
+    "purposes",
+    "we use",
+    "used for",
+    "processing purpose",
+    "in order to",
+]
+lawful_basis = [
+    "lawful basis",
+    "legal basis",
+    "consent",
+    "contract",
+    "legitimate interest",
+    "legal obligation",
+    "vital interests",
+    "public task",
+]
+recipients = [
+    "recipient",
+    "recipients",
+    "third parties",
+    "third-party",
+    "partners",
+    "service providers",
+    "processors",
+]
+transfers = [
+    "international transfer",
+    "transfer outside",
+    "transfer outside the eea",
+    "cross-border transfer",
+    "eu standard contractual clauses",
+    "adequacy decision",
+    "transfer mechanism",
+]
+retention = [
+    "retain",
+    "retention",
+    "storage period",
+    "keep your data",
+    "for as long as",
+    "retention period",
+]
+rights = [
+    "right to access",
+    "right to delete",
+    "right to erasure",
+    "right to rectification",
+    "right to object",
+    "data portability",
+    "right to know",
+    "request access",
+]
+adm = [
+    "automated decision",
+    "automated decision-making",
+    "profiling",
+    "article 22",
+]
+data_categories = [
+    "data categories",
+    "categories of personal data",
+    "personal information we collect",
+    "types of personal data",
+]
+consent = [
+    "consent",
+    "opt in",
+    "opt-in",
+    "permission",
+    "agree to",
+    "accept cookies",
+]
+opt_out = [
+    "opt out",
+    "opt-out",
+    "do not sell",
+    "withdraw consent",
+    "unsubscribe",
+]
+withdrawal = [
+    "withdraw consent",
+    "withdraw your consent",
+    "revoke consent",
+    "opt out",
+    "opt-out",
+]
+deletion = [
+    "delete",
+    "deletion",
+    "erase",
+    "erasure",
+    "right to be forgotten",
+]
+minimization_claim = [
+    "data minimization",
+    "only what is necessary",
+    "limited to what is necessary",
+    "minimum necessary",
+]
+collection_denial = [
+    "do not collect",
+    "never collect",
+    "no personal data is collected",
+]
+sharing_denial = [
+    "do not share",
+    "never share",
+    "we do not share",
+    "we never share",
+]
+sale = [
+    "sell",
+    "sale of personal data",
+    "share for cross-context behavioral advertising",
+    "do not sell",
+]
+legitimate_interest = [
+    "legitimate interest",
+    "legitimate interests",
+]
+balancing_test = [
+    "balancing test",
+    "we balance",
+    "override your interests",
+]
+contract_basis = [
+    "contract",
+    "contractual necessity",
+    "necessary to perform a contract",
+]
+explicit_consent = [
+    "explicit consent",
+    "your explicit consent",
+    "express consent",
+]
+article_9_exception = [
+    "article 9",
+    "substantial public interest",
+    "employment law",
+    "public health",
+    "legal claims",
+]
+dpia = [
+    "data protection impact assessment",
+    "dpia",
+    "impact assessment",
+]
+joint_controller = [
+    "joint controller",
+    "joint controllership",
+]
+human_oversight = [
+    "human review",
+    "human intervention",
+    "human oversight",
+    "contest the decision",
+]
+bundled_consent = [
+    "by using this service you consent",
+    "continued use constitutes consent",
+    "by continuing to use",
+]
+privacy_by_design = [
+    "privacy by design",
+    "data protection by design",
+]
+privacy_by_default = [
+    "privacy by default",
+    "data protection by default",
+]
+transfer_mechanism = [
+    "standard contractual clauses",
+    "sccs",
+    "adequacy decision",
+    "binding corporate rules",
+    "transfer impact assessment",
+]
+data_broker = [
+    "data broker",
+    "broker",
+    "reseller",
+    "joint marketing partner",
+]
+subprocessor = [
+    "subprocessor",
+    "sub-processor",
+]
+
+[regex]
+response_timeframe = "\\b(?:within\\s+)?(?:30|45|60)\\s+days?\\b|\\bone\\s+month\\b"

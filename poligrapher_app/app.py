@@ -10,6 +10,13 @@ import sys
 from shutil import copy
 from PIL import Image as PILImage
 
+
+logging.basicConfig(
+    level=os.environ.get("POLIGRAPH_APP_LOG_LEVEL", "INFO"),
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+)
+
 from poligrapher_app import functions
 from poligrapher_app.policy_analysis import (
     DocumentCaptureSource,
@@ -266,6 +273,8 @@ def _rescan_and_persist_status() -> int:
     changed = 0
     for provider in providers:
         for doc in provider.documents:
+            if doc.source == DocumentCaptureSource.PDF:
+                functions.ensure_source_pdf_copy(doc.path, doc.output_dir)
             new_status = doc.has_graph() and doc.has_image()
             if new_status != doc.has_results:
                 doc.has_results = new_status
@@ -586,6 +595,7 @@ with gr.Blocks() as block2:
         import_btn = gr.Button("Import")
         refresh_all_btn = gr.Button("Refresh")
         score_btn = gr.Button("Score")
+        score_gdpr_btn = gr.Button("Score GDPR", variant="primary")
     import_summary_md = gr.Markdown("", visible=False)
     with gr.Group(visible=False, elem_id="add-provider-modal") as add_provider_modal:
         with gr.Column(elem_classes="modal-card"):
@@ -981,6 +991,7 @@ with gr.Blocks() as block2:
                 info_md,  # company_info
                 None,  # png_image (no image yet)
                 gr.update(value="", visible=False),  # policy_errors
+                gr.update(value="", visible=False),  # policy_gdpr_report
                 pol_df,  # policies_df
                 selected_name,  # selected_provider
                 gr.update(open=True),  # open policies accordion
@@ -994,6 +1005,7 @@ with gr.Blocks() as block2:
             gr.update(),  # company_info (no change)
             gr.update(),  # png_image (no change)
             gr.update(),  # policy_errors (no change)
+            gr.update(),  # policy_gdpr_report (no change)
             gr.update(),  # policies_df (no change)
             gr.update(),  # selected_provider (no change)
             gr.update(),  # policies_accordion (no change)
@@ -1013,6 +1025,8 @@ with gr.Blocks() as block2:
         company_info = gr.Markdown("", visible=True)
     with gr.Row():
         policy_errors = gr.Markdown("", visible=False)
+    with gr.Row():
+        policy_gdpr_report = gr.Markdown("", visible=False)
     with gr.Row():
         with gr.Column(scale=1):
             png_image = gr.Image(label="Knowledge Graph", visible=True, type="pil")
@@ -1284,6 +1298,7 @@ with gr.Blocks() as block2:
             company_info,
             png_image,
             policy_errors,
+            policy_gdpr_report,
             policies_df,
             selected_provider,
             policies_accordion,
@@ -1369,6 +1384,10 @@ with gr.Blocks() as block2:
         """
         success = False
         try:
+            # Ensure a copy of the original local PDF exists in the output directory
+            # so previously generated artifacts still retain their source document.
+            if doc.source == DocumentCaptureSource.PDF:
+                functions.ensure_source_pdf_copy(doc.path, doc.output_dir)
             # Generate graph if missing or forced
             if force or (not doc.has_graph()):
                 os.makedirs(doc.output_dir, exist_ok=True)
@@ -1403,38 +1422,47 @@ with gr.Blocks() as block2:
             success = False
         return success
 
-    def _refresh_all(curr_provider):
+    def _refresh_all(curr_provider, progress=gr.Progress()):
         """Refresh tables: rescan status, attempt generation for missing, rescan again."""
+        docs = _collect_latest_documents()
+        total = max(len(docs), 1)
+        progress(0, "Scanning current artifacts…")
         _rescan_and_persist_status()
-        for doc in _collect_latest_documents():
-            if doc.pipeline_failed:
-                continue
-            if doc.has_results:
+        for idx, doc in enumerate(docs, 1):
+            if doc.pipeline_failed or doc.has_results:
+                progress(idx / total, f"Skipping {doc.path} (up-to-date)")
                 continue
             if doc.has_graph() and doc.has_image():
+                progress(idx / total, f"Skipping {doc.path} (artifacts present)")
                 continue
+            progress(idx / total, f"Regenerating {doc.path}")
             _ensure_graph_assets(doc)
         _rescan_and_persist_status()
+        progress(1, "Refresh complete")
         return _build_display_df(curr_provider), _build_policies_df(curr_provider)
 
-    def _refresh_provider(curr_provider: str):
+    def _refresh_provider(curr_provider: str, progress=gr.Progress()):
         """Refresh only the selected provider's policies and update tables.
 
         If no provider is selected, this is a no-op aside from a status rescan.
         """
+        progress(0, "Scanning current artifacts…")
         _rescan_and_persist_status()
         docs_to_refresh = (
             _collect_latest_documents(curr_provider) if curr_provider else []
         )
-        for doc in docs_to_refresh:
-            if doc.pipeline_failed:
-                continue
-            if doc.has_results:
+        total = max(len(docs_to_refresh), 1)
+        for idx, doc in enumerate(docs_to_refresh, 1):
+            if doc.pipeline_failed or doc.has_results:
+                progress(idx / total, f"Skipping {doc.path} (up-to-date)")
                 continue
             if doc.has_graph() and doc.has_image():
+                progress(idx / total, f"Skipping {doc.path} (artifacts present)")
                 continue
+            progress(idx / total, f"Regenerating {doc.path}")
             _ensure_graph_assets(doc)
         _rescan_and_persist_status()
+        progress(1, "Refresh complete")
         return _build_display_df(curr_provider), _build_policies_df(curr_provider)
 
     def score_all(curr_provider, progress=gr.Progress()):
@@ -1458,16 +1486,54 @@ with gr.Blocks() as block2:
         progress(100, "Completed.")
         return _build_display_df(curr_provider), _build_policies_df(curr_provider)
 
+    def score_all_gdpr(curr_provider, progress=gr.Progress()):
+        progress(0, "Starting GDPR analysis...")
+        for company in progress.tqdm(providers, desc="Scoring GDPR Policies"):
+            for policy in company.documents:
+                score = functions.score_policy_with_gdpr(policy)
+                kind = functions.infer_graph_kind(policy)
+                if score is not None or kind is not None:
+                    company.add_result(
+                        PolicyAnalysisResult(
+                            document=policy,
+                            score=score,
+                            kind=kind,
+                            analysis_type="gdpr",
+                            details=policy.latest_gdpr_result,
+                        )
+                    )
+                    logger.info(
+                        "GDPR scored %s: score=%s, kind=%s, tier=%s",
+                        policy.path,
+                        score,
+                        kind,
+                        (
+                            policy.latest_gdpr_result or {}
+                        ).get("tier"),
+                    )
+        _save_providers_to_csv()
+        progress(100, "GDPR analysis completed.")
+        return _build_display_df(curr_provider), _build_policies_df(curr_provider)
+
     refresh_policies.click(
         _refresh_provider, inputs=[selected_provider], outputs=[company_df, policies_df]
     )
     # Global top-level refresh to attempt generation for all providers
     refresh_all_btn.click(
-        _refresh_all, inputs=[selected_provider], outputs=[company_df, policies_df]
+        _refresh_all,
+        inputs=[selected_provider],
+        outputs=[company_df, policies_df],
+        queue=True,
     )
 
     score_btn.click(
         score_all,
+        inputs=[selected_provider],
+        outputs=[company_df, policies_df],
+        queue=True,
+    )
+    score_gdpr_btn.click(
+        score_all_gdpr,
         inputs=[selected_provider],
         outputs=[company_df, policies_df],
         queue=True,
@@ -1562,14 +1628,21 @@ with gr.Blocks() as block2:
             lines.append(f"- `{ts_display}` — {message}")
         return "\n".join(lines)
 
+    def _format_gdpr_report_update(doc: PolicyDocumentInfo):
+        report_md = functions.format_gdpr_report_markdown(doc)
+        if not report_md:
+            return gr.update(value="", visible=False)
+        return gr.update(value=report_md, visible=True)
+
     def on_policy_select(selection: gr.SelectData, current_provider: str):
         """Policy selection handler using SelectData.index (Gradio 3.48.0)."""
 
         default_error = gr.update(value="", visible=False)
+        default_gdpr_report = gr.update(value="", visible=False)
 
         # Guard: no selection
         if selection is None:
-            return "", gr.update(value=None), default_error
+            return "", gr.update(value=None), default_error, default_gdpr_report
 
         try:
             # selection.index may be a tuple (row, col) or an int/list
@@ -1579,18 +1652,18 @@ with gr.Blocks() as block2:
                 row_idx = selection.index
             # invalid index
             if row_idx is None or row_idx == "":
-                return "", gr.update(value=None), default_error
+                return "", gr.update(value=None), default_error, default_gdpr_report
         except Exception:
-            return "", gr.update(value=None), default_error
+            return "", gr.update(value=None), default_error, default_gdpr_report
 
         # Rebuild the policies dataframe for the current provider and index into it
         df = _build_policies_df(current_provider)
         try:
             if row_idx >= len(df):
-                return "", gr.update(value=None), default_error
+                return "", gr.update(value=None), default_error, default_gdpr_report
             row_series = df.iloc[int(row_idx)]
         except Exception:
-            return "", gr.update(value=None), default_error
+            return "", gr.update(value=None), default_error, default_gdpr_report
 
         prov_name = (current_provider or "").strip() or "Unknown"
         policy_url = row_series.get("Policy URL", "")
@@ -1600,7 +1673,7 @@ with gr.Blocks() as block2:
 
         prov_obj = next((p for p in providers if p.name == prov_name), None)
         if prov_obj is None:
-            return info_md, gr.update(value=None), default_error
+            return info_md, gr.update(value=None), default_error, default_gdpr_report
 
         # Prefer the exact selected document (URL + Date + Source)
         def _src_value(s):
@@ -1621,12 +1694,14 @@ with gr.Blocks() as block2:
         )
 
         error_output = default_error
+        gdpr_output = default_gdpr_report
         image_obj = None
 
         if doc is not None:
             error_output = gr.update(
                 value=_format_pipeline_errors_markdown(doc), visible=True
             )
+            gdpr_output = _format_gdpr_report_update(doc)
             png_path = os.path.join(doc.output_dir, "knowledge_graph.png")
             if os.path.exists(png_path):
                 try:
@@ -1645,28 +1720,28 @@ with gr.Blocks() as block2:
                         continue
 
         image_output = image_obj if image_obj is not None else gr.update(value=None)
-        return info_md, image_output, error_output
+        return info_md, image_output, error_output, gdpr_output
 
     policies_df.select(
         fn=on_policy_select,
         inputs=[selected_provider],
-        outputs=[company_info, png_image, policy_errors],
+        outputs=[company_info, png_image, policy_errors, policy_gdpr_report],
     )
 
     def on_company_select(_df: pd.DataFrame, selection: gr.SelectData):
         """Provider/company selection handler using SelectData.index."""
         if selection is None:
-            return "", None, gr.update(value="", visible=False), _build_policies_df(""), "", gr.update(open=False)
+            return "", None, gr.update(value="", visible=False), gr.update(value="", visible=False), _build_policies_df(""), "", gr.update(open=False)
         try:
             if isinstance(selection.index, (list, tuple)):
                 row_idx = selection.index[0]
             else:
                 row_idx = selection.index
             if row_idx is None or row_idx == "" or row_idx >= len(_df):
-                return "", None, gr.update(value="", visible=False), _build_policies_df(""), "", gr.update(open=False)
+                return "", None, gr.update(value="", visible=False), gr.update(value="", visible=False), _build_policies_df(""), "", gr.update(open=False)
             row_series = _df.iloc[row_idx]
         except Exception:
-            return "", None, gr.update(value="", visible=False), _build_policies_df(""), "", gr.update(open=False)
+            return "", None, gr.update(value="", visible=False), gr.update(value="", visible=False), _build_policies_df(""), "", gr.update(open=False)
         company_name = row_series.get("Provider", "")
         policies_df_val = _build_policies_df(company_name)
         # Show the first available policy image for the provider, if any
@@ -1697,6 +1772,7 @@ with gr.Blocks() as block2:
             info_md,
             first_image,
             gr.update(value="", visible=False),
+            gr.update(value="", visible=False),
             policies_df_val,
             company_name,
             gr.update(open=True),
@@ -1709,6 +1785,7 @@ with gr.Blocks() as block2:
             company_info,
             png_image,
             policy_errors,
+            policy_gdpr_report,
             policies_df,
             selected_provider,
             policies_accordion,

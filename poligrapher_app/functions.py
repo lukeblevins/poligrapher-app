@@ -4,6 +4,8 @@ import os
 import urllib.parse
 import logging as logger
 import httpx
+import shutil
+from typing import Callable
 from matplotlib import pyplot as plt
 import networkx as nx
 import yaml
@@ -24,6 +26,44 @@ from poligrapher.scripts import (
 )
 
 logger = logger.getLogger(__name__)
+
+
+def _resolve_local_pdf_path(path: str | None) -> str | None:
+    if not path:
+        return None
+    try:
+        parsed = urllib.parse.urlparse(path)
+        if parsed.scheme == "file":
+            return parsed.path
+        if parsed.scheme in ("http", "https"):
+            return None
+    except Exception:
+        pass
+    abs_path = os.path.abspath(path)
+    return abs_path if os.path.isfile(abs_path) else None
+
+
+def ensure_source_pdf_copy(source_path: str | None, output_dir: str) -> bool:
+    """Copy a local source PDF into the provided output directory if missing."""
+
+    source_path = _resolve_local_pdf_path(source_path)
+    if not source_path:
+        return False
+
+    os.makedirs(output_dir, exist_ok=True)
+    dest_path = os.path.join(output_dir, os.path.basename(source_path))
+    if os.path.exists(dest_path):
+        return True
+
+    try:
+        shutil.copy2(source_path, dest_path)
+        logger.info("Copied original PDF %s to %s", source_path, dest_path)
+        return True
+    except Exception as exc:
+        logger.warning(
+            "Failed to copy source PDF %s -> %s: %s", source_path, dest_path, exc
+        )
+        return False
 
 
 def is_ip_address(s):
@@ -142,6 +182,7 @@ def score_policy(policy: PolicyDocumentInfo):
     else:
         scorer = PrivacyScorer()
         results = scorer.score_policy(policy.get_document_text())
+        policy.set_privacy_result(results)
         if results.get("success") is True:
             policy.score = results.get("total_score")
             policy.has_results = True
@@ -149,6 +190,84 @@ def score_policy(policy: PolicyDocumentInfo):
             policy.score = None
             policy.has_results = False
         return policy.score
+
+
+def score_policy_with_gdpr(policy: PolicyDocumentInfo):
+    policy.has_results = False
+    if policy.has_graph() is False:
+        logger.error("No graph was found to score document at %s", policy.output_dir)
+        return None
+    else:
+        from poligrapher_app.analysis.gdpr_scorer import GDPRScorer
+
+        artifacts = policy.load_graph_artifacts()
+        scorer = GDPRScorer()
+        results = scorer.score_policy(
+            policy.get_document_text(),
+            graphml_graph=artifacts.get("graphml_graph"),
+            yaml_graph=artifacts.get("yaml_graph"),
+        )
+        policy.set_gdpr_result(results)
+        if results.get("success") is True:
+            policy.score = results.get("total_score")
+            policy.has_results = True
+        else:
+            policy.score = None
+            policy.has_results = False
+        return policy.score
+
+
+def format_gdpr_report_markdown(policy: PolicyDocumentInfo) -> str:
+    """Render a concise Markdown report for the latest GDPR analysis."""
+
+    result = policy.latest_gdpr_result
+    if not result:
+        return ""
+    if not result.get("success"):
+        return f"**GDPR analysis failed:** {', '.join(result.get('feedback', []))}"
+
+    component_scores = result.get("component_scores", {})
+    severity_counts = result.get("severity_counts", {})
+    flags = result.get("flags", [])
+    grouped = result.get("violations_by_rq", {})
+
+    lines = [
+        "**GDPR Compliance Report**",
+        "",
+        f"- Score: `{result.get('total_score', 0):.1f}` / 100 (`{result.get('normalized_score', 0):.3f}` normalized)",
+        f"- Tier: `{result.get('tier', 'UNKNOWN')}`",
+        f"- Summary: {result.get('summary', 'No summary available')}",
+        f"- Severity counts: CRITICAL `{severity_counts.get('CRITICAL', 0)}`, HIGH `{severity_counts.get('HIGH', 0)}`, MEDIUM `{severity_counts.get('MEDIUM', 0)}`",
+    ]
+
+    if component_scores:
+        lines.append("- Component scores:")
+        for name, payload in component_scores.items():
+            lines.append(
+                f"  - {name.title()}: `{payload.get('score', 0):.3f}` (weight `{payload.get('weight', 0):.2f}`)"
+            )
+
+    if flags:
+        lines.append(f"- Flags: {', '.join(flags)}")
+
+    lines.append("")
+    lines.append("**Top Violations**")
+    any_violation = False
+    for rq in ("RQ1", "RQ2", "RQ3", "RQ4", "RQ5", "RQ6"):
+        violations = grouped.get(rq, [])
+        if not violations:
+            continue
+        any_violation = True
+        lines.append(f"- {rq}:")
+        for violation in violations[:3]:
+            scope = violation.get("scope", "GDPR")
+            lines.append(
+                f"  - `{violation.get('code')}` [{violation.get('severity')}, {scope}] {violation.get('description')}: {violation.get('detail')}"
+            )
+    if not any_violation:
+        lines.append("- No violations triggered.")
+
+    return "\n".join(lines)
 
 
 def test_document_url(url: str) -> bool:
@@ -179,6 +298,12 @@ def test_document_url(url: str) -> bool:
 
 
 def generate_graph_from_html(path, output_folder, capture_pdf: bool):
+    logger.info(
+        "Starting PoliGraph pipeline (capture_pdf=%s) for %s -> %s",
+        capture_pdf,
+        path,
+        output_folder,
+    )
     # Normalize file:// URIs to filesystem paths
     try:
         parsed = urllib.parse.urlparse(path)
@@ -188,26 +313,71 @@ def generate_graph_from_html(path, output_folder, capture_pdf: bool):
         pass
     # Prefer local file check first to avoid URL probes on file paths
     if os.path.isfile(path):
-        pass
+        logger.info("Verified local file input: %s", path)
     else:
         if test_document_url(path) is False:
             raise FileNotFoundError(
                 f"Document is not accessible or does not exist: {path}"
             )
+        logger.info("Verified remote URL accessibility: %s", path)
+
+    os.makedirs(output_folder, exist_ok=True)
+
+    steps: list[tuple[str, Callable[[], None]]] = []
+
     if capture_pdf:
-        pdf_parser.main(path, output_folder)
+        ensure_source_pdf_copy(path, output_folder)
         html_path = os.path.join(output_folder, "output.html")
-        html_crawler.main(html_path, output_folder)
+
+        def _pdf_parse():
+            pdf_parser.main(path, output_folder)
+
+        def _crawl_html_from_pdf():
+            html_crawler.main(html_path, output_folder)
+
+        if not os.path.exists(html_path):
+            steps.append(("Extracting PDF to HTML via pdf_parser", _pdf_parse))
+        else:
+            logger.info(
+                "Cached PDF conversion detected (%s); skipping pdf_parser",
+                html_path,
+            )
+
+        steps.append(("Crawling parsed HTML via html_crawler", _crawl_html_from_pdf))
     else:
-        # 1. Crawl / ingest HTML (produces accessibility_tree.json)
-        html_crawler.main(path, output_folder)
-    # 2. Initialize document (creates document.pickle expected by later stages)
-    init_document.main(workdirs=[output_folder])
-    # 3. Run annotators to populate token relationships
-    run_annotators.main(workdirs=[output_folder])
-    # 4. Build graph (regular + pretty)
-    build_graph.main(workdirs=[output_folder])
-    build_graph.main(pretty=True, workdirs=[output_folder])
+
+        def _crawl_source():
+            html_crawler.main(path, output_folder)
+
+        steps.append(("Crawling source via html_crawler", _crawl_source))
+
+    steps.extend(
+        [
+            (
+                "Initializing document (init_document)",
+                lambda: init_document.main(workdirs=[output_folder]),
+            ),
+            (
+                "Running annotators",
+                lambda: run_annotators.main(workdirs=[output_folder]),
+            ),
+            (
+                "Building standard graph",
+                lambda: build_graph.main(workdirs=[output_folder]),
+            ),
+            (
+                "Building pretty graph",
+                lambda: build_graph.main(pretty=True, workdirs=[output_folder]),
+            ),
+        ]
+    )
+
+    total_steps = len(steps)
+    for idx, (message, step_fn) in enumerate(steps, 1):
+        logger.info("[%d/%d] %s", idx, total_steps, message)
+        step_fn()
+
+    logger.info("Completed PoliGraph pipeline for %s", output_folder)
 
 
 def generate_graph(policy: PolicyDocumentInfo):
@@ -221,6 +391,11 @@ def generate_graph(policy: PolicyDocumentInfo):
             raise ValueError(f"Unknown document source: {policy.source}")
 
     try:
+        logger.info(
+            "Triggering pipeline for policy %s (source=%s)",
+            policy.path,
+            policy.source,
+        )
         generate_graph_from_html(policy.path, policy.output_dir, capture_pdf)
     except SystemExit as exc:
         policy.record_error(f"Pipeline exited early: {exc}")
@@ -229,6 +404,7 @@ def generate_graph(policy: PolicyDocumentInfo):
         policy.record_error(f"Graph generation failed: {exc}")
         raise
     else:
+        logger.info("Pipeline succeeded for %s", policy.output_dir)
         policy.clear_errors()
         return True
 

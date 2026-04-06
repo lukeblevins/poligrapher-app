@@ -42,7 +42,10 @@ from typing import Iterable
 import os
 
 from bs4 import BeautifulSoup
+import networkx as nx
 import pymupdf4llm
+
+from poligrapher.graph_utils import yaml_load_graph
 
 class DocumentCaptureSource(Enum):
     """Origin / capture modality of a policy.
@@ -108,6 +111,9 @@ class PolicyDocumentInfo:
     capture_date: date
     has_results: bool = False
     errors: list[dict]
+    score: float | None
+    latest_privacy_result: dict | None
+    latest_gdpr_result: dict | None
 
     def __init__(
         self,
@@ -124,6 +130,9 @@ class PolicyDocumentInfo:
         self.capture_date = capture_date
         self.has_results = has_results
         self.errors = []
+        self.score = None
+        self.latest_privacy_result = None
+        self.latest_gdpr_result = None
         if errors:
             self.extend_errors(errors)
 
@@ -157,19 +166,78 @@ class PolicyDocumentInfo:
         self.errors.append(entry)
         self.has_results = False
 
+    @staticmethod
+    def _resolve_artifact_path(output_dir: str, candidates: tuple[str, ...]) -> str | None:
+        if not os.path.exists(output_dir):
+            return None
+        for candidate in candidates:
+            path = os.path.join(output_dir, candidate)
+            if os.path.exists(path):
+                return path
+        return None
+
+    def get_graph_yaml_path(self) -> str | None:
+        """Return the canonical YAML graph artifact path if present."""
+
+        return self._resolve_artifact_path(
+            self.output_dir,
+            ("graph-original.yml", "graph.yml"),
+        )
+
+    def get_graphml_path(self) -> str | None:
+        """Return the canonical GraphML graph artifact path if present."""
+
+        return self._resolve_artifact_path(
+            self.output_dir,
+            ("graph-original.graphml", "graph.graphml"),
+        )
+
     def has_graph(self) -> bool:
         """True if a graph YAML exists for this document.
 
         Centralizes canonical filename ("graph-original.yml") so changes only
         occur here vs. many string literals previously embedded in CSV logic.
         """
-        yml_path = os.path.join(self.output_dir, "graph-original.yml")
-        return os.path.exists(self.output_dir) and os.path.exists(yml_path)
+        return self.get_graph_yaml_path() is not None
+
+    def has_graphml(self) -> bool:
+        """True if a GraphML export exists for this document."""
+
+        return self.get_graphml_path() is not None
 
     def has_image(self) -> bool:
         """True if the rendered graph image artifact exists."""
         png_path = os.path.join(self.output_dir, "knowledge_graph.png")
         return os.path.exists(self.output_dir) and os.path.exists(png_path)
+
+    def load_graphml(self) -> nx.DiGraph:
+        """Load the pretty GraphML representation for this document."""
+
+        graphml_path = self.get_graphml_path()
+        if not graphml_path:
+            raise FileNotFoundError(f"No GraphML file found in {self.output_dir}")
+        return nx.read_graphml(graphml_path)
+
+    def load_graph_yaml(self) -> nx.MultiDiGraph:
+        """Load the canonical YAML graph artifact for this document."""
+
+        yaml_path = self.get_graph_yaml_path()
+        if not yaml_path:
+            raise FileNotFoundError(f"No graph YAML file found in {self.output_dir}")
+        with open(yaml_path, "r", encoding="utf-8") as fin:
+            return yaml_load_graph(fin)
+
+    def load_graph_artifacts(self) -> dict:
+        """Return both graph representations needed by downstream scorers."""
+
+        yaml_path = self.get_graph_yaml_path()
+        graphml_path = self.get_graphml_path()
+        return {
+            "graph_yaml_path": yaml_path,
+            "graphml_path": graphml_path,
+            "yaml_graph": self.load_graph_yaml() if yaml_path else None,
+            "graphml_graph": self.load_graphml() if graphml_path else None,
+        }
 
     def _extract_text_from_webpage(self, path: str) -> str:
         """Aggregate visible text from stored HTML files.
@@ -335,6 +403,20 @@ class PolicyDocumentInfo:
 
         self.errors = cleaned
 
+    def set_privacy_result(self, result: dict | None):
+        """Record the latest basic privacy scoring result."""
+
+        self.latest_privacy_result = result
+        if result and result.get("success"):
+            self.score = result.get("total_score")
+
+    def set_gdpr_result(self, result: dict | None):
+        """Record the latest GDPR scoring result."""
+
+        self.latest_gdpr_result = result
+        if result and result.get("success"):
+            self.score = result.get("total_score")
+
 class PolicyAnalysisResult:
     """Represents the outcome of analyzing a document with a specific graph kind.
 
@@ -347,11 +429,22 @@ class PolicyAnalysisResult:
     document: PolicyDocumentInfo
     score: float
     kind: GraphKind
+    analysis_type: str
+    details: dict | None
 
-    def __init__(self, document: PolicyDocumentInfo, score: float, kind: GraphKind):
+    def __init__(
+        self,
+        document: PolicyDocumentInfo,
+        score: float,
+        kind: GraphKind,
+        analysis_type: str = "privacy",
+        details: dict | None = None,
+    ):
         self.document = document
         self.score = score
         self.kind = kind
+        self.analysis_type = analysis_type
+        self.details = details
 
     def get_graph_image_path(self) -> str:
         """Return the canonical graph image path for the linked document."""
