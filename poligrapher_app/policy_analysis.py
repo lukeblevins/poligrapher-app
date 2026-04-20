@@ -38,6 +38,8 @@ and easier to test.
 from datetime import date, datetime, timezone
 from enum import Enum
 import json
+from collections import Counter
+from statistics import mean, median
 from typing import Iterable
 import os
 
@@ -238,6 +240,173 @@ class PolicyDocumentInfo:
             "yaml_graph": self.load_graph_yaml() if yaml_path else None,
             "graphml_graph": self.load_graphml() if graphml_path else None,
         }
+
+    def get_graph_statistics(self) -> dict | None:
+        """Compute graph summary statistics for the document's YAML graph."""
+
+        if not self.has_graph():
+            return None
+
+        yaml_graph = self.load_graph_yaml()
+        node_count = yaml_graph.number_of_nodes()
+        edge_count = yaml_graph.number_of_edges()
+
+        node_type_counts = Counter(
+            str(data.get("type", "UNKNOWN")) for _, data in yaml_graph.nodes(data=True)
+        )
+        edge_type_counts = Counter(
+            str(key or data.get("relationship") or "UNKNOWN")
+            for _, _, key, data in yaml_graph.edges(keys=True, data=True)
+        )
+        edge_name_counts = Counter(
+            f"{src} -> {dst} [{key or data.get('relationship') or 'UNKNOWN'}]"
+            for src, dst, key, data in yaml_graph.edges(keys=True, data=True)
+        )
+
+        undirected_graph = nx.Graph()
+        undirected_graph.add_nodes_from(yaml_graph.nodes(data=True))
+        undirected_graph.add_edges_from((src, dst) for src, dst in yaml_graph.edges())
+
+        degrees = [degree for _, degree in undirected_graph.degree()]
+        in_degrees = [degree for _, degree in yaml_graph.in_degree()]
+        out_degrees = [degree for _, degree in yaml_graph.out_degree()]
+
+        components = (
+            list(nx.connected_components(undirected_graph))
+            if node_count
+            else []
+        )
+        component_sizes = sorted((len(component) for component in components), reverse=True)
+        largest_component_nodes = (
+            undirected_graph.subgraph(max(components, key=len)).copy()
+            if components
+            else nx.Graph()
+        )
+
+        avg_shortest_path = None
+        if largest_component_nodes.number_of_nodes() > 1:
+            try:
+                avg_shortest_path = nx.average_shortest_path_length(
+                    largest_component_nodes
+                )
+            except Exception:
+                avg_shortest_path = None
+
+        top_degree_nodes = sorted(
+            undirected_graph.degree(),
+            key=lambda item: (-item[1], str(item[0])),
+        )[:10]
+        top_in_degree_nodes = sorted(
+            yaml_graph.in_degree(),
+            key=lambda item: (-item[1], str(item[0])),
+        )[:10]
+        top_out_degree_nodes = sorted(
+            yaml_graph.out_degree(),
+            key=lambda item: (-item[1], str(item[0])),
+        )[:10]
+
+        return {
+            "node_count": node_count,
+            "edge_count": edge_count,
+            "node_type_counts": dict(node_type_counts),
+            "edge_type_counts": dict(edge_type_counts),
+            "edge_name_counts": dict(edge_name_counts),
+            "degree": {
+                "min": min(degrees) if degrees else 0,
+                "max": max(degrees) if degrees else 0,
+                "mean": mean(degrees) if degrees else 0.0,
+                "median": median(degrees) if degrees else 0.0,
+            },
+            "in_degree": {
+                "min": min(in_degrees) if in_degrees else 0,
+                "max": max(in_degrees) if in_degrees else 0,
+                "mean": mean(in_degrees) if in_degrees else 0.0,
+                "median": median(in_degrees) if in_degrees else 0.0,
+            },
+            "out_degree": {
+                "min": min(out_degrees) if out_degrees else 0,
+                "max": max(out_degrees) if out_degrees else 0,
+                "mean": mean(out_degrees) if out_degrees else 0.0,
+                "median": median(out_degrees) if out_degrees else 0.0,
+            },
+            "density": nx.density(undirected_graph) if node_count > 1 else 0.0,
+            "average_clustering": (
+                nx.average_clustering(undirected_graph)
+                if node_count > 1
+                else 0.0
+            ),
+            "transitivity": nx.transitivity(undirected_graph) if node_count > 2 else 0.0,
+            "component_count": len(components),
+            "largest_component_size": component_sizes[0] if component_sizes else 0,
+            "largest_component_ratio": (
+                (component_sizes[0] / node_count) if component_sizes and node_count else 0.0
+            ),
+            "average_shortest_path_largest_component": avg_shortest_path,
+            "isolated_nodes": len(list(nx.isolates(undirected_graph))),
+            "self_loop_count": nx.number_of_selfloops(yaml_graph),
+            "top_degree_nodes": top_degree_nodes,
+            "top_in_degree_nodes": top_in_degree_nodes,
+            "top_out_degree_nodes": top_out_degree_nodes,
+        }
+
+    def format_graph_statistics_markdown(self) -> str:
+        """Render graph statistics as concise Markdown for the UI."""
+
+        stats = self.get_graph_statistics()
+        if not stats:
+            return ""
+
+        def _fmt_counter(counter_map: dict[str, int], limit: int = 12) -> str:
+            if not counter_map:
+                return "_None_"
+            items = sorted(counter_map.items(), key=lambda item: (-item[1], item[0]))[:limit]
+            return ", ".join(f"`{name}`: {count}" for name, count in items)
+
+        def _fmt_node_list(items: list[tuple[str, int]], limit: int = 5) -> str:
+            if not items:
+                return "_None_"
+            return ", ".join(f"`{node}` ({degree})" for node, degree in items[:limit])
+
+        avg_path = stats.get("average_shortest_path_largest_component")
+        avg_path_text = f"{avg_path:.2f}" if isinstance(avg_path, (int, float)) else "n/a"
+
+        lines = [
+            "**Graph Statistics**",
+            "",
+            f"- Nodes: `{stats['node_count']}`",
+            f"- Edges: `{stats['edge_count']}`",
+            f"- Node types: {_fmt_counter(stats['node_type_counts'])}",
+            f"- Edge types: {_fmt_counter(stats['edge_type_counts'])}",
+            f"- Edge names: {_fmt_counter(stats['edge_name_counts'])}",
+            (
+                f"- Degree (undirected): min `{stats['degree']['min']}`, max `{stats['degree']['max']}`, "
+                f"mean `{stats['degree']['mean']:.2f}`, median `{stats['degree']['median']:.2f}`"
+            ),
+            (
+                f"- In-degree: min `{stats['in_degree']['min']}`, max `{stats['in_degree']['max']}`, "
+                f"mean `{stats['in_degree']['mean']:.2f}`, median `{stats['in_degree']['median']:.2f}`"
+            ),
+            (
+                f"- Out-degree: min `{stats['out_degree']['min']}`, max `{stats['out_degree']['max']}`, "
+                f"mean `{stats['out_degree']['mean']:.2f}`, median `{stats['out_degree']['median']:.2f}`"
+            ),
+            (
+                f"- Density: `{stats['density']:.4f}` | Clustering: `{stats['average_clustering']:.4f}` | "
+                f"Transitivity: `{stats['transitivity']:.4f}`"
+            ),
+            (
+                f"- Components: `{stats['component_count']}` | Largest component: "
+                f"`{stats['largest_component_size']}` nodes (`{stats['largest_component_ratio']:.1%}` of graph)"
+            ),
+            (
+                f"- Avg shortest path (largest component): `{avg_path_text}` | "
+                f"Isolated nodes: `{stats['isolated_nodes']}` | Self-loops: `{stats['self_loop_count']}`"
+            ),
+            f"- Top hubs: {_fmt_node_list(stats['top_degree_nodes'])}",
+            f"- Top in-degree nodes: {_fmt_node_list(stats['top_in_degree_nodes'])}",
+            f"- Top out-degree nodes: {_fmt_node_list(stats['top_out_degree_nodes'])}",
+        ]
+        return "\n".join(lines)
 
     def _extract_text_from_webpage(self, path: str) -> str:
         """Aggregate visible text from stored HTML files.

@@ -537,7 +537,10 @@ with gr.Blocks() as block2:
         )
 
     # ----- Policies (Documents) View (filtered by selected provider) -----
-    def _build_policies_df(provider_filter: str | None = None):
+    def _build_policies_df(
+        provider_filter: str | None = None,
+        preferred_doc: PolicyDocumentInfo | None = None,
+    ):
         rows = []
         if not provider_filter:
             # No provider selected => empty table
@@ -575,9 +578,10 @@ with gr.Blocks() as block2:
                             if latest_result
                             else None
                         ),
+                        "_preferred": doc == preferred_doc,
                     }
                 )
-        return pd.DataFrame(
+        df = pd.DataFrame(
             rows,
             columns=[
                 "Date",
@@ -586,8 +590,13 @@ with gr.Blocks() as block2:
                 "Source",
                 "Status",
                 "Graph Kind",
+                "_preferred",
             ],
         )
+        if not df.empty and "_preferred" in df.columns:
+            df = df.sort_values(by=["_preferred"], ascending=False, kind="stable")
+            df = df.drop(columns=["_preferred"])
+        return df
 
     # Policies UI will be added after company_info & png_image definitions
     with gr.Row():
@@ -990,6 +999,7 @@ with gr.Blocks() as block2:
                 "",  # clear industry input
                 info_md,  # company_info
                 None,  # png_image (no image yet)
+                gr.update(value="", visible=False),  # graph_stats_md
                 gr.update(value="", visible=False),  # policy_errors
                 gr.update(value="", visible=False),  # policy_gdpr_report
                 pol_df,  # policies_df
@@ -1004,6 +1014,7 @@ with gr.Blocks() as block2:
             "",  # clear industry input
             gr.update(),  # company_info (no change)
             gr.update(),  # png_image (no change)
+            gr.update(),  # graph_stats_md (no change)
             gr.update(),  # policy_errors (no change)
             gr.update(),  # policy_gdpr_report (no change)
             gr.update(),  # policies_df (no change)
@@ -1030,6 +1041,7 @@ with gr.Blocks() as block2:
     with gr.Row():
         with gr.Column(scale=1):
             png_image = gr.Image(label="Knowledge Graph", visible=True, type="pil")
+            graph_stats_md = gr.Markdown("", visible=False)
         with gr.Column(scale=1):
             # Policies (documents) sidebar next to image (selected_provider state created earlier)
             with gr.Accordion("Provider Policies", open=False) as policies_accordion:
@@ -1297,6 +1309,7 @@ with gr.Blocks() as block2:
             new_provider_industry,
             company_info,
             png_image,
+            graph_stats_md,
             policy_errors,
             policy_gdpr_report,
             policies_df,
@@ -1634,15 +1647,31 @@ with gr.Blocks() as block2:
             return gr.update(value="", visible=False)
         return gr.update(value=report_md, visible=True)
 
+    def _format_graph_stats_update(doc: PolicyDocumentInfo | None):
+        if doc is None or not doc.has_graph():
+            return gr.update(value="", visible=False)
+        try:
+            stats_md = doc.format_graph_statistics_markdown()
+        except Exception as exc:
+            logger.warning("Failed to compute graph statistics for %s: %s", doc.output_dir, exc)
+            return gr.update(
+                value=f"**Graph Statistics**\n\nUnable to compute graph statistics: `{exc}`",
+                visible=True,
+            )
+        if not stats_md:
+            return gr.update(value="", visible=False)
+        return gr.update(value=stats_md, visible=True)
+
     def on_policy_select(selection: gr.SelectData, current_provider: str):
         """Policy selection handler using SelectData.index (Gradio 3.48.0)."""
 
+        default_graph_stats = gr.update(value="", visible=False)
         default_error = gr.update(value="", visible=False)
         default_gdpr_report = gr.update(value="", visible=False)
 
         # Guard: no selection
         if selection is None:
-            return "", gr.update(value=None), default_error, default_gdpr_report
+            return "", gr.update(value=None), default_graph_stats, default_error, default_gdpr_report
 
         try:
             # selection.index may be a tuple (row, col) or an int/list
@@ -1652,18 +1681,18 @@ with gr.Blocks() as block2:
                 row_idx = selection.index
             # invalid index
             if row_idx is None or row_idx == "":
-                return "", gr.update(value=None), default_error, default_gdpr_report
+                return "", gr.update(value=None), default_graph_stats, default_error, default_gdpr_report
         except Exception:
-            return "", gr.update(value=None), default_error, default_gdpr_report
+            return "", gr.update(value=None), default_graph_stats, default_error, default_gdpr_report
 
         # Rebuild the policies dataframe for the current provider and index into it
         df = _build_policies_df(current_provider)
         try:
             if row_idx >= len(df):
-                return "", gr.update(value=None), default_error, default_gdpr_report
+                return "", gr.update(value=None), default_graph_stats, default_error, default_gdpr_report
             row_series = df.iloc[int(row_idx)]
         except Exception:
-            return "", gr.update(value=None), default_error, default_gdpr_report
+            return "", gr.update(value=None), default_graph_stats, default_error, default_gdpr_report
 
         prov_name = (current_provider or "").strip() or "Unknown"
         policy_url = row_series.get("Policy URL", "")
@@ -1673,7 +1702,7 @@ with gr.Blocks() as block2:
 
         prov_obj = next((p for p in providers if p.name == prov_name), None)
         if prov_obj is None:
-            return info_md, gr.update(value=None), default_error, default_gdpr_report
+            return info_md, gr.update(value=None), default_graph_stats, default_error, default_gdpr_report
 
         # Prefer the exact selected document (URL + Date + Source)
         def _src_value(s):
@@ -1693,11 +1722,13 @@ with gr.Blocks() as block2:
             None,
         )
 
+        graph_stats_output = default_graph_stats
         error_output = default_error
         gdpr_output = default_gdpr_report
         image_obj = None
 
         if doc is not None:
+            graph_stats_output = _format_graph_stats_update(doc)
             error_output = gr.update(
                 value=_format_pipeline_errors_markdown(doc), visible=True
             )
@@ -1709,44 +1740,35 @@ with gr.Blocks() as block2:
                 except Exception:
                     image_obj = None
 
-        if image_obj is None:
-            for d in prov_obj.documents:
-                alt_png = os.path.join(d.output_dir, "knowledge_graph.png")
-                if os.path.exists(alt_png):
-                    try:
-                        image_obj = PILImage.open(alt_png)
-                        break
-                    except Exception:
-                        continue
-
         image_output = image_obj if image_obj is not None else gr.update(value=None)
-        return info_md, image_output, error_output, gdpr_output
+        return info_md, image_output, graph_stats_output, error_output, gdpr_output
 
     policies_df.select(
         fn=on_policy_select,
         inputs=[selected_provider],
-        outputs=[company_info, png_image, policy_errors, policy_gdpr_report],
+        outputs=[company_info, png_image, graph_stats_md, policy_errors, policy_gdpr_report],
     )
 
     def on_company_select(_df: pd.DataFrame, selection: gr.SelectData):
         """Provider/company selection handler using SelectData.index."""
         if selection is None:
-            return "", None, gr.update(value="", visible=False), gr.update(value="", visible=False), _build_policies_df(""), "", gr.update(open=False)
+            return "", None, gr.update(value="", visible=False), gr.update(value="", visible=False), gr.update(value="", visible=False), _build_policies_df(""), "", gr.update(open=False)
         try:
             if isinstance(selection.index, (list, tuple)):
                 row_idx = selection.index[0]
             else:
                 row_idx = selection.index
             if row_idx is None or row_idx == "" or row_idx >= len(_df):
-                return "", None, gr.update(value="", visible=False), gr.update(value="", visible=False), _build_policies_df(""), "", gr.update(open=False)
+                return "", None, gr.update(value="", visible=False), gr.update(value="", visible=False), gr.update(value="", visible=False), _build_policies_df(""), "", gr.update(open=False)
             row_series = _df.iloc[row_idx]
         except Exception:
-            return "", None, gr.update(value="", visible=False), gr.update(value="", visible=False), _build_policies_df(""), "", gr.update(open=False)
+            return "", None, gr.update(value="", visible=False), gr.update(value="", visible=False), gr.update(value="", visible=False), _build_policies_df(""), "", gr.update(open=False)
         company_name = row_series.get("Provider", "")
-        policies_df_val = _build_policies_df(company_name)
         # Show the first available policy image for the provider, if any
         first_image = None
+        graph_stats_output = gr.update(value="", visible=False)
         info_md: str
+        policies_df_val = _build_policies_df(company_name)
         provider_obj = next((p for p in providers if p.name == company_name), None)
         if provider_obj and provider_obj.documents:
             image_doc = None
@@ -1762,6 +1784,8 @@ with gr.Blocks() as block2:
             # Fallback to first doc if none has an image
             if image_doc is None:
                 image_doc = provider_obj.documents[0]
+            policies_df_val = _build_policies_df(company_name, preferred_doc=image_doc)
+            graph_stats_output = _format_graph_stats_update(image_doc)
             policy_url = image_doc.path
             info_md = f"<h1>{company_name}</h1><br><b>Policy:</b> {policy_url}"
         else:
@@ -1771,6 +1795,7 @@ with gr.Blocks() as block2:
         return (
             info_md,
             first_image,
+            graph_stats_output,
             gr.update(value="", visible=False),
             gr.update(value="", visible=False),
             policies_df_val,
@@ -1784,6 +1809,7 @@ with gr.Blocks() as block2:
         outputs=[
             company_info,
             png_image,
+            graph_stats_md,
             policy_errors,
             policy_gdpr_report,
             policies_df,
