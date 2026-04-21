@@ -1,3 +1,4 @@
+import html as html_lib
 import ipaddress
 import json
 import os
@@ -172,6 +173,194 @@ def visualize_graph(policy: PolicyDocumentInfo):
     plt.savefig(output_png, facecolor="white")
     plt.close()
     return output_png
+
+
+def generate_cytoscape_html(policy: PolicyDocumentInfo) -> str:
+    """Return a self-contained HTML string with an interactive cytoscape.js graph.
+
+    Loads graph-original.full.yml and renders nodes/edges using cytoscape.js
+    loaded from CDN. Returns an empty string if the YAML file is missing.
+    """
+    yml_file = os.path.join(policy.output_dir, "graph-original.full.yml")
+    if not os.path.exists(yml_file):
+        return ""
+
+    with open(yml_file, "r", encoding="utf-8") as fh:
+        data = yaml.safe_load(fh)
+
+    elements = []
+    for node in data.get("nodes", []):
+        node_id = node["id"]
+        node_type = node.get("type", "DATA")
+        elements.append({"data": {"id": node_id, "label": node_id, "type": node_type}})
+
+    for i, link in enumerate(data.get("links", [])):
+        elements.append({
+            "data": {
+                "id": f"e{i}",
+                "source": link["source"],
+                "target": link["target"],
+                "label": link.get("key", ""),
+            }
+        })
+
+    elements_json = json.dumps(elements)
+
+    # gr.HTML injects via innerHTML, so <script> tags are never executed by the
+    # browser. Wrapping in an <iframe srcdoc="..."> creates a fresh browsing
+    # context where the full document (including scripts) runs normally.
+    inner = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body {{ margin: 0; padding: 0; height: 100%; background: #fafafa; color: #333; }}
+  #cy {{ width: 100%; height: calc(100% - 28px); }}
+  #legend {{
+    font-size: 12px; padding: 4px 10px; line-height: 1.8;
+    background: rgba(255,255,255,0.9); display: inline-block;
+  }}
+  @media (prefers-color-scheme: dark) {{
+    html, body {{ background: #1e1e2e; color: #cdd6f4; }}
+    #legend {{ background: rgba(30,30,46,0.9); }}
+  }}
+</style>
+</head>
+<body>
+<div id="legend">
+  <span id="dot-data">&#9679;</span> DATA &nbsp;
+  <span id="dot-actor">&#9679;</span> ACTOR &nbsp;
+  <span id="dot-we">&#9679;</span> we
+</div>
+<div id="cy"></div>
+<script src="https://unpkg.com/cytoscape/dist/cytoscape.min.js"></script>
+<script>
+(function() {{
+  var THEMES = {{
+    light: {{
+      nodeBg:     '#74b9ff',
+      nodeText:   '#1a1a2e',
+      actorBg:    '#fab1a0',
+      weBg:       '#55efc4',
+      edgeLine:   '#636e72',
+      edgeText:   '#555555',
+      edgeLabelBg:'#ffffff',
+      subsum:     '#6c5ce7',
+      subsumBy:   '#a29bfe',
+      coref:      '#b2bec3',
+      dotData:    '#2980b9',
+      dotActor:   '#c0392b',
+      dotWe:      '#27ae60',
+    }},
+    dark: {{
+      nodeBg:     '#89b4fa',
+      nodeText:   '#1e1e2e',
+      actorBg:    '#f38ba8',
+      weBg:       '#a6e3a1',
+      edgeLine:   '#9399b2',
+      edgeText:   '#cdd6f4',
+      edgeLabelBg:'#1e1e2e',
+      subsum:     '#cba6f7',
+      subsumBy:   '#b4befe',
+      coref:      '#585b70',
+      dotData:    '#89b4fa',
+      dotActor:   '#f38ba8',
+      dotWe:      '#a6e3a1',
+    }},
+  }};
+
+  function buildStyle(t) {{
+    return [
+      {{
+        selector: 'node',
+        style: {{
+          'label': 'data(label)',
+          'font-size': '11px',
+          'text-valign': 'center',
+          'text-halign': 'center',
+          'background-color': t.nodeBg,
+          'color': t.nodeText,
+          'text-wrap': 'wrap',
+          'text-max-width': '100px',
+          'width': 'label',
+          'height': 'label',
+          'padding': '8px',
+          'shape': 'round-rectangle',
+        }}
+      }},
+      {{
+        selector: 'node[type = "ACTOR"]',
+        style: {{ 'background-color': t.actorBg, 'shape': 'ellipse' }}
+      }},
+      {{
+        selector: 'node[id = "we"]',
+        style: {{ 'background-color': t.weBg, 'font-weight': 'bold', 'shape': 'diamond' }}
+      }},
+      {{
+        selector: 'edge',
+        style: {{
+          'label': 'data(label)',
+          'font-size': '10px',
+          'color': t.edgeText,
+          'curve-style': 'bezier',
+          'target-arrow-shape': 'triangle',
+          'arrow-scale': 1.2,
+          'line-color': t.edgeLine,
+          'target-arrow-color': t.edgeLine,
+          'text-rotation': 'autorotate',
+          'text-background-color': t.edgeLabelBg,
+          'text-background-opacity': 0.8,
+          'text-background-padding': '2px',
+        }}
+      }},
+      {{
+        selector: 'edge[label = "SUBSUM"]',
+        style: {{ 'line-style': 'dashed', 'line-color': t.subsum, 'target-arrow-color': t.subsum }}
+      }},
+      {{
+        selector: 'edge[label = "SUBSUM_BY"]',
+        style: {{ 'line-style': 'dashed', 'line-color': t.subsumBy, 'target-arrow-color': t.subsumBy }}
+      }},
+      {{
+        selector: 'edge[label = "COREF"]',
+        style: {{ 'line-style': 'dotted', 'line-color': t.coref, 'target-arrow-color': t.coref }}
+      }},
+    ];
+  }}
+
+  function applyTheme(dark) {{
+    var t = dark ? THEMES.dark : THEMES.light;
+    cy.style(buildStyle(t)).update();
+    document.getElementById('dot-data').style.color  = t.dotData;
+    document.getElementById('dot-actor').style.color = t.dotActor;
+    document.getElementById('dot-we').style.color    = t.dotWe;
+  }}
+
+  var mq = window.matchMedia('(prefers-color-scheme: dark)');
+
+  var cy = cytoscape({{
+    container: document.getElementById('cy'),
+    elements: {elements_json},
+    style: buildStyle(mq.matches ? THEMES.dark : THEMES.light),
+    layout: {{
+      name: 'cose',
+      animate: false,
+      randomize: true,
+      nodeRepulsion: 8000,
+      idealEdgeLength: 100,
+      edgeElasticity: 200,
+    }},
+  }});
+
+  applyTheme(mq.matches);
+  mq.addEventListener('change', function(e) {{ applyTheme(e.matches); }});
+}})();
+</script>
+</body>
+</html>"""
+
+    srcdoc = html_lib.escape(inner, quote=True)
+    return f'<iframe srcdoc="{srcdoc}" style="width:100%;height:580px;border:1px solid #ccc;border-radius:6px;" frameborder="0"></iframe>'
 
 
 def score_policy(policy: PolicyDocumentInfo):

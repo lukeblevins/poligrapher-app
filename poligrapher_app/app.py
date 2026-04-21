@@ -8,7 +8,6 @@ from datetime import date, datetime, timezone
 import subprocess
 import sys
 from shutil import copy
-from PIL import Image as PILImage
 
 
 logging.basicConfig(
@@ -138,7 +137,7 @@ def get_providers(csv_file: str):
             else:
                 doc.load_errors_from_string(None)
             # Recompute from existing artifacts (source of truth)
-            doc.has_results = doc.has_graph() and doc.has_image()
+            doc.has_results = doc.has_graph()
             if doc.pipeline_failed:
                 doc.has_results = False
 
@@ -275,7 +274,7 @@ def _rescan_and_persist_status() -> int:
         for doc in provider.documents:
             if doc.source == DocumentCaptureSource.PDF:
                 functions.ensure_source_pdf_copy(doc.path, doc.output_dir)
-            new_status = doc.has_graph() and doc.has_image()
+            new_status = doc.has_graph()
             if new_status != doc.has_results:
                 doc.has_results = new_status
                 changed += 1
@@ -378,20 +377,12 @@ with gr.Blocks() as block1:
             os.makedirs(doc.output_dir, exist_ok=True)
             if not doc.has_graph():
                 functions.generate_graph(doc)
-            if doc.has_graph() and not doc.has_image():
-                try:
-                    functions.visualize_graph(doc)
-                except BaseException:
-                    # Keep going; image is optional for demo status
-                    pass
-            doc.has_results = doc.has_graph() and doc.has_image()
+            doc.has_results = doc.has_graph()
         except BaseException:
             doc.has_results = False
 
         status = "✅ ready" if doc.has_results else "❌ incomplete"
-        img_path = os.path.join(doc.output_dir, "knowledge_graph.png")
-        img_note = img_path if os.path.exists(img_path) else "(image missing)"
-        summary = f"Provider: {name}\nOutput: {doc.output_dir}\nStatus: {status}\nImage: {img_note}"
+        summary = f"Provider: {name}\nOutput: {doc.output_dir}\nStatus: {status}"
 
         return (
             summary,
@@ -474,6 +465,7 @@ with gr.Blocks() as block2:
     status_md = gr.Markdown("")
     # Selected provider shared state (defined early so top-level buttons can access it)
     selected_provider = gr.State("")
+    selected_doc_dir = gr.State("")
     # Show only relevant columns, including Status
     display_cols = [
         "Status",
@@ -998,13 +990,14 @@ with gr.Blocks() as block2:
                 "",  # clear name input
                 "",  # clear industry input
                 info_md,  # company_info
-                None,  # png_image (no image yet)
+                "",  # png_image (no graph yet)
                 gr.update(value="", visible=False),  # graph_stats_md
                 gr.update(value="", visible=False),  # policy_errors
                 gr.update(value="", visible=False),  # policy_gdpr_report
                 pol_df,  # policies_df
                 selected_name,  # selected_provider
                 gr.update(open=True),  # open policies accordion
+                "",  # selected_doc_dir
             )
         # No provider added; keep UI largely unchanged aside from table & closing modal
         return (
@@ -1013,13 +1006,14 @@ with gr.Blocks() as block2:
             "",  # clear name input
             "",  # clear industry input
             gr.update(),  # company_info (no change)
-            gr.update(),  # png_image (no change)
+            gr.update(value=""),  # png_image (no change)
             gr.update(),  # graph_stats_md (no change)
             gr.update(),  # policy_errors (no change)
             gr.update(),  # policy_gdpr_report (no change)
             gr.update(),  # policies_df (no change)
             gr.update(),  # selected_provider (no change)
             gr.update(),  # policies_accordion (no change)
+            gr.update(),  # selected_doc_dir (no change)
         )
 
     new_provider_btn.click(
@@ -1040,7 +1034,10 @@ with gr.Blocks() as block2:
         policy_gdpr_report = gr.Markdown("", visible=False)
     with gr.Row():
         with gr.Column(scale=1):
-            png_image = gr.Image(label="Knowledge Graph", visible=True, type="pil")
+            png_image = gr.HTML(label="Knowledge Graph", visible=True)
+            with gr.Row():
+                generate_png_btn = gr.Button("Download PNG", size="sm", variant="secondary")
+                png_download = gr.File(label="PNG", visible=False, interactive=False)
             graph_stats_md = gr.Markdown("", visible=False)
         with gr.Column(scale=1):
             # Policies (documents) sidebar next to image (selected_provider state created earlier)
@@ -1315,6 +1312,7 @@ with gr.Blocks() as block2:
             policies_df,
             selected_provider,
             policies_accordion,
+            selected_doc_dir,
         ],
     )
 
@@ -1406,28 +1404,18 @@ with gr.Blocks() as block2:
                 os.makedirs(doc.output_dir, exist_ok=True)
                 functions.generate_graph(doc)
                 logger.info("✅ Graph ready for %s", doc.path)
-            # Generate image if missing but graph exists
-            if doc.has_graph() and (not doc.has_image()):
-                try:
-                    functions.visualize_graph(doc)
-                    logger.info("🖼️ Image created for %s", doc.path)
-                except BaseException as e:
-                    logger.warning("⚠️ Image generation failed for %s: %s", doc.path, e)
-                    doc.record_error(f"Image generation failed: {e}")
             # Final status evaluation
-            success = doc.has_graph() and doc.has_image()
+            success = doc.has_graph()
             doc.has_results = success
             if success:
                 doc.clear_errors()
             else:
                 if not doc.has_graph():
                     doc.record_error("Graph YAML missing after generation attempt")
-                if doc.has_graph() and (not doc.has_image()):
-                    doc.record_error("Graph image missing after generation attempt")
             # Persist status change if success or partial
             _save_providers_to_csv()
             if not success:
-                logger.debug("Artifacts incomplete for %s (graph=%s, image=%s)", doc.path, doc.has_graph(), doc.has_image())
+                logger.debug("Artifacts incomplete for %s (graph=%s)", doc.path, doc.has_graph())
         except BaseException as e:
             logger.error("❌ Graph generation failed for %s: %s", doc.path, e)
             doc.has_results = False
@@ -1445,7 +1433,7 @@ with gr.Blocks() as block2:
             if doc.pipeline_failed or doc.has_results:
                 progress(idx / total, f"Skipping {doc.path} (up-to-date)")
                 continue
-            if doc.has_graph() and doc.has_image():
+            if doc.has_graph():
                 progress(idx / total, f"Skipping {doc.path} (artifacts present)")
                 continue
             progress(idx / total, f"Regenerating {doc.path}")
@@ -1469,7 +1457,7 @@ with gr.Blocks() as block2:
             if doc.pipeline_failed or doc.has_results:
                 progress(idx / total, f"Skipping {doc.path} (up-to-date)")
                 continue
-            if doc.has_graph() and doc.has_image():
+            if doc.has_graph():
                 progress(idx / total, f"Skipping {doc.path} (artifacts present)")
                 continue
             progress(idx / total, f"Regenerating {doc.path}")
@@ -1662,7 +1650,7 @@ with gr.Blocks() as block2:
             return gr.update(value="", visible=False)
         return gr.update(value=stats_md, visible=True)
 
-    def on_policy_select(selection: gr.SelectData, current_provider: str):
+    def on_policy_select(selection: gr.SelectData, current_provider: str, displayed_df: pd.DataFrame):
         """Policy selection handler using SelectData.index (Gradio 3.48.0)."""
 
         default_graph_stats = gr.update(value="", visible=False)
@@ -1671,7 +1659,7 @@ with gr.Blocks() as block2:
 
         # Guard: no selection
         if selection is None:
-            return "", gr.update(value=None), default_graph_stats, default_error, default_gdpr_report
+            return "", "", default_graph_stats, default_error, default_gdpr_report, ""
 
         try:
             # selection.index may be a tuple (row, col) or an int/list
@@ -1681,18 +1669,19 @@ with gr.Blocks() as block2:
                 row_idx = selection.index
             # invalid index
             if row_idx is None or row_idx == "":
-                return "", gr.update(value=None), default_graph_stats, default_error, default_gdpr_report
+                return "", "", default_graph_stats, default_error, default_gdpr_report, ""
         except Exception:
-            return "", gr.update(value=None), default_graph_stats, default_error, default_gdpr_report
+            return "", "", default_graph_stats, default_error, default_gdpr_report, ""
 
-        # Rebuild the policies dataframe for the current provider and index into it
-        df = _build_policies_df(current_provider)
+        # Index directly into the displayed dataframe to get the exact row the
+        # user clicked — rebuilding the df risks a different sort order if a
+        # preferred_doc was used when the table was first rendered.
         try:
-            if row_idx >= len(df):
-                return "", gr.update(value=None), default_graph_stats, default_error, default_gdpr_report
-            row_series = df.iloc[int(row_idx)]
+            if displayed_df is None or row_idx >= len(displayed_df):
+                return "", "", default_graph_stats, default_error, default_gdpr_report, ""
+            row_series = displayed_df.iloc[int(row_idx)]
         except Exception:
-            return "", gr.update(value=None), default_graph_stats, default_error, default_gdpr_report
+            return "", "", default_graph_stats, default_error, default_gdpr_report, ""
 
         prov_name = (current_provider or "").strip() or "Unknown"
         policy_url = row_series.get("Policy URL", "")
@@ -1702,7 +1691,7 @@ with gr.Blocks() as block2:
 
         prov_obj = next((p for p in providers if p.name == prov_name), None)
         if prov_obj is None:
-            return info_md, gr.update(value=None), default_graph_stats, default_error, default_gdpr_report
+            return info_md, "", default_graph_stats, default_error, default_gdpr_report, ""
 
         # Prefer the exact selected document (URL + Date + Source)
         def _src_value(s):
@@ -1725,65 +1714,54 @@ with gr.Blocks() as block2:
         graph_stats_output = default_graph_stats
         error_output = default_error
         gdpr_output = default_gdpr_report
-        image_obj = None
+        html_output = ""
 
+        doc_dir_output = ""
         if doc is not None:
             graph_stats_output = _format_graph_stats_update(doc)
             error_output = gr.update(
                 value=_format_pipeline_errors_markdown(doc), visible=True
             )
             gdpr_output = _format_gdpr_report_update(doc)
-            png_path = os.path.join(doc.output_dir, "knowledge_graph.png")
-            if os.path.exists(png_path):
-                try:
-                    image_obj = PILImage.open(png_path)
-                except Exception:
-                    image_obj = None
+            html_output = functions.generate_cytoscape_html(doc)
+            doc_dir_output = doc.output_dir
 
-        image_output = image_obj if image_obj is not None else gr.update(value=None)
-        return info_md, image_output, graph_stats_output, error_output, gdpr_output
+        return info_md, html_output, graph_stats_output, error_output, gdpr_output, doc_dir_output
 
     policies_df.select(
         fn=on_policy_select,
-        inputs=[selected_provider],
-        outputs=[company_info, png_image, graph_stats_md, policy_errors, policy_gdpr_report],
+        inputs=[selected_provider, policies_df],
+        outputs=[company_info, png_image, graph_stats_md, policy_errors, policy_gdpr_report, selected_doc_dir],
     )
 
     def on_company_select(_df: pd.DataFrame, selection: gr.SelectData):
         """Provider/company selection handler using SelectData.index."""
         if selection is None:
-            return "", None, gr.update(value="", visible=False), gr.update(value="", visible=False), gr.update(value="", visible=False), _build_policies_df(""), "", gr.update(open=False)
+            return "", "", gr.update(value="", visible=False), gr.update(value="", visible=False), gr.update(value="", visible=False), _build_policies_df(""), "", gr.update(open=False), ""
         try:
             if isinstance(selection.index, (list, tuple)):
                 row_idx = selection.index[0]
             else:
                 row_idx = selection.index
             if row_idx is None or row_idx == "" or row_idx >= len(_df):
-                return "", None, gr.update(value="", visible=False), gr.update(value="", visible=False), gr.update(value="", visible=False), _build_policies_df(""), "", gr.update(open=False)
+                return "", "", gr.update(value="", visible=False), gr.update(value="", visible=False), gr.update(value="", visible=False), _build_policies_df(""), "", gr.update(open=False), ""
             row_series = _df.iloc[row_idx]
         except Exception:
-            return "", None, gr.update(value="", visible=False), gr.update(value="", visible=False), gr.update(value="", visible=False), _build_policies_df(""), "", gr.update(open=False)
+            return "", "", gr.update(value="", visible=False), gr.update(value="", visible=False), gr.update(value="", visible=False), _build_policies_df(""), "", gr.update(open=False), ""
         company_name = row_series.get("Provider", "")
-        # Show the first available policy image for the provider, if any
-        first_image = None
         graph_stats_output = gr.update(value="", visible=False)
         info_md: str
         policies_df_val = _build_policies_df(company_name)
         provider_obj = next((p for p in providers if p.name == company_name), None)
+        first_html = ""
+        doc_dir_output = ""
         if provider_obj and provider_obj.documents:
-            image_doc = None
-            for d in provider_obj.documents:
-                img_path = os.path.join(d.output_dir, "knowledge_graph.png")
-                if os.path.exists(img_path):
-                    image_doc = d
-                    try:
-                        first_image = PILImage.open(img_path)
-                    except Exception:
-                        first_image = None
-                    break
-            # Fallback to first doc if none has an image
-            if image_doc is None:
-                image_doc = provider_obj.documents[0]
+            image_doc = next(
+                (d for d in provider_obj.documents if d.has_graph()),
+                provider_obj.documents[0],
+            )
+            first_html = functions.generate_cytoscape_html(image_doc)
+            doc_dir_output = image_doc.output_dir
             policies_df_val = _build_policies_df(company_name, preferred_doc=image_doc)
             graph_stats_output = _format_graph_stats_update(image_doc)
             policy_url = image_doc.path
@@ -1794,13 +1772,14 @@ with gr.Blocks() as block2:
             info_md = f"<h1>{company_name}</h1><br><b>Website:</b> {policy_url}"
         return (
             info_md,
-            first_image,
+            first_html,
             graph_stats_output,
             gr.update(value="", visible=False),
             gr.update(value="", visible=False),
             policies_df_val,
             company_name,
             gr.update(open=True),
+            doc_dir_output,
         )
 
     company_df.select(
@@ -1815,7 +1794,29 @@ with gr.Blocks() as block2:
             policies_df,
             selected_provider,
             policies_accordion,
+            selected_doc_dir,
         ],
+    )
+
+    def _generate_png_for_download(doc_dir: str):
+        if not doc_dir:
+            return gr.update(visible=False)
+        doc = next(
+            (d for p in providers for d in p.documents if d.output_dir == doc_dir),
+            None,
+        )
+        if doc is None or not doc.has_graph():
+            return gr.update(visible=False)
+        try:
+            png_path = functions.visualize_graph(doc)
+            return gr.update(value=png_path, visible=True)
+        except Exception:
+            return gr.update(visible=False)
+
+    generate_png_btn.click(
+        fn=_generate_png_for_download,
+        inputs=[selected_doc_dir],
+        outputs=[png_download],
     )
 
     # initial load (after client connects)
