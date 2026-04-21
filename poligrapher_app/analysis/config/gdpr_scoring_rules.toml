@@ -51,32 +51,71 @@ component_floor = 0.60
 [lists]
 generic_actor_terms = [
     "third party",
-    "third-party",
-    "service provider",
-    "service providers",
-    "processor",
-    "processors",
-    "vendor",
-    "vendors",
+    "third parties",
     "partner",
     "partners",
     "affiliate",
     "affiliates",
+    "vendor",
+    "vendors",
+    "service provider",
+    "service providers",
     "advertiser",
     "advertisers",
-    "analytics provider",
-    "marketing provider",
-    "marketing partner",
     "business partner",
-    "cloud provider",
-    "provider",
-    "social media",
-    "content provider",
-    "auth provider",
-    "unknown",
-    "unspecified_actor",
+    "contractor",
+    "UNSPECIFIED_ACTOR",
+    "unspecified",
 ]
-modal_terms = ["may", "might", "could", "can", "generally", "typically", "sometimes"]
+modal_terms = [
+    "may",
+    "might",
+    "could",
+    "possibly",
+    "generally",
+    "typically",
+    "sometimes",
+    "occasionally",
+    "usually",
+    "approximately",
+    "likely",
+    "potentially",
+    "certain circumstances",
+    "from time to time",
+    "in some cases",
+    "where appropriate",
+    "as needed",
+    "as applicable",
+]
+specific_entities = [
+    "google",
+    "facebook",
+    "meta",
+    "amazon",
+    "microsoft",
+    "apple",
+    "twitter",
+    "linkedin",
+    "salesforce",
+    "adobe",
+    "oracle",
+    "stripe",
+    "paypal",
+    "cloudflare",
+    "aws",
+    "azure",
+    "doubleclick",
+    "firebase",
+    "hubspot",
+    "marketo",
+    "mailchimp",
+    "twilio",
+    "segment",
+    "mixpanel",
+    "amplitude",
+    "hotjar",
+    "optimizely",
+]
 vague_terms = [
     "may",
     "might",
@@ -147,83 +186,89 @@ jurisdiction_terms = [
 [keywords]
 controller = [
     "controller",
+    "we",
+    "our",
     "company",
-    "we are",
-    "privacy notice",
-    "privacy policy",
+    "organization",
 ]
 dpo = [
     "data protection officer",
     "dpo",
-    "privacy office",
     "privacy officer",
     "privacy contact",
 ]
 purposes = [
     "purpose",
-    "purposes",
-    "we use",
-    "used for",
-    "processing purpose",
+    "reason",
+    "why we",
     "in order to",
+    "to provide",
+    "to improve",
 ]
 lawful_basis = [
+    "consent",
+    "legitimate interest",
+    "contract",
+    "legal obligation",
+    "vital interest",
+    "public task",
     "lawful basis",
     "legal basis",
-    "consent",
-    "contract",
-    "legitimate interest",
-    "legal obligation",
-    "vital interests",
-    "public task",
 ]
 recipients = [
     "recipient",
-    "recipients",
-    "third parties",
-    "third-party",
-    "partners",
-    "service providers",
-    "processors",
+    "third party",
+    "partner",
+    "affiliate",
+    "vendor",
+    "service provider",
+    "processor",
+    "share with",
 ]
 transfers = [
-    "international transfer",
-    "transfer outside",
-    "transfer outside the eea",
-    "cross-border transfer",
-    "eu standard contractual clauses",
-    "adequacy decision",
-    "transfer mechanism",
+    "transfer",
+    "cross-border",
+    "international",
+    "eu-us",
+    "adequacy",
+    "standard contractual",
+    "binding corporate",
+    "third country",
 ]
 retention = [
     "retain",
     "retention",
+    "delete",
+    "period",
+    "how long",
+    "duration",
+    "store",
     "storage period",
-    "keep your data",
-    "for as long as",
-    "retention period",
 ]
 rights = [
     "right to access",
-    "right to delete",
     "right to erasure",
     "right to rectification",
-    "right to object",
     "data portability",
-    "right to know",
-    "request access",
+    "right to object",
+    "withdraw consent",
+    "your rights",
+    "data subject right",
 ]
 adm = [
     "automated decision",
-    "automated decision-making",
     "profiling",
-    "article 22",
+    "automated processing",
+    "algorithm",
+    "machine learning",
 ]
 data_categories = [
-    "data categories",
-    "categories of personal data",
-    "personal information we collect",
-    "types of personal data",
+    "personal data",
+    "personal information",
+    "categories of data",
+    "types of data",
+    "data we collect",
+    "information we collect",
 ]
 consent = [
     "consent",
@@ -351,3 +396,116 @@ subprocessor = [
 
 [regex]
 response_timeframe = "\\b(?:within\\s+)?(?:30|45|60)\\s+days?\\b|\\bone\\s+month\\b"
+controller_identity = [
+    "data controller",
+    "controller of your",
+    "we are the controller",
+    "acting as.*controller",
+]
+dpo_contact = [
+    "data protection officer",
+    "dpo@",
+    "privacy@",
+    "privacy officer",
+]
+processing_purposes = [
+    "we use your.*(?:data|information).*(?:to|for)",
+    "purposes? (?:of|for) (?:processing|collecting)",
+    "why we (?:collect|process|use)",
+]
+lawful_basis = [
+    "legal basis",
+    "lawful basis",
+    "legitimate interest",
+    "consent",
+    "contractual necessity",
+    "legal obligation",
+    "performance of a contract",
+]
+recipients = [
+    "we (?:may )?share",
+    "disclose.*(?:to|with)",
+    "third part(?:y|ies)",
+    "recipients? of",
+    "service providers?",
+]
+international_transfers = [
+    "transfer.*(?:outside|abroad|internationally)",
+    "cross.border",
+    "eu.us",
+    "standard contractual clause",
+    "adequacy decision",
+]
+retention_period = [
+    "retain.*(?:for|until|period)",
+    "retention period",
+    "how long.*(?:keep|store|retain)",
+    "delet.*after",
+]
+data_subject_rights = [
+    "right to access",
+    "right to rectif",
+    "right to eras",
+    "right to restrict",
+    "right to data portability",
+    "right to object",
+    "withdraw.*consent",
+    "your rights",
+    "data subject rights",
+]
+automated_decisions = [
+    "automated decision",
+    "profiling",
+    "automated processing",
+    "algorithmic",
+]
+data_categories = [
+    "types of (?:personal )?(?:data|information)",
+    "categories of (?:personal )?(?:data|information)",
+    "(?:data|information) we collect",
+]
+consent_withdrawal = [
+    "withdraw.*consent",
+    "revoke.*consent",
+    "opt.out",
+    "unsubscribe",
+]
+special_categories = [
+    "sensitive.*(?:data|information)",
+    "health.*(?:data|information)",
+    "biometric",
+    "genetic",
+    "racial",
+    "ethnic",
+]
+privacy_by_design = [
+    "privacy by design",
+    "data protection by design",
+    "privacy by default",
+]
+right_to_know = [
+    "right to know",
+    "right to request",
+    "categories of personal information",
+]
+opt_out = [
+    "do not sell",
+    "opt.out",
+    "right to opt",
+    "do not share my",
+]
+right_to_delete = [
+    "right to delet",
+    "right to erasure",
+    "right to be forgotten",
+    "request deletion",
+]
+do_not_sell_link = [
+    "do not sell my personal information",
+    "do not sell or share",
+]
+ccpa_categories = [
+    "categories of personal information",
+    "categories of sources",
+    "business or commercial purpose",
+]
