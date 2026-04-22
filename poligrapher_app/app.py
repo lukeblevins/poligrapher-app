@@ -162,6 +162,16 @@ def get_providers(csv_file: str):
                         kind=graph_kind,
                     )
                 )
+            gdpr_score_val = row.get("GDPR Score")
+            if gdpr_score_val is not None and pd.notna(gdpr_score_val):
+                provider.add_result(
+                    PolicyAnalysisResult(
+                        document=doc,
+                        score=float(gdpr_score_val),
+                        kind=graph_kind,
+                        analysis_type="gdpr",
+                    )
+                )
         providers.append(provider)
     # Persist refreshed statuses
     _save_providers_to_csv()
@@ -171,10 +181,17 @@ def _providers_to_dataframe() -> pd.DataFrame:
     rows = []
     for provider in providers:
         for doc in provider.documents:
-            # Use the most recent result for this document (append order)
-            result = next(
-                (r for r in reversed(provider.results) if r.document == doc), None
+            # Pick the most recent result per analysis type independently so
+            # both scores survive a combined scoring run.
+            basic_result = next(
+                (r for r in reversed(provider.results) if r.document == doc and r.analysis_type != "gdpr"),
+                None,
             )
+            gdpr_result = next(
+                (r for r in reversed(provider.results) if r.document == doc and r.analysis_type == "gdpr"),
+                None,
+            )
+            canonical = basic_result or gdpr_result
             rows.append(
                 {
                     "Provider": provider.name,
@@ -183,10 +200,11 @@ def _providers_to_dataframe() -> pd.DataFrame:
                     "Source": getattr(doc.source, "value", doc.source),
                     "Date": doc.capture_date,
                     "Status": bool(doc.has_results),
-                    "Score": getattr(result, "score", None),
+                    "Score": getattr(basic_result, "score", None),
+                    "GDPR Score": getattr(gdpr_result, "score", None),
                     "Graph Kind": (
-                        getattr(getattr(result, "kind", None), "value", None)
-                        if result
+                        getattr(getattr(canonical, "kind", None), "value", None)
+                        if canonical
                         else None
                     ),
                     "Pipeline Status": doc.pipeline_status.value,
@@ -203,6 +221,7 @@ def _providers_to_dataframe() -> pd.DataFrame:
             "Date",
             "Status",
             "Score",
+            "GDPR Score",
             "Graph Kind",
             "Pipeline Status",
             "Pipeline Errors",
@@ -234,6 +253,7 @@ def _save_providers_to_csv(path: str = CSV_PATH, allow_empty: bool = False):
             "Date",
             "Status",
             "Score",
+            "GDPR Score",
             "Graph Kind",
             "Pipeline Status",
             "Pipeline Errors",
@@ -595,8 +615,7 @@ with gr.Blocks() as block2:
         new_provider_btn = gr.Button("New Provider")
         import_btn = gr.Button("Import")
         refresh_all_btn = gr.Button("Refresh")
-        score_btn = gr.Button("Score")
-        score_gdpr_btn = gr.Button("Score GDPR", variant="primary")
+        run_scoring_btn = gr.Button("Run Scoring", variant="primary")
     import_summary_md = gr.Markdown("", visible=False)
     with gr.Group(visible=False, elem_id="add-provider-modal") as add_provider_modal:
         with gr.Column(elem_classes="modal-card"):
@@ -1467,8 +1486,21 @@ with gr.Blocks() as block2:
         progress(1, "Refresh complete")
         return _build_display_df(curr_provider), _build_policies_df(curr_provider)
 
-    def score_all(curr_provider, progress=gr.Progress()):
-        progress(0, "Starting...")
+    def _clear_company_selection():
+        return (
+            "",
+            "",
+            gr.update(visible=False),
+            gr.update(visible=False),
+            gr.update(visible=False),
+            gr.update(open=False, visible=False),
+            "",
+            "",
+            gr.update(visible=False),
+        )
+
+    def run_scoring(progress=gr.Progress()):
+        progress(0, "Scoring policies...")
         for company in progress.tqdm(providers, desc="Scoring Policies"):
             for policy in company.documents:
                 score = functions.score_policy(policy)
@@ -1484,12 +1516,7 @@ with gr.Blocks() as block2:
                     logger.info(
                         "Scored %s: score=%s, kind=%s", policy.path, score, kind
                     )
-        _save_providers_to_csv()
-        progress(100, "Completed.")
-        return _build_display_df(curr_provider), _build_policies_df(curr_provider)
-
-    def score_all_gdpr(curr_provider, progress=gr.Progress()):
-        progress(0, "Starting GDPR analysis...")
+        progress(0, "Running GDPR analysis...")
         for company in progress.tqdm(providers, desc="Scoring GDPR Policies"):
             for policy in company.documents:
                 score = functions.score_policy_with_gdpr(policy)
@@ -1509,13 +1536,11 @@ with gr.Blocks() as block2:
                         policy.path,
                         score,
                         kind,
-                        (
-                            policy.latest_gdpr_result or {}
-                        ).get("tier"),
+                        (policy.latest_gdpr_result or {}).get("tier"),
                     )
         _save_providers_to_csv()
-        progress(100, "GDPR analysis completed.")
-        return _build_display_df(curr_provider), _build_policies_df(curr_provider)
+        progress(100, "Completed.")
+        return _build_display_df(), _build_policies_df()
 
     refresh_policies.click(
         _refresh_provider, inputs=[selected_provider], outputs=[company_df, policies_df]
@@ -1528,15 +1553,23 @@ with gr.Blocks() as block2:
         queue=True,
     )
 
-    score_btn.click(
-        score_all,
-        inputs=[selected_provider],
-        outputs=[company_df, policies_df],
-        queue=True,
-    )
-    score_gdpr_btn.click(
-        score_all_gdpr,
-        inputs=[selected_provider],
+    run_scoring_btn.click(
+        _clear_company_selection,
+        inputs=[],
+        outputs=[
+            company_info,
+            png_image,
+            graph_stats_md,
+            policy_errors,
+            policy_gdpr_report,
+            policies_accordion,
+            selected_provider,
+            selected_doc_dir,
+            generate_png_btn,
+        ],
+    ).then(
+        run_scoring,
+        inputs=[],
         outputs=[company_df, policies_df],
         queue=True,
     )
