@@ -509,3 +509,15 @@ ccpa_categories = [
     "categories of sources",
     "business or commercial purpose",
 ]
+claims_no_share = [
+    "we do not (?:sell|share|disclose|transfer)",
+    "we never (?:sell|share|disclose|transfer)",
+]
+mentions_sharing = [
+    "we (?:may )?(?:share|disclose|transfer)",
+    "we share .* with",
+]
+claims_no_sell = [
+    "we do not sell",
+    "we never sell",
+]

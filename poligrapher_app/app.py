@@ -1029,19 +1029,9 @@ with gr.Blocks() as block2:
     with gr.Row():
         company_info = gr.Markdown("", visible=True)
     with gr.Row():
-        policy_errors = gr.Markdown("", visible=False)
-    with gr.Row():
-        policy_gdpr_report = gr.Markdown("", visible=False)
-    with gr.Row():
         with gr.Column(scale=1):
-            png_image = gr.HTML(label="Knowledge Graph", visible=True)
-            with gr.Row():
-                generate_png_btn = gr.Button("Download PNG", size="sm", variant="secondary")
-                png_download = gr.File(label="PNG", visible=False, interactive=False)
-            graph_stats_md = gr.Markdown("", visible=False)
-        with gr.Column(scale=1):
-            # Policies (documents) sidebar next to image (selected_provider state created earlier)
-            with gr.Accordion("Provider Policies", open=False) as policies_accordion:
+            # Policies (documents) sidebar — left nav, visible once a company is selected
+            with gr.Accordion("Provider Policies", open=False, visible=False) as policies_accordion:
                 with gr.Row():
                     policies_df = gr.Dataframe(
                         value=_build_policies_df(), label="Policies", interactive=False
@@ -1053,36 +1043,47 @@ with gr.Blocks() as block2:
                         "Open Folder", variant="secondary"
                     )
                 folder_open_msg = gr.Markdown(visible=True, value="")
-            # Add Policy Modal (initially hidden)
-            with gr.Group(
-                visible=False, elem_id="add-policy-modal"
-            ) as add_policy_modal:
-                with gr.Column(elem_classes="modal-card"):
-                    gr.Markdown("### Add Policy to Provider")
-                    new_policy_url = gr.Textbox(
-                        label="Policy URL", placeholder="https://...", visible=True
-                    )
-                    # Custom source selector: webpage vs remote PDF (URL) vs local PDF (upload)
-                    new_policy_source = gr.Dropdown(
-                        choices=[
-                            "webpage",  # URL of a webpage
-                            "pdf_remote",  # URL pointing directly to a PDF
-                            "pdf_local",  # Locally uploaded PDF file
-                        ],
-                        label="Source Type",
-                        value="webpage",
-                    )
-                    new_policy_file = gr.File(
-                        label="Upload File (PDF/HTML)",
-                        file_types=[".pdf", ".html", ".htm"],
-                        visible=False,
-                    )
-                    with gr.Row():
-                        new_policy_date = gr.Textbox(label="Capture Date (YYYY-MM-DD)")
-                        new_policy_today = gr.Button("Today")
-                    with gr.Row():
-                        save_new_policy = gr.Button("Save", variant="primary")
-                        cancel_new_policy = gr.Button("Cancel")
+        with gr.Column(scale=2):
+            png_image = gr.HTML(label="Knowledge Graph", visible=True)
+            with gr.Row():
+                generate_png_btn = gr.Button("Download PNG", size="sm", variant="secondary", visible=False)
+                png_download = gr.File(label="PNG", visible=False, interactive=False)
+    with gr.Row():
+        graph_stats_md = gr.Markdown("", visible=False)
+    with gr.Row():
+        policy_gdpr_report = gr.Markdown("", visible=False)
+    with gr.Row():
+        policy_errors = gr.Markdown("", visible=False)
+    # Add Policy Modal (initially hidden)
+    with gr.Group(
+        visible=False, elem_id="add-policy-modal"
+    ) as add_policy_modal:
+        with gr.Column(elem_classes="modal-card"):
+            gr.Markdown("### Add Policy to Provider")
+            new_policy_url = gr.Textbox(
+                label="Policy URL", placeholder="https://...", visible=True
+            )
+            # Custom source selector: webpage vs remote PDF (URL) vs local PDF (upload)
+            new_policy_source = gr.Dropdown(
+                choices=[
+                    "webpage",  # URL of a webpage
+                    "pdf_remote",  # URL pointing directly to a PDF
+                    "pdf_local",  # Locally uploaded PDF file
+                ],
+                label="Source Type",
+                value="webpage",
+            )
+            new_policy_file = gr.File(
+                label="Upload File (PDF/HTML)",
+                file_types=[".pdf", ".html", ".htm"],
+                visible=False,
+            )
+            with gr.Row():
+                new_policy_date = gr.Textbox(label="Capture Date (YYYY-MM-DD)")
+                new_policy_today = gr.Button("Today")
+            with gr.Row():
+                save_new_policy = gr.Button("Save", variant="primary")
+                cancel_new_policy = gr.Button("Cancel")
 
     def _show_add_policy_modal(provider_name: str):
         if not provider_name:
@@ -1651,37 +1652,38 @@ with gr.Blocks() as block2:
         return gr.update(value=stats_md, visible=True)
 
     def on_policy_select(selection: gr.SelectData, current_provider: str, displayed_df: pd.DataFrame):
-        """Policy selection handler using SelectData.index (Gradio 3.48.0)."""
+        """Policy selection handler — identifies rows by cell value to survive column sorts."""
 
         default_graph_stats = gr.update(value="", visible=False)
         default_error = gr.update(value="", visible=False)
         default_gdpr_report = gr.update(value="", visible=False)
+        _no_selection = ("", "", default_graph_stats, default_error, default_gdpr_report, "")
 
-        # Guard: no selection
         if selection is None:
-            return "", "", default_graph_stats, default_error, default_gdpr_report, ""
+            return _no_selection
 
+        # Identify the clicked row by matching the clicked cell's value against its
+        # column in the stored df. Using selection.index for positional lookup breaks
+        # after the user sorts the table: the UI sort order is client-side only and
+        # does not update the df state held by Gradio.
         try:
-            # selection.index may be a tuple (row, col) or an int/list
-            if isinstance(selection.index, (list, tuple)):
-                row_idx = selection.index[0]
-            else:
-                row_idx = selection.index
-            # invalid index
-            if row_idx is None or row_idx == "":
-                return "", "", default_graph_stats, default_error, default_gdpr_report, ""
+            col_idx = (
+                selection.index[1]
+                if isinstance(selection.index, (list, tuple)) and len(selection.index) > 1
+                else 0
+            )
+            if displayed_df is None or displayed_df.empty:
+                return _no_selection
+            col_name = displayed_df.columns[col_idx] if col_idx < len(displayed_df.columns) else None
+            if col_name is None:
+                return _no_selection
+            cell_value = str(selection.value) if selection.value is not None else ""
+            matches = displayed_df[displayed_df[col_name].astype(str) == cell_value]
+            if matches.empty:
+                return _no_selection
+            row_series = matches.iloc[0]
         except Exception:
-            return "", "", default_graph_stats, default_error, default_gdpr_report, ""
-
-        # Index directly into the displayed dataframe to get the exact row the
-        # user clicked — rebuilding the df risks a different sort order if a
-        # preferred_doc was used when the table was first rendered.
-        try:
-            if displayed_df is None or row_idx >= len(displayed_df):
-                return "", "", default_graph_stats, default_error, default_gdpr_report, ""
-            row_series = displayed_df.iloc[int(row_idx)]
-        except Exception:
-            return "", "", default_graph_stats, default_error, default_gdpr_report, ""
+            return _no_selection
 
         prov_name = (current_provider or "").strip() or "Unknown"
         policy_url = row_series.get("Policy URL", "")
@@ -1736,18 +1738,19 @@ with gr.Blocks() as block2:
 
     def on_company_select(_df: pd.DataFrame, selection: gr.SelectData):
         """Provider/company selection handler using SelectData.index."""
+        _no_selection = ("", "", gr.update(value="", visible=False), gr.update(value="", visible=False), gr.update(value="", visible=False), _build_policies_df(""), "", gr.update(open=False, visible=False), "", gr.update(visible=False))
         if selection is None:
-            return "", "", gr.update(value="", visible=False), gr.update(value="", visible=False), gr.update(value="", visible=False), _build_policies_df(""), "", gr.update(open=False), ""
+            return _no_selection
         try:
             if isinstance(selection.index, (list, tuple)):
                 row_idx = selection.index[0]
             else:
                 row_idx = selection.index
             if row_idx is None or row_idx == "" or row_idx >= len(_df):
-                return "", "", gr.update(value="", visible=False), gr.update(value="", visible=False), gr.update(value="", visible=False), _build_policies_df(""), "", gr.update(open=False), ""
+                return _no_selection
             row_series = _df.iloc[row_idx]
         except Exception:
-            return "", "", gr.update(value="", visible=False), gr.update(value="", visible=False), gr.update(value="", visible=False), _build_policies_df(""), "", gr.update(open=False), ""
+            return _no_selection
         company_name = row_series.get("Provider", "")
         graph_stats_output = gr.update(value="", visible=False)
         info_md: str
@@ -1778,8 +1781,9 @@ with gr.Blocks() as block2:
             gr.update(value="", visible=False),
             policies_df_val,
             company_name,
-            gr.update(open=True),
+            gr.update(open=True, visible=True),
             doc_dir_output,
+            gr.update(visible=True),
         )
 
     company_df.select(
@@ -1795,6 +1799,7 @@ with gr.Blocks() as block2:
             selected_provider,
             policies_accordion,
             selected_doc_dir,
+            generate_png_btn,
         ],
     )
 

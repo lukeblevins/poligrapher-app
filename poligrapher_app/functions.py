@@ -419,6 +419,7 @@ def format_gdpr_report_markdown(policy: PolicyDocumentInfo) -> str:
     severity_counts = result.get("severity_counts", {})
     flags = result.get("flags", [])
     grouped = result.get("violations_by_rq", {})
+    feature_summary = result.get("feature_summary", {})
 
     lines = [
         "**GDPR Compliance Report**",
@@ -438,6 +439,21 @@ def format_gdpr_report_markdown(policy: PolicyDocumentInfo) -> str:
 
     if flags:
         lines.append(f"- Flags: {', '.join(flags)}")
+
+    if feature_summary:
+        lines.append(
+            "- Text features: "
+            f"`{feature_summary.get('n_words', 0)}` words, "
+            f"`{feature_summary.get('n_sentences', 0)}` sentences, "
+            f"passive ratio `{feature_summary.get('passive_ratio', 0):.3f}`, "
+            f"CCPA coverage `{feature_summary.get('ccpa_coverage', 0):.3f}`"
+        )
+        lines.append(
+            "- Readability: "
+            f"FK `{feature_summary.get('flesch_kincaid', 0):.2f}`, "
+            f"GF `{feature_summary.get('gunning_fog', 0):.2f}`, "
+            f"FRE `{feature_summary.get('flesch_reading_ease', 0):.2f}`"
+        )
 
     lines.append("")
     lines.append("**Top Violations**")

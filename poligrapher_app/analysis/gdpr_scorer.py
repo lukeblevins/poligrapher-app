@@ -8,6 +8,11 @@ from typing import Any
 import networkx as nx
 import toml
 
+try:
+    import textstat
+except ImportError:  # pragma: no cover - covered by runtime fallback tests
+    textstat = None
+
 
 class GDPRScorer:
     """Graph-aware GDPR compliance scorer derived from the research PDF.
@@ -127,7 +132,7 @@ class GDPRScorer:
     ) -> dict[str, Any]:
         simple_graph = self._simple_graph(graphml_graph)
         text = self._normalize_text(policy_text)
-        tokens = re.findall(r"[a-z0-9']+", text)
+        text_features = self._extract_text_features(text)
         collect_edges = self._collect_edges(yaml_graph)
         subsum_edges = self._subsum_edges(yaml_graph)
         data_nodes = [
@@ -195,7 +200,7 @@ class GDPRScorer:
         vague_terms = self._terms("lists", "vague_terms")
         modal_count = sum(text.count(term) for term in modal_terms)
         vague_count = sum(text.count(term) for term in vague_terms)
-        token_count = max(len(tokens), 1)
+        token_count = max(text_features["n_words"], 1)
         vagueness_ratio = vague_count / token_count
         purpose_attribution_ratio = (
             purposeful_collect_edges / collect_edge_count if collect_edge_count else 0.0
@@ -258,7 +263,10 @@ class GDPRScorer:
             text,
             self._terms("keywords", "collection_denial"),
         )
-        sharing_denial_claim = self._contains_any(
+        claims_no_share = self._matches_regex_group(text, "claims_no_share")
+        mentions_sharing = self._matches_regex_group(text, "mentions_sharing")
+        claims_no_sell = self._matches_regex_group(text, "claims_no_sell")
+        sharing_denial_claim = claims_no_share or self._contains_any(
             text,
             self._terms("keywords", "sharing_denial"),
         )
@@ -322,6 +330,21 @@ class GDPRScorer:
             text,
             self._terms("keywords", "subprocessor"),
         )
+        ccpa_categories = (
+            "right_to_know",
+            "opt_out",
+            "right_to_delete",
+            "do_not_sell_link",
+            "ccpa_categories",
+        )
+        ccpa_found = {
+            category: self._matches_regex_group(text, category)
+            for category in ccpa_categories
+        }
+        ccpa_coverage = sum(1 for found in ccpa_found.values() if found) / max(
+            len(ccpa_found),
+            1,
+        )
 
         return {
             "policy_text": text,
@@ -349,6 +372,14 @@ class GDPRScorer:
             "subsum_edge_count": subsum_edge_count,
             "purposeful_collect_edges": purposeful_collect_edges,
             "purpose_attribution_ratio": purpose_attribution_ratio,
+            "n_words": text_features["n_words"],
+            "n_sentences": text_features["n_sentences"],
+            "avg_sentence_length": text_features["avg_sentence_length"],
+            "flesch_kincaid": text_features["flesch_kincaid"],
+            "gunning_fog": text_features["gunning_fog"],
+            "flesch_reading_ease": text_features["flesch_reading_ease"],
+            "passive_count": text_features["passive_count"],
+            "passive_ratio": text_features["passive_ratio"],
             "vagueness_ratio": vagueness_ratio,
             "modal_term_count": modal_count,
             "edge_node_ratio": edge_node_ratio,
@@ -371,6 +402,9 @@ class GDPRScorer:
             "deletion_present": deletion_present,
             "minimization_claim": minimization_claim,
             "collection_denial_claim": collection_denial_claim,
+            "claims_no_share": claims_no_share,
+            "mentions_sharing": mentions_sharing,
+            "claims_no_sell": claims_no_sell,
             "sharing_denial_claim": sharing_denial_claim,
             "sale_disclosure_present": sale_disclosure_present,
             "legitimate_interest_present": legitimate_interest_present,
@@ -389,6 +423,8 @@ class GDPRScorer:
             "data_broker_present": data_broker_present,
             "subprocessor_present": subprocessor_present,
             "transfer_jurisdiction_mentions": transfer_jurisdiction_mentions,
+            "ccpa_found": ccpa_found,
+            "ccpa_coverage": ccpa_coverage,
         }
 
     def _detect_rq1_disclosure(self, features: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1127,10 +1163,18 @@ class GDPRScorer:
         return {
             "node_count": features["node_count"],
             "edge_count": features["edge_count"],
+            "n_words": features["n_words"],
+            "n_sentences": features["n_sentences"],
+            "avg_sentence_length": round(features["avg_sentence_length"], 2),
             "density": round(features["density"], 3),
             "coverage_ratio": round(features["coverage_ratio"], 3),
+            "ccpa_coverage": round(features["ccpa_coverage"], 3),
             "specificity_ratio": round(features["specificity_ratio"], 3),
             "vagueness_ratio": round(features["vagueness_ratio"], 3),
+            "passive_ratio": round(features["passive_ratio"], 3),
+            "flesch_kincaid": round(features["flesch_kincaid"], 2),
+            "gunning_fog": round(features["gunning_fog"], 2),
+            "flesch_reading_ease": round(features["flesch_reading_ease"], 2),
             "purpose_attribution_ratio": round(features["purpose_attribution_ratio"], 3),
             "component_count": features["component_count"],
             "largest_component_ratio": round(features["largest_component_ratio"], 3),
@@ -1295,8 +1339,61 @@ class GDPRScorer:
     def _contains_any(self, text: str, phrases: list[str]) -> bool:
         return any(phrase in text for phrase in phrases)
 
+    def _extract_text_features(self, text: str) -> dict[str, Any]:
+        tokens = re.findall(r"[a-z0-9']+", text)
+        sentences = [
+            sentence.strip()
+            for sentence in re.split(r"[.!?]+", text)
+            if len(sentence.strip()) > 10
+        ]
+        n_words = len(tokens)
+        n_sentences = len(sentences)
+        avg_sentence_length = n_words / max(n_sentences, 1)
+        passive_count = len(
+            re.findall(
+                r"\b(?:is|are|was|were|been|be|being)\s+\w+ed\b",
+                text,
+            )
+        )
+        passive_ratio = passive_count / max(n_sentences, 1)
+        return {
+            "tokens": tokens,
+            "n_words": n_words,
+            "n_sentences": n_sentences,
+            "avg_sentence_length": avg_sentence_length,
+            "passive_count": passive_count,
+            "passive_ratio": passive_ratio,
+            **self._readability_metrics(text),
+        }
+
+    def _readability_metrics(self, text: str) -> dict[str, float]:
+        if textstat is None:
+            return {
+                "flesch_kincaid": 0.0,
+                "gunning_fog": 0.0,
+                "flesch_reading_ease": 0.0,
+            }
+        try:
+            return {
+                "flesch_kincaid": float(textstat.flesch_kincaid_grade(text)),
+                "gunning_fog": float(textstat.gunning_fog(text)),
+                "flesch_reading_ease": float(textstat.flesch_reading_ease(text)),
+            }
+        except Exception:
+            return {
+                "flesch_kincaid": 0.0,
+                "gunning_fog": 0.0,
+                "flesch_reading_ease": 0.0,
+            }
+
     def _count_keyword_hits(self, text: str, keywords: list[str]) -> int:
         return sum(1 for keyword in keywords if keyword in text)
+
+    def _matches_regex_group(self, text: str, key: str) -> bool:
+        patterns = self.rules.get("regex", {}).get(key, [])
+        if isinstance(patterns, str):
+            patterns = [patterns]
+        return any(re.search(pattern, text) for pattern in patterns)
 
     def _has_tracking_indicator(
         self,
