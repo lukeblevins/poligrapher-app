@@ -18,14 +18,6 @@ from poligrapher_app.policy_analysis import (
 )
 from poligrapher_app.analysis.privacy_scorer import PrivacyScorer
 
-from poligrapher.scripts import (
-    build_graph,
-    html_crawler,
-    pdf_parser,
-    run_annotators,
-    init_document,
-)
-
 logger = logger.getLogger(__name__)
 
 
@@ -527,6 +519,14 @@ def generate_graph_from_html(path, output_folder, capture_pdf: bool):
         logger.info("Verified remote URL accessibility: %s", path)
 
     os.makedirs(output_folder, exist_ok=True)
+
+    from poligrapher.scripts import (
+        build_graph,
+        html_crawler,
+        pdf_parser,
+        run_annotators,
+        init_document,
+    )
 
     steps: list[tuple[str, Callable[[], None]]] = []
 

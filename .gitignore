@@ -4,6 +4,12 @@ __pycache__/
 dist/
 build/
 .env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
 .pytest_cache/
 .coverage
 outputs/
@@ -11,3 +17,9 @@ flagged/
 gradio_cached_examples/
 *.db
 *.sqlite3
+*.DS_Store
+*/extra-data/entity_info.json
+*/extra-data/named_entity_recognition/
+*/extra-data/purpose_classification/
+output/*
+.claude/*

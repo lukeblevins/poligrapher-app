@@ -1877,4 +1877,4 @@ with gr.Blocks() as block2:
 if __name__ == "__main__":
     app = gr.TabbedInterface([block1, block2], tab_names=["Demo", "Companies"])
     app.queue(concurrency_count=2)
-    app.launch(share=False)
+    app.launch(share=False, server_name="127.0.0.1")

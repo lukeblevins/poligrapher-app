@@ -47,8 +47,6 @@ from bs4 import BeautifulSoup
 import networkx as nx
 import pymupdf4llm
 
-from poligrapher.graph_utils import yaml_load_graph
-
 class DocumentCaptureSource(Enum):
     """Origin / capture modality of a policy.
 
@@ -226,6 +224,7 @@ class PolicyDocumentInfo:
         yaml_path = self.get_graph_yaml_path()
         if not yaml_path:
             raise FileNotFoundError(f"No graph YAML file found in {self.output_dir}")
+        from poligrapher.graph_utils import yaml_load_graph
         with open(yaml_path, "r", encoding="utf-8") as fin:
             return yaml_load_graph(fin)
 
