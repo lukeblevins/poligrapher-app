@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 import gradio as gr
@@ -30,7 +31,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 # Global in‑memory provider registry
 providers: list[PolicyDocumentProvider] = []
-CSV_PATH = "./poligrapher/gradio_app/policy_list.csv"
+CSV_PATH = str(Path(__file__).parent / "policy_list.csv")
 
 # CSV import column definitions
 IMPORT_COLUMNS = [

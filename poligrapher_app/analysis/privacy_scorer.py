@@ -15,14 +15,14 @@ class PrivacyScorer:
 
     def load_default_rules(self) -> Dict:
         """Load default scoring rules from config file"""
-        rules_path = Path("poligrapher/analysis/config/scoring_rules.toml")
+        rules_path = Path(__file__).parent / "config" / "scoring_rules.toml"
         if not rules_path.exists():
             raise FileNotFoundError(f"Scoring rules not found at: {rules_path}")
         return toml.load(rules_path)
 
     def load_scoring_criteria(self) -> Dict:
         """Load detailed scoring criteria"""
-        criteria_path = Path("poligrapher/analysis/criteria/scoring_criteria.toml")
+        criteria_path = Path(__file__).parent / "criteria" / "scoring_criteria.toml"
         if not criteria_path.exists():
             raise FileNotFoundError(f"Scoring criteria not found at: {criteria_path}")
         return toml.load(criteria_path)
