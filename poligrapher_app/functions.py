@@ -387,7 +387,7 @@ def score_policy_with_gdpr(policy: PolicyDocumentInfo):
         logger.error("No graph was found to score document at %s", policy.output_dir)
         return None
     else:
-        from poligrapher_app.analysis.gdpr_scorer import GDPRScorer
+        from gdpr_policy_scorer import GDPRScorer
 
         artifacts = policy.load_graph_artifacts()
         scorer = GDPRScorer()
