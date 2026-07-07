@@ -348,65 +348,6 @@ class PolicyDocumentInfo:
             "top_out_degree_nodes": top_out_degree_nodes,
         }
 
-    def format_graph_statistics_markdown(self) -> str:
-        """Render graph statistics as concise Markdown for the UI."""
-
-        stats = self.get_graph_statistics()
-        if not stats:
-            return ""
-
-        def _fmt_counter(counter_map: dict[str, int], limit: int = 12) -> str:
-            if not counter_map:
-                return "_None_"
-            items = sorted(counter_map.items(), key=lambda item: (-item[1], item[0]))[:limit]
-            return ", ".join(f"`{name}`: {count}" for name, count in items)
-
-        def _fmt_node_list(items: list[tuple[str, int]], limit: int = 5) -> str:
-            if not items:
-                return "_None_"
-            return ", ".join(f"`{node}` ({degree})" for node, degree in items[:limit])
-
-        avg_path = stats.get("average_shortest_path_largest_component")
-        avg_path_text = f"{avg_path:.2f}" if isinstance(avg_path, (int, float)) else "n/a"
-
-        lines = [
-            "**Graph Statistics**",
-            "",
-            f"- Nodes: `{stats['node_count']}`",
-            f"- Edges: `{stats['edge_count']}`",
-            f"- Node types: {_fmt_counter(stats['node_type_counts'])}",
-            f"- Edge types: {_fmt_counter(stats['edge_type_counts'])}",
-            f"- Edge names: {_fmt_counter(stats['edge_name_counts'])}",
-            (
-                f"- Degree (undirected): min `{stats['degree']['min']}`, max `{stats['degree']['max']}`, "
-                f"mean `{stats['degree']['mean']:.2f}`, median `{stats['degree']['median']:.2f}`"
-            ),
-            (
-                f"- In-degree: min `{stats['in_degree']['min']}`, max `{stats['in_degree']['max']}`, "
-                f"mean `{stats['in_degree']['mean']:.2f}`, median `{stats['in_degree']['median']:.2f}`"
-            ),
-            (
-                f"- Out-degree: min `{stats['out_degree']['min']}`, max `{stats['out_degree']['max']}`, "
-                f"mean `{stats['out_degree']['mean']:.2f}`, median `{stats['out_degree']['median']:.2f}`"
-            ),
-            (
-                f"- Density: `{stats['density']:.4f}` | Clustering: `{stats['average_clustering']:.4f}` | "
-                f"Transitivity: `{stats['transitivity']:.4f}`"
-            ),
-            (
-                f"- Components: `{stats['component_count']}` | Largest component: "
-                f"`{stats['largest_component_size']}` nodes (`{stats['largest_component_ratio']:.1%}` of graph)"
-            ),
-            (
-                f"- Avg shortest path (largest component): `{avg_path_text}` | "
-                f"Isolated nodes: `{stats['isolated_nodes']}` | Self-loops: `{stats['self_loop_count']}`"
-            ),
-            f"- Top hubs: {_fmt_node_list(stats['top_degree_nodes'])}",
-            f"- Top in-degree nodes: {_fmt_node_list(stats['top_in_degree_nodes'])}",
-            f"- Top out-degree nodes: {_fmt_node_list(stats['top_out_degree_nodes'])}",
-        ]
-        return "\n".join(lines)
-
     def _extract_text_from_webpage(self, path: str) -> str:
         """Aggregate visible text from stored HTML files.
 

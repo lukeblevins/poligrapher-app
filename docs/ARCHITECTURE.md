@@ -1,100 +1,63 @@
-# PoliGraph-er Gradio App
+# Architecture
 
-Gradio-based frontend for exploring generated privacy policy knowledge graphs and related analyses. The app wraps the core pipeline (crawl / init / annotators / graph build) and now uses lightweight domain entities instead of passing raw CSV rows between callbacks.
+poligrapher-app is a **React SPA + FastAPI JSON API**. The React frontend owns all
+view concerns; the backend exposes JSON and holds the analysis logic. The heavy
+NLP/graph work (PoliGraph, policy-scorer) runs server-side.
 
-## Quick Start
+## Layers (backend)
 
-1. Activate the project environment (required for spaCy + models):
-   ```bash
-   conda activate poligrapher
-   ```
-2. Launch the UI from the repository root:
-   ```bash
-   python -m poligrapher.gradio_app.app
-   ```
-3. Provide a policy URL (or point to an existing workdir) and generate / view the graph & scores.
-
-## Why Entity Classes (vs. Old CSV Rows)?
-Previously the UI, notebooks, and ad‑hoc scripts shared policy metadata via Pandas DataFrames. Each place re‑implemented logic like:
-* Rebuilding output directories from provider names.
-* Checking for artifact existence (`graph-original.yml`, `knowledge_graph.png`).
-* Branching on capture modality (`if row["source"] == 'pdf': ...`).
-
-This produced duplicated string literals, hard‑to‑trace bugs after renames, and unclear separation between a *captured document* and an *analysis result*.
-
-The new model (see `policy_analysis.py`):
-* `PolicyDocumentInfo` – encapsulates one captured policy's artifact directory and text extraction (PDF or HTML bundle).
-* `PolicyAnalysisResult` – binds a specific graph variant + score to a document.
-* `PolicyDocumentProvider` – groups all documents & results for a company/provider.
-* Enums (`DocumentCaptureSource`, `GraphKind`) – replace free‑form strings and reduce silent typos.
-
-Benefits:
-* Single point of change for artifact naming and path conventions.
-* Explicit, typed semantics aid readability & IDE support.
-* Easier extension (add attributes / methods without breaking CSV schemas).
-
-## Architecture Overview
-
-Gradio callbacks (in `app.py`) consume these entity objects to:
-1. Locate or create a workdir under `./output/<Provider_Slug>/...`.
-2. Run pipeline stages (HTML/PDF ingestion → document init → annotators → graph build).
-3. Store resulting YAML + rendered `knowledge_graph.png`.
-4. Display scores / graphs, referencing helper methods like `PolicyDocumentInfo.has_graph()`.
-
-`policy_analysis.py` isolates file system knowledge so UI logic stays declarative.
-
-## Extending the App
-
-Add a new graph / score variant:
-1. Extend `GraphKind` enum with a new member.
-2. Produce the artifact (e.g., alternate YAML or metrics) during analysis.
-3. Instantiate a `PolicyAnalysisResult(document=..., score=..., kind=GraphKind.NEW_KIND)` and append via `provider.add_result(...)`.
-
-Add new document metadata (e.g., policy version hash):
-1. Add a field + constructor param to `PolicyDocumentInfo`.
-2. Populate it when constructing the object (keeps downstream stable).
-
-Change artifact naming (e.g., new graph image filename):
-1. Update the method in `PolicyDocumentInfo` (`has_graph`, `has_image`, or `get_graph_image_path`).
-2. Remove any remaining hard-coded references in UI code (should be minimal).
-
-## Testing / Debugging Tips
-* Leverage the existing pipeline test fixtures (see `tests/`) for end‑to‑end checks without launching Gradio.
-* If extraction fails, call `PolicyDocumentInfo.get_document_text()` in a REPL to validate PDF/HTML parsing in isolation.
-* Keep PDF parsing dependencies inside the conda env (avoid system `poppler` assumptions).
-
-## Structure
-* `app.py` – Main Gradio app entry point (UI + callbacks).
-* `policy_analysis.py` – Domain entities & helper logic (document/result/provider abstractions).
-* `__init__.py` – Package marker.
-
-## Minimal Example (Pseudo-code)
-```python
-from datetime import date
-from poligrapher_app.policy_analysis import (
-	PolicyDocumentInfo, PolicyAnalysisResult, PolicyDocumentProvider,
-	DocumentCaptureSource, GraphKind
-)
-
-provider = PolicyDocumentProvider(name="Example Corp", industry="Finance")
-doc = PolicyDocumentInfo(
-	path="./raw/ExampleCorp/policy.pdf",
-	output_dir="./output/Example_Corp/policy-2025-09-05",
-	source=DocumentCaptureSource.PDF,
-	capture_date=date.today(),
-	has_results=False,
-)
-provider.add_document(doc)
-
-# After running pipeline & computing score
-result = PolicyAnalysisResult(document=doc, score=0.82, kind=GraphKind.STANDARD)
-provider.add_result(result)
+```
+api/        FastAPI — thin HTTP layer. Routers validate input, call services,
+            and return Pydantic-modeled JSON. No business logic lives here.
+services/   Business logic, decoupled from HTTP and view. Each module is
+            independently testable:
+              pipeline.py  — runs the 4-stage PoliGraph pipeline for a policy
+              scoring.py   — privacy (in-repo) + GDPR (policy-scorer) scoring
+              graph.py     — graph artifacts → cytoscape JSON, stats, GDPR report
+              importer.py  — policy_list CSV → Provider/Policy rows
+              tasks.py     — in-memory background task registry (thread pool)
+domain/     Entity classes (PolicyDocumentInfo, PolicyAnalysisResult,
+            PolicyDocumentProvider) that encapsulate artifact paths and text
+            extraction, hiding filesystem conventions from callers.
+scoring/    In-repo heuristic PrivacyScorer + its TOML rules/criteria.
 ```
 
-## Future Enhancements (Ideas)
-* Persist entity metadata (JSON alongside workdir) for quick reload without rescanning filesystem.
-* Add versioning / provenance fields (pipeline commit hash, model versions) to `PolicyAnalysisResult`.
-* Introduce a repository/service layer if multiple storage backends are needed.
+`api/mapping.py` is the single conversion point between a DB `Policy` row and a
+`PolicyDocumentInfo` domain object, keeping routers and background tasks in sync.
 
----
-For deeper pipeline details, consult the root project README and `poligrapher/document.py` & `poligrapher/scripts/*.py`.
+## Data flow
+
+1. **Add policy** (`POST /api/providers/{id}/policies`) — records a `Policy` row
+   (URL or uploaded PDF) and computes its artifact directory
+   `output/<Provider_Slug>/<date>_<source>/`.
+2. **Generate** (`POST /api/policies/{id}/generate`) — a background task runs
+   `services.pipeline.generate_graph`, which drives PoliGraph
+   (crawl/parse → init → annotate → build graph) and writes
+   `graph-original.full.yml`, `graph-original.yml`, and `graph-original.graphml`
+   into the policy's output dir.
+3. **Score** (`POST /api/policies/{id}/score`) — a background task runs
+   `services.scoring.score_privacy` and `score_gdpr`, persisting results as
+   `AnalysisResult` rows and updating the policy's scores.
+4. **View** — the SPA fetches JSON:
+   - `GET /api/policies/{id}/graph` → cytoscape `elements` (rendered client-side)
+   - `GET /api/policies/{id}/stats` → graph statistics
+   - `GET /api/policies/{id}/assessments` → privacy + GDPR + readability
+
+Background tasks are tracked by `services.tasks.TaskRegistry` (on
+`app.state.tasks`) and polled via `GET /api/tasks/{task_id}`.
+
+## Persistence
+
+SQLAlchemy 2.0 ORM over **SQLite by default** (dialect-agnostic `Uuid`/`JSON`
+columns, so Postgres works by changing `DATABASE_URL`). Three tables: `providers`,
+`policies`, `analysis_results`. Schema is created at startup via
+`Base.metadata.create_all`.
+
+## Frontend
+
+Vite + React + TypeScript. TanStack Query manages server state and task polling; a
+typed fetch client mirrors the API schemas. The graph viewer renders the
+`/graph` JSON with cytoscape.js (node types DATA/ACTOR/`we`; edge types
+COLLECT/SUBSUM/SUBSUM_BY/COREF), theme-reactive to the OS preference. In
+development the Vite dev server proxies `/api` to the FastAPI process; in
+production FastAPI serves the built `frontend/dist`.

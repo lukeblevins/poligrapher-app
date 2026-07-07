@@ -1,3 +1,12 @@
-import runpy
+import os
+import uvicorn
+from dotenv import load_dotenv
 
-runpy.run_module("poligrapher_app.app", run_name="__main__", alter_sys=True)
+load_dotenv()
+
+uvicorn.run(
+    "poligrapher_app.api.main:app",
+    host=os.getenv("HOST", "0.0.0.0"),
+    port=int(os.getenv("PORT", "8000")),
+    reload=True,
+)
