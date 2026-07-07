@@ -26,8 +26,11 @@ def _get_gdpr_scorer():
 
 
 def score_privacy(policy: PolicyDocumentInfo) -> float | None:
-    """Score a policy with the in-repo heuristic PrivacyScorer."""
-    policy.has_results = False
+    """Score a policy with the in-repo heuristic PrivacyScorer.
+
+    Requires graph artifacts to exist; scoring does not affect the policy's
+    pipeline status (see api.mapping.sync_policy_from_doc).
+    """
     if not policy.has_graph():
         logger.error("No graph found to score document at %s", policy.output_dir)
         return None
@@ -35,16 +38,13 @@ def score_privacy(policy: PolicyDocumentInfo) -> float | None:
     scorer = PrivacyScorer()
     results = scorer.score_policy(policy.get_document_text())
     policy.set_privacy_result(results)
-    if results.get("success"):
-        policy.has_results = True
-    else:
+    if not results.get("success"):
         policy.score = None
     return policy.score
 
 
 def score_gdpr(policy: PolicyDocumentInfo) -> float | None:
     """Score a policy against the GDPR scheme using the policy-scorer package."""
-    policy.has_results = False
     if not policy.has_graph():
         logger.error("No graph found to score document at %s", policy.output_dir)
         return None
@@ -57,8 +57,6 @@ def score_gdpr(policy: PolicyDocumentInfo) -> float | None:
         yaml_graph=artifacts.get("yaml_graph"),
     )
     policy.set_gdpr_result(results)
-    if results.get("success"):
-        policy.has_results = True
-    else:
+    if not results.get("success"):
         policy.score = None
     return policy.score

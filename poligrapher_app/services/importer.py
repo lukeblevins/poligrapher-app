@@ -6,13 +6,16 @@ Provider/Policy rows.
 """
 
 import io
+import logging
 from pathlib import Path
 
 import pandas as pd
 from sqlalchemy.orm import Session
 
+logger = logging.getLogger(__name__)
+
 from poligrapher_app.api.models import Policy, Provider
-from poligrapher_app.api.utils import parse_date, parse_pipeline_errors
+from poligrapher_app.api.utils import parse_date, parse_pipeline_errors, provider_slug
 
 # Mirrors the layout produced by add_policy / the pipeline:
 # output/<Provider_Slug>/<capture_date>_<source>/
@@ -58,7 +61,7 @@ def import_policies(df: pd.DataFrame, db: Session) -> dict:
                 # seeded policies can locate graphs already on disk.
                 output_dir = None
                 if capture_date:
-                    slug = str(provider_name).replace(" ", "_")
+                    slug = provider_slug(str(provider_name))
                     output_dir = str(OUTPUT_BASE / slug / f"{capture_date.isoformat()}_{source}")
 
                 db.add(
@@ -78,6 +81,7 @@ def import_policies(df: pd.DataFrame, db: Session) -> dict:
                 )
                 created += 1
         except Exception:
+            logger.exception("Failed to import rows for provider %r", provider_name)
             errors += 1
             db.rollback()
             continue

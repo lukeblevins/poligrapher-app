@@ -10,6 +10,7 @@ from poligrapher_app.api.deps import get_db
 from poligrapher_app.api.mapping import policy_doc_from_db, sync_policy_from_doc
 from poligrapher_app.api.models import Policy, Provider
 from poligrapher_app.api.schemas import PolicyRead, TaskStatus
+from poligrapher_app.api.utils import provider_slug
 
 router = APIRouter(tags=["policies"])
 
@@ -51,15 +52,18 @@ async def add_policy(
     if not provider:
         raise HTTPException(status_code=404, detail="Provider not found")
 
-    provider_slug = provider.name.replace(" ", "_")
+    if source not in ("webpage", "pdf"):
+        raise HTTPException(status_code=422, detail="source must be 'webpage' or 'pdf'")
+
     parsed_date = date.fromisoformat(capture_date) if capture_date else date.today()
-    output_dir = OUTPUT_BASE / provider_slug / f"{parsed_date.isoformat()}_{source}"
+    output_dir = OUTPUT_BASE / provider_slug(provider.name) / f"{parsed_date.isoformat()}_{source}"
 
     if source == "pdf":
         if not pdf_file or not pdf_file.filename:
             raise HTTPException(status_code=422, detail="A PDF file is required when source is 'pdf'")
         output_dir.mkdir(parents=True, exist_ok=True)
-        dest = output_dir / pdf_file.filename
+        # Strip any directory components from the uploaded filename.
+        dest = output_dir / Path(pdf_file.filename).name
         dest.write_bytes(await pdf_file.read())
         policy_url = str(dest)
     else:
@@ -110,7 +114,9 @@ def trigger_generate(policy_id: uuid.UUID, request: Request, db: Db):
         try:
             try:
                 generate_graph(doc)
-                sync_policy_from_doc(db2.get(Policy, policy_id), doc, db2)
+                policy2 = db2.get(Policy, policy_id)
+                if policy2:  # may have been deleted mid-run
+                    sync_policy_from_doc(policy2, doc, db2)
                 registry.set_done(task_id)
             except Exception as exc:
                 registry.set_failed(task_id, str(exc))
@@ -144,7 +150,9 @@ def trigger_score(policy_id: uuid.UUID, request: Request, db: Db):
         try:
             score_privacy(doc)
             score_gdpr(doc)
-            sync_policy_from_doc(db2.get(Policy, policy_id), doc, db2)
+            policy2 = db2.get(Policy, policy_id)
+            if policy2:  # may have been deleted mid-run
+                sync_policy_from_doc(policy2, doc, db2)
             registry.set_done(task_id)
         finally:
             db2.close()
@@ -189,7 +197,10 @@ def refresh_all(request: Request, db: Db):
 
 @router.post("/api/score-all", response_model=TaskStatus)
 def score_all(request: Request, db: Db):
-    policy_ids = [p.id for p in db.query(Policy).filter(Policy.has_results == True).all()]  # noqa: E712
+    # Score every policy that has graph artifacts (a graph is required to score).
+    policy_ids = [
+        p.id for p in db.query(Policy).filter(Policy.pipeline_status == "succeeded").all()
+    ]
     registry = request.app.state.tasks
     task_id = registry.create(label="Score all", total=len(policy_ids))
 

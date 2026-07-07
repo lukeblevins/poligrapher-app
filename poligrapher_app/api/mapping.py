@@ -30,11 +30,17 @@ def policy_doc_from_db(policy: Policy) -> PolicyDocumentInfo:
 
 def sync_policy_from_doc(policy: Policy, doc: PolicyDocumentInfo, db: Session) -> None:
     """Write pipeline/scoring results from a PolicyDocumentInfo back to the row."""
-    policy.has_results = doc.has_results
+    # Pipeline status reflects whether graph artifacts exist on disk, independent
+    # of scoring: a successful generate makes the policy "succeeded", and scoring
+    # never gates this. (Previously both were derived from a single overloaded
+    # `has_results` flag, so a generated-but-unscored policy stayed "pending".)
     policy.pipeline_errors = doc.errors
-    policy.pipeline_status = (
-        "succeeded" if doc.has_results else ("failed" if doc.errors else "pending")
-    )
+    if doc.has_graph():
+        policy.pipeline_status = "succeeded"
+    elif doc.errors:
+        policy.pipeline_status = "failed"
+    else:
+        policy.pipeline_status = "pending"
     policy.graph_kind = infer_graph_kind(doc).value
 
     if doc.latest_privacy_result and doc.latest_privacy_result.get("success"):
@@ -58,5 +64,8 @@ def sync_policy_from_doc(policy: Policy, doc: PolicyDocumentInfo, db: Session) -
                 details=doc.latest_gdpr_result,
             )
         )
+
+    # `has_results` means the policy has produced scoring results.
+    policy.has_results = policy.privacy_score is not None or policy.gdpr_score is not None
 
     db.commit()

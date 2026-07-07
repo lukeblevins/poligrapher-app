@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "poligrapher-app"
 version = "0.2.0"
-description = "Privacy policy analysis web app (FastAPI + HTMX)"
+description = "Privacy policy analysis app (React SPA + FastAPI JSON API)"
 requires-python = ">=3.11"
 authors = [
     { name = "Luke Blevins" },

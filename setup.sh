@@ -14,7 +14,7 @@ VENV_PYTHON=.venv/bin/python
 VENV_BIN=.venv/bin
 
 echo "Installing dependencies..."
-"$VENV_PYTHON" -m pip install -e ".[dev]" 2>/dev/null || "$VENV_PYTHON" -m pip install -e .
+"$VENV_PYTHON" -m pip install -e .
 
 echo "Downloading spaCy model..."
 "$VENV_PYTHON" -m spacy download en_core_web_md
