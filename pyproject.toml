@@ -4,47 +4,48 @@ build-backend = "hatchling.build"
 
 [project]
 name = "poligrapher-app"
-version = "0.1.0"
-description = "Gradio web app for privacy policy analysis using PoliGraph"
+version = "0.2.0"
+description = "Privacy policy analysis app (React SPA + FastAPI JSON API)"
 requires-python = ">=3.11"
 authors = [
     { name = "Luke Blevins" },
 ]
 dependencies = [
     "poligrapher @ git+https://github.com/lukeblevins/PoliGraph.git",
-    "gdpr-policy-scorer @ git+https://github.com/lukeblevins/gdpr-policy-scorer.git",
+    "policy-scorer[readability] @ git+https://github.com/lukeblevins/policy-scorer.git",
     # Versions pinned to match the working conda environment
-    "gradio==3.48.0",
+    "fastapi[standard]",
+    "uvicorn[standard]",
+    "sqlalchemy>=2.0",
+    "python-multipart",
+    "python-dotenv",
     "huggingface-hub==0.24.0",
-    "pandas==2.3.0",
+    "pandas==3.0.3",
     "networkx==3.5",
-    "matplotlib==3.10.3",
     "beautifulsoup4==4.13.4",
     "httpx==0.24.1",
     "pymupdf4llm==0.0.27",
     "playwright==1.45.0",
-    "pyyaml==6.0",
-    "psycopg2-binary==2.9.10",
+    "pyyaml==6.0.3",
     "toml==0.10.2",
-    "pillow==10.4.*",
+    "pillow==12.2.0",
     "markdown==3.8.2",
     "textstat",
-    "lxml==6.0.0",
-    "scikit-learn==1.2.1",
+    "lxml==6.1.0",
+    "scikit-learn==1.8.0",
     # poligrapher transitive deps (undeclared in its setup.py)
-    "spacy==3.5.3",
-    "spacy-transformers==1.2.4",
-    "sentence-transformers==2.2.2",
+    "spacy==3.8.13",
+    "spacy-transformers==1.4.0",
+    "sentence-transformers==5.5.0",
     "anytree==2.13.0",
     "langdetect==1.0.9",
     "unidecode==1.3.6",
-    "regex==2024.11.6",
+    "regex==2026.5.9",
     "setfit==0.7.0",
     "requests==2.32.4",
     "requests-cache==0.9.8",
     "tldextract",
     "torch",
-    "fastapi",
 ]
 
 [tool.hatch.metadata]

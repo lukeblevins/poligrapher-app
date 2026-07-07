@@ -16,10 +16,16 @@ outputs/
 flagged/
 gradio_cached_examples/
 *.db
+*.db-wal
+*.db-shm
 *.sqlite3
 *.DS_Store
+
+# Frontend
+node_modules/
+frontend/dist/
 */extra-data/entity_info.json
 */extra-data/named_entity_recognition/
 */extra-data/purpose_classification/
 output/*
-.claude/*
+.claude/
