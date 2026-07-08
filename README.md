@@ -1,3 +1,20 @@
+---
+title: Poligrapher App
+emoji: 🔎
+colorFrom: indigo
+colorTo: purple
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
+<!--
+The YAML block above is read by Hugging Face Spaces (Docker SDK) when this repo
+is deployed as a Space — it must stay at the very top of the file and selects the
+Docker builder + exposed port. GitHub renders it as a small table; it has no
+effect on local runs. See docs/DEPLOY_HF_SPACES.md.
+-->
+
 # poligrapher-app
 
 Privacy policy analysis app — a **React (TypeScript) single-page app** backed by a
