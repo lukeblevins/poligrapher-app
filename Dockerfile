@@ -1,10 +1,11 @@
-# Hugging Face Spaces (Docker SDK) image for poligrapher-app.
+# Container image for poligrapher-app (built for Cloud Run, runs anywhere).
 # Single container: builds the React SPA, then runs the FastAPI backend which
 # serves both the JSON API and the built SPA on one port (same origin, no CORS).
+# The app listens on $PORT, which Cloud Run/Fly inject at runtime (default 8080).
 #
 # Models (~700 MB poligrapher data + spaCy model) and the Playwright Firefox
-# browser are baked into the image at build time, so cold starts are fast and no
-# persistent storage is required.
+# browser are baked into the image at build time, so cold starts don't fetch them
+# and no persistent storage is required.
 
 # ---- Stage 1: build the frontend ----
 FROM node:20-slim AS frontend
@@ -38,7 +39,7 @@ ENV HOME=/home/user \
     PLAYWRIGHT_BROWSERS_PATH=/home/user/.cache/ms-playwright \
     HF_HOME=/home/user/.cache/huggingface \
     HOST=0.0.0.0 \
-    PORT=7860 \
+    PORT=8080 \
     RELOAD=false \
     DATABASE_URL=sqlite:////home/user/app/data/poligrapher.db
 
@@ -69,5 +70,7 @@ COPY --chown=user --from=frontend /app/frontend/dist ./frontend/dist
 RUN mkdir -p /home/user/app/data
 COPY --chown=user docker/entrypoint.sh ./entrypoint.sh
 
-EXPOSE 7860
+# Cloud Run (and Fly, etc.) inject their own PORT at runtime, which the app reads;
+# 8080 is just the local/default. EXPOSE is documentation — Cloud Run ignores it.
+EXPOSE 8080
 CMD ["bash", "entrypoint.sh"]
