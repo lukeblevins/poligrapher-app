@@ -1,8 +1,9 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
 import { api } from "../api/client";
 import type { TaskStatus } from "../api/types";
+import { isTaskActive, isTaskSettled } from "../api/types";
 
 /**
  * Single-slot task runner for the bulk operations (Refresh Pending / Score All).
@@ -11,6 +12,7 @@ import type { TaskStatus } from "../api/types";
  * already in progress.
  */
 export function useTaskRunner(onSettled?: () => void) {
+  const qc = useQueryClient();
   const [taskId, setTaskId] = useState<string | null>(null);
   const busyRef = useRef(false);
   const settledRef = useRef(false);
@@ -21,20 +23,20 @@ export function useTaskRunner(onSettled?: () => void) {
     enabled: !!taskId,
     refetchInterval: (query) => {
       const status = query.state.data?.status;
-      return status === "done" || status === "failed" ? false : 1500;
+      return status && isTaskSettled(status) ? false : 1500;
     },
   });
 
   useEffect(() => {
     if (!task) return;
-    if ((task.status === "done" || task.status === "failed") && !settledRef.current) {
+    if (isTaskSettled(task.status) && !settledRef.current) {
       settledRef.current = true;
       busyRef.current = false;
       onSettled?.();
     }
   }, [task, onSettled]);
 
-  const isRunning = busyRef.current || (!!task && task.status === "running");
+  const isRunning = busyRef.current || (!!task && isTaskActive(task.status));
 
   async function start(action: () => Promise<TaskStatus>) {
     if (busyRef.current) return; // a bulk operation is already running
@@ -43,6 +45,7 @@ export function useTaskRunner(onSettled?: () => void) {
     try {
       const started = await action();
       setTaskId(started.task_id);
+      qc.invalidateQueries({ queryKey: ["tasks"] }); // wake the Status Center
     } catch (err) {
       busyRef.current = false;
       throw err;

@@ -31,14 +31,32 @@ export interface Policy {
   created_at: string;
 }
 
+export type TaskState = "running" | "cancelling" | "cancelled" | "done" | "failed";
+
 export interface TaskStatus {
   task_id: string;
-  status: "running" | "done" | "failed";
+  status: TaskState;
   error: string | null;
   label: string | null;
+  title?: string | null;
+  kind?: string | null;
   total: number;
   completed: number;
   failed: number;
+  created_at?: string | null;
+  cancelable?: boolean;
+  policy_id?: string | null;
+  provider_name?: string | null;
+}
+
+export const TASK_ACTIVE_STATES: TaskState[] = ["running", "cancelling"];
+
+export function isTaskActive(status: TaskState): boolean {
+  return status === "running" || status === "cancelling";
+}
+
+export function isTaskSettled(status: TaskState): boolean {
+  return status === "done" || status === "failed" || status === "cancelled";
 }
 
 export interface ImportSummary {

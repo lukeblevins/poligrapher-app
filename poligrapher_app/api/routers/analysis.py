@@ -72,12 +72,22 @@ def get_assessments(policy_id: uuid.UUID, db: Db):
     )
 
 
+@router.get("/api/tasks", response_model=list[TaskStatus])
+def list_tasks(request: Request):
+    return [TaskStatus(**task) for task in request.app.state.tasks.list()]
+
+
 @router.get("/api/tasks/{task_id}", response_model=TaskStatus)
 def get_task_status(task_id: str, request: Request):
     task = request.app.state.tasks.get(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    return TaskStatus(
-        task_id=task_id,
-        **{k: task[k] for k in ("status", "error", "label", "total", "completed", "failed") if k in task},
-    )
+    return TaskStatus(task_id=task_id, **task)
+
+
+@router.post("/api/tasks/{task_id}/cancel", response_model=TaskStatus)
+def cancel_task(task_id: str, request: Request):
+    registry = request.app.state.tasks
+    if not registry.cancel(task_id):
+        raise HTTPException(status_code=404, detail="Task not found")
+    return TaskStatus(task_id=task_id, **registry.get(task_id))

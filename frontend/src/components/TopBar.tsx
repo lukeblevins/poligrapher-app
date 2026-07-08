@@ -2,11 +2,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { api } from "../api/client";
+import type { Provider } from "../api/types";
 import { useTaskRunner } from "../hooks/useTaskRunner";
+import { StatusCenter } from "./StatusCenter";
 import { AddProviderModal } from "./modals/AddProviderModal";
 import { ImportCsvModal } from "./modals/ImportCsvModal";
 
-export function TopBar() {
+export function TopBar({ onProviderCreated }: { onProviderCreated?: (p: Provider) => void }) {
   const qc = useQueryClient();
   const [showAddProvider, setShowAddProvider] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -15,23 +17,19 @@ export function TopBar() {
     qc.invalidateQueries({ queryKey: ["providers"] });
     qc.invalidateQueries({ queryKey: ["policies"] });
   };
-  const { start, task, isRunning } = useTaskRunner(invalidateAll);
+  const { start, isRunning } = useTaskRunner(invalidateAll);
 
   return (
     <>
       <header className="flex flex-shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-6 py-3 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
         <div className="flex items-center gap-3">
-          <span className="text-xl font-bold text-brand">Poligrapher</span>
-          <span className="text-xs text-zinc-400 dark:text-zinc-500">privacy policy analyzer</span>
+          <span className="text-xl font-bold text-brand">Privacy Policy Analyzer</span>
+          <span className="text-xs text-zinc-400 dark:text-zinc-500">
+            Compliance &amp; readability scoring
+          </span>
         </div>
         <div className="flex items-center gap-2">
-          {task?.label && (
-            <span className="mr-2 text-xs text-zinc-500 dark:text-zinc-400">
-              {task.label}: {task.completed}/{task.total}
-              {task.failed > 0 ? ` (${task.failed} failed)` : ""}
-              {task.status === "done" ? " ✓" : task.status === "failed" ? " ✕" : "…"}
-            </span>
-          )}
+          <StatusCenter />
           <button className="btn-secondary" onClick={() => setShowAddProvider(true)}>
             + Provider
           </button>
@@ -55,7 +53,12 @@ export function TopBar() {
         </div>
       </header>
 
-      {showAddProvider && <AddProviderModal onClose={() => setShowAddProvider(false)} />}
+      {showAddProvider && (
+        <AddProviderModal
+          onClose={() => setShowAddProvider(false)}
+          onCreated={onProviderCreated}
+        />
+      )}
       {showImport && <ImportCsvModal onClose={() => setShowImport(false)} />}
     </>
   );

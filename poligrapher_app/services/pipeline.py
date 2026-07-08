@@ -10,6 +10,7 @@ import os
 import shutil
 import sys
 import urllib.parse
+import uuid
 from contextlib import contextmanager
 from typing import Callable
 
@@ -22,6 +23,37 @@ from poligrapher_app.domain.policy_analysis import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class PipelineCancelled(Exception):
+    """Raised when a running pipeline observes a cancellation request."""
+
+
+def _swap_into_place(staging_dir: str, output_folder: str) -> None:
+    """Atomically replace ``output_folder`` with ``staging_dir``.
+
+    Renames the existing output aside first, moves the freshly-built staging
+    dir into place, then discards the backup. On failure the original is
+    restored so the pipeline is all-or-nothing.
+    """
+    backup = output_folder + ".old"
+    if os.path.exists(backup):
+        shutil.rmtree(backup, ignore_errors=True)
+
+    parent = os.path.dirname(output_folder) or "."
+    os.makedirs(parent, exist_ok=True)
+
+    existed = os.path.exists(output_folder)
+    if existed:
+        os.rename(output_folder, backup)
+    try:
+        os.rename(staging_dir, output_folder)
+    except Exception:
+        if existed and not os.path.exists(output_folder):
+            os.rename(backup, output_folder)  # best-effort restore
+        raise
+    if existed:
+        shutil.rmtree(backup, ignore_errors=True)
 
 
 @contextmanager
@@ -140,8 +172,20 @@ def test_document_url(url: str) -> bool:
         return False
 
 
-def generate_graph_from_html(path: str, output_folder: str, capture_pdf: bool) -> None:
-    """Run the PoliGraph pipeline stages for a single input into output_folder."""
+def generate_graph_from_html(
+    path: str,
+    output_folder: str,
+    capture_pdf: bool,
+    should_cancel: Callable[[], bool] | None = None,
+) -> None:
+    """Run the PoliGraph pipeline stages for a single input into output_folder.
+
+    The pipeline writes into a private staging directory and is only swapped
+    into ``output_folder`` after every stage completes, so a failure or a
+    cancellation (via ``should_cancel``) leaves any existing output untouched.
+    Cancellation is cooperative and checked between (coarse-grained) stages; a
+    stage already executing runs to completion before the next check.
+    """
     logger.info(
         "Starting PoliGraph pipeline (capture_pdf=%s) for %s -> %s",
         capture_pdf,
@@ -164,65 +208,88 @@ def generate_graph_from_html(path: str, output_folder: str, capture_pdf: bool) -
     else:
         logger.info("Verified remote URL accessibility: %s", path)
 
-    os.makedirs(output_folder, exist_ok=True)
+    def _cancelled() -> bool:
+        return bool(should_cancel and should_cancel())
 
-    from poligrapher.scripts import (
-        build_graph,
-        html_crawler,
-        init_document,
-        pdf_parser,
-        run_annotators,
-    )
-
-    steps: list[tuple[str, Callable[[], None]]] = []
-
-    if capture_pdf:
-        ensure_source_pdf_copy(path, output_folder)
-        html_path = os.path.join(output_folder, "output.html")
-
-        if not os.path.exists(html_path):
-            steps.append(("Extracting PDF to HTML via pdf_parser", lambda: pdf_parser.main(path, output_folder)))
-        else:
-            logger.info("Cached PDF conversion detected (%s); skipping pdf_parser", html_path)
-
-        steps.append(
-            ("Crawling parsed HTML via html_crawler", lambda: html_crawler.main(html_path, output_folder))
-        )
+    # Build into a staging dir seeded from any existing output so cached
+    # intermediates (extracted PDF HTML, crawl) are still reused.
+    staging = f"{output_folder}.staging-{uuid.uuid4().hex}"
+    if os.path.isdir(output_folder):
+        shutil.copytree(output_folder, staging)
     else:
-        steps.append(
-            ("Crawling source via html_crawler", lambda: html_crawler.main(path, output_folder))
+        os.makedirs(staging, exist_ok=True)
+
+    try:
+        from poligrapher.scripts import (
+            build_graph,
+            html_crawler,
+            init_document,
+            pdf_parser,
+            run_annotators,
         )
 
-    def _run_annotators():
-        with _argv("run_annotators", output_folder):
-            run_annotators.main()
+        steps: list[tuple[str, Callable[[], None]]] = []
 
-    def _build_graph_standard():
-        with _argv("build_graph", output_folder):
-            build_graph.main()
+        if capture_pdf:
+            ensure_source_pdf_copy(path, staging)
+            html_path = os.path.join(staging, "output.html")
 
-    def _build_graph_pretty():
-        with _argv("build_graph", "--pretty", output_folder):
-            build_graph.main()
+            if not os.path.exists(html_path):
+                steps.append(("Extracting PDF to HTML via pdf_parser", lambda: pdf_parser.main(path, staging)))
+            else:
+                logger.info("Cached PDF conversion detected (%s); skipping pdf_parser", html_path)
 
-    steps.extend(
-        [
-            ("Initializing document (init_document)", lambda: init_document.main(workdirs=[output_folder])),
-            ("Running annotators", _run_annotators),
-            ("Building standard graph", _build_graph_standard),
-            ("Building pretty graph", _build_graph_pretty),
-        ]
-    )
+            steps.append(
+                ("Crawling parsed HTML via html_crawler", lambda: html_crawler.main(html_path, staging))
+            )
+        else:
+            steps.append(
+                ("Crawling source via html_crawler", lambda: html_crawler.main(path, staging))
+            )
 
-    total_steps = len(steps)
-    for idx, (message, step_fn) in enumerate(steps, 1):
-        logger.info("[%d/%d] %s", idx, total_steps, message)
-        step_fn()
+        def _run_annotators():
+            with _argv("run_annotators", staging):
+                run_annotators.main()
+
+        def _build_graph_standard():
+            with _argv("build_graph", staging):
+                build_graph.main()
+
+        def _build_graph_pretty():
+            with _argv("build_graph", "--pretty", staging):
+                build_graph.main()
+
+        steps.extend(
+            [
+                ("Initializing document (init_document)", lambda: init_document.main(workdirs=[staging])),
+                ("Running annotators", _run_annotators),
+                ("Building standard graph", _build_graph_standard),
+                ("Building pretty graph", _build_graph_pretty),
+            ]
+        )
+
+        total_steps = len(steps)
+        for idx, (message, step_fn) in enumerate(steps, 1):
+            if _cancelled():
+                raise PipelineCancelled(f"Cancelled before: {message}")
+            logger.info("[%d/%d] %s", idx, total_steps, message)
+            step_fn()
+
+        if _cancelled():
+            raise PipelineCancelled("Cancelled before finalizing output")
+
+        _swap_into_place(staging, output_folder)
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
 
     logger.info("Completed PoliGraph pipeline for %s", output_folder)
 
 
-def generate_graph(policy: PolicyDocumentInfo) -> bool:
+def generate_graph(
+    policy: PolicyDocumentInfo,
+    should_cancel: Callable[[], bool] | None = None,
+) -> bool:
     """Run the full PoliGraph pipeline for a single policy document."""
     match policy.source:
         case DocumentCaptureSource.WEBPAGE:
@@ -234,7 +301,10 @@ def generate_graph(policy: PolicyDocumentInfo) -> bool:
 
     try:
         logger.info("Triggering pipeline for policy %s (source=%s)", policy.path, policy.source)
-        generate_graph_from_html(policy.path, policy.output_dir, capture_pdf)
+        generate_graph_from_html(policy.path, policy.output_dir, capture_pdf, should_cancel)
+    except PipelineCancelled:
+        logger.info("Pipeline cancelled for %s; output left unchanged", policy.output_dir)
+        raise
     except SystemExit as exc:
         policy.record_error(f"Pipeline exited early: {exc}")
         raise RuntimeError("Graph generation pipeline exited") from exc

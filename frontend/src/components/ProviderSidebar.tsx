@@ -6,6 +6,7 @@ import { useDeleteProvider, useProviders } from "../hooks/queries";
 interface Props {
   selectedId: string | null;
   onSelect: (provider: Provider) => void;
+  onDeleted?: (id: string) => void;
 }
 
 function statusColor(p: Provider): string {
@@ -15,7 +16,7 @@ function statusColor(p: Provider): string {
   return "bg-amber-400";
 }
 
-export function ProviderSidebar({ selectedId, onSelect }: Props) {
+export function ProviderSidebar({ selectedId, onSelect, onDeleted }: Props) {
   const { data: providers = [], isLoading } = useProviders();
   const deleteProvider = useDeleteProvider();
   const [query, setQuery] = useState("");
@@ -62,7 +63,9 @@ export function ProviderSidebar({ selectedId, onSelect }: Props) {
               onClick={(e) => {
                 e.stopPropagation();
                 if (confirm(`Delete provider "${p.name}" and all its policies?`)) {
-                  deleteProvider.mutate(p.id);
+                  deleteProvider.mutate(p.id, {
+                    onSuccess: () => onDeleted?.(p.id),
+                  });
                 }
               }}
               aria-label={`Delete ${p.name}`}

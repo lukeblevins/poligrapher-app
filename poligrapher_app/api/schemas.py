@@ -40,13 +40,21 @@ class PolicyRead(BaseModel):
 
 
 class TaskStatus(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     task_id: str
-    status: str  # 'running', 'done', 'failed'
+    status: str  # 'running', 'cancelling', 'cancelled', 'done', 'failed'
     error: str | None = None
     label: str | None = None
+    title: str | None = None
+    kind: str | None = None
     total: int = 0
     completed: int = 0
     failed: int = 0
+    created_at: str | None = None
+    cancelable: bool = False
+    policy_id: str | None = None
+    provider_name: str | None = None
 
 
 class ImportSummary(BaseModel):

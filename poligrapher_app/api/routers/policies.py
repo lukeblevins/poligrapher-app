@@ -21,8 +21,7 @@ OUTPUT_BASE = Path(__file__).parent.parent.parent.parent / "output"
 
 def _task_status(registry, task_id: str) -> TaskStatus:
     task = registry.get(task_id) or {"status": "running"}
-    return TaskStatus(task_id=task_id, **{k: task[k] for k in
-                      ("status", "error", "label", "total", "completed", "failed") if k in task})
+    return TaskStatus(task_id=task_id, **task)
 
 
 # ── Provider-scoped policy routes ─────────────────────────────────────────────
@@ -103,21 +102,31 @@ def trigger_generate(policy_id: uuid.UUID, request: Request, db: Db):
         raise HTTPException(status_code=404, detail="Policy not found")
 
     registry = request.app.state.tasks
-    task_id = registry.create(policy_id=str(policy_id))
+    task_id = registry.create(
+        kind="generate",
+        title=f"Generate · {policy.provider.name}",
+        provider_name=policy.provider.name,
+        policy_id=str(policy_id),
+        total=1,
+    )
     doc = policy_doc_from_db(policy)
 
     def _run():
         from poligrapher_app.api.database import SessionLocal
-        from poligrapher_app.services.pipeline import generate_graph
+        from poligrapher_app.services.pipeline import PipelineCancelled, generate_graph
 
         db2 = SessionLocal()
         try:
             try:
-                generate_graph(doc)
+                generate_graph(doc, should_cancel=lambda: registry.is_cancelled(task_id))
                 policy2 = db2.get(Policy, policy_id)
                 if policy2:  # may have been deleted mid-run
                     sync_policy_from_doc(policy2, doc, db2)
+                registry.incr(task_id, "completed")
                 registry.set_done(task_id)
+            except PipelineCancelled:
+                # Staging is discarded by the pipeline; nothing to roll back here.
+                registry.set_cancelled(task_id)
             except Exception as exc:
                 registry.set_failed(task_id, str(exc))
                 failed = db2.get(Policy, policy_id)
@@ -139,7 +148,13 @@ def trigger_score(policy_id: uuid.UUID, request: Request, db: Db):
         raise HTTPException(status_code=404, detail="Policy not found")
 
     registry = request.app.state.tasks
-    task_id = registry.create(policy_id=str(policy_id))
+    task_id = registry.create(
+        kind="score",
+        title=f"Score · {policy.provider.name}",
+        provider_name=policy.provider.name,
+        policy_id=str(policy_id),
+        total=1,
+    )
     doc = policy_doc_from_db(policy)
 
     def _run():
@@ -148,11 +163,19 @@ def trigger_score(policy_id: uuid.UUID, request: Request, db: Db):
 
         db2 = SessionLocal()
         try:
+            if registry.is_cancelled(task_id):
+                registry.set_cancelled(task_id)
+                return
             score_privacy(doc)
             score_gdpr(doc)
+            # Skip persistence if cancelled mid-scoring so results are all-or-nothing.
+            if registry.is_cancelled(task_id):
+                registry.set_cancelled(task_id)
+                return
             policy2 = db2.get(Policy, policy_id)
             if policy2:  # may have been deleted mid-run
                 sync_policy_from_doc(policy2, doc, db2)
+            registry.incr(task_id, "completed")
             registry.set_done(task_id)
         finally:
             db2.close()
@@ -165,22 +188,30 @@ def trigger_score(policy_id: uuid.UUID, request: Request, db: Db):
 def refresh_all(request: Request, db: Db):
     policy_ids = [p.id for p in db.query(Policy).filter(Policy.pipeline_status == "pending").all()]
     registry = request.app.state.tasks
-    task_id = registry.create(label="Refresh pending", total=len(policy_ids))
+    task_id = registry.create(
+        label="Refresh pending", title="Refresh pending", kind="refresh", total=len(policy_ids)
+    )
 
     def _run():
         from poligrapher_app.api.database import SessionLocal
-        from poligrapher_app.services.pipeline import generate_graph
+        from poligrapher_app.services.pipeline import PipelineCancelled, generate_graph
 
         db2 = SessionLocal()
         try:
             for pid in policy_ids:
+                if registry.is_cancelled(task_id):
+                    registry.set_cancelled(task_id)
+                    return
                 p = db2.get(Policy, pid)
                 if not p:
                     continue
                 doc = policy_doc_from_db(p)
                 try:
-                    generate_graph(doc)
+                    generate_graph(doc, should_cancel=lambda: registry.is_cancelled(task_id))
                     sync_policy_from_doc(p, doc, db2)
+                except PipelineCancelled:
+                    registry.set_cancelled(task_id)
+                    return
                 except Exception:
                     p.pipeline_status = "failed"
                     p.pipeline_errors = doc.errors
@@ -202,7 +233,9 @@ def score_all(request: Request, db: Db):
         p.id for p in db.query(Policy).filter(Policy.pipeline_status == "succeeded").all()
     ]
     registry = request.app.state.tasks
-    task_id = registry.create(label="Score all", total=len(policy_ids))
+    task_id = registry.create(
+        label="Score all", title="Score all", kind="score-all", total=len(policy_ids)
+    )
 
     def _run():
         from poligrapher_app.api.database import SessionLocal
@@ -211,6 +244,9 @@ def score_all(request: Request, db: Db):
         db2 = SessionLocal()
         try:
             for pid in policy_ids:
+                if registry.is_cancelled(task_id):
+                    registry.set_cancelled(task_id)
+                    return
                 p = db2.get(Policy, pid)
                 if not p:
                     continue

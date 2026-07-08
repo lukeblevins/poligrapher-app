@@ -56,7 +56,10 @@ export const api = {
   scoreAll: () => request<TaskStatus>("/api/score-all", { method: "POST" }),
 
   // Analysis
+  listTasks: () => request<TaskStatus[]>("/api/tasks"),
   getTask: (taskId: string) => request<TaskStatus>(`/api/tasks/${taskId}`),
+  cancelTask: (taskId: string) =>
+    request<TaskStatus>(`/api/tasks/${taskId}/cancel`, { method: "POST" }),
   getGraph: (id: string) => request<GraphElements>(`/api/policies/${id}/graph`),
   getStats: (id: string) => request<GraphStats>(`/api/policies/${id}/stats`),
   getAssessments: (id: string) => request<Assessments>(`/api/policies/${id}/assessments`),

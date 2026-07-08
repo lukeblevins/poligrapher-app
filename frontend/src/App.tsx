@@ -15,13 +15,21 @@ export default function App() {
     setSelectedPolicyId(null);
   }
 
+  function handleProviderDeleted(id: string) {
+    if (id === selectedProvider?.id) {
+      setSelectedProvider(null);
+      setSelectedPolicyId(null);
+    }
+  }
+
   return (
     <div className="flex h-full flex-col">
-      <TopBar />
+      <TopBar onProviderCreated={handleSelectProvider} />
       <div className="flex flex-1 overflow-hidden">
         <ProviderSidebar
           selectedId={selectedProvider?.id ?? null}
           onSelect={handleSelectProvider}
+          onDeleted={handleProviderDeleted}
         />
         <main className="flex flex-1 overflow-hidden bg-zinc-50 dark:bg-zinc-950">
           <PolicyList

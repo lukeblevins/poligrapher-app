@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "../api/client";
 import type { TaskStatus } from "../api/types";
+import { isTaskSettled } from "../api/types";
 
 /**
  * Runs per-policy tasks (generate/score) with independent concurrency: several
@@ -25,7 +26,7 @@ export function usePolicyTasks(providerId: string | null) {
       queryFn: () => api.getTask(taskId),
       refetchInterval: (query: { state: { data?: TaskStatus } }) => {
         const status = query.state.data?.status;
-        return status === "done" || status === "failed" ? false : 1500;
+        return status && isTaskSettled(status) ? false : 1500;
       },
     })),
   });
@@ -33,7 +34,7 @@ export function usePolicyTasks(providerId: string | null) {
   useEffect(() => {
     for (const result of results) {
       const task = result.data;
-      if (!task || (task.status !== "done" && task.status !== "failed")) continue;
+      if (!task || !isTaskSettled(task.status)) continue;
 
       const entry = Object.entries(tasksRef.current).find(([, id]) => id === task.task_id);
       if (!entry) continue;
@@ -58,8 +59,9 @@ export function usePolicyTasks(providerId: string | null) {
       if (tasksRef.current[policyId]) return; // this policy already has a task running
       const started = await action(policyId);
       setTasks((prev) => ({ ...prev, [policyId]: started.task_id }));
+      qc.invalidateQueries({ queryKey: ["tasks"] }); // wake the Status Center
     },
-    [],
+    [qc],
   );
 
   return { start, runningIds: new Set(Object.keys(tasks)) };

@@ -1,9 +1,16 @@
 import { useState } from "react";
 
+import type { Provider } from "../../api/types";
 import { useCreateProvider } from "../../hooks/queries";
 import { Modal } from "../Modal";
 
-export function AddProviderModal({ onClose }: { onClose: () => void }) {
+export function AddProviderModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated?: (provider: Provider) => void;
+}) {
   const [name, setName] = useState("");
   const [industry, setIndustry] = useState("");
   const createProvider = useCreateProvider();
@@ -11,7 +18,11 @@ export function AddProviderModal({ onClose }: { onClose: () => void }) {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     try {
-      await createProvider.mutateAsync({ name: name.trim(), industry: industry.trim() || null });
+      const created = await createProvider.mutateAsync({
+        name: name.trim(),
+        industry: industry.trim() || null,
+      });
+      onCreated?.(created);
       onClose();
     } catch {
       /* error surfaced below */
