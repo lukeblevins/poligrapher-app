@@ -44,8 +44,15 @@ ENV HOME=/home/user \
 
 WORKDIR /home/user/app
 
-# Install the backend (this pulls PoliGraph, policy-scorer, torch, spaCy, etc.).
-# Copy only what the install needs first so this layer caches across SPA changes.
+# Install the CPU-only torch build first so the project install below reuses it
+# instead of pulling the default wheel and its ~2 GB of bundled CUDA libraries —
+# useless on a CPU Space, and it bloats the image and build time.
+RUN pip install --user --no-cache-dir \
+        --index-url https://download.pytorch.org/whl/cpu torch
+
+# Install the backend (this pulls PoliGraph, policy-scorer, spaCy, etc.; torch is
+# already satisfied by the CPU wheel above). Copy only what the install needs
+# first so this layer caches across SPA-only changes.
 COPY --chown=user pyproject.toml ./
 COPY --chown=user poligrapher_app ./poligrapher_app
 RUN pip install --user --no-cache-dir .

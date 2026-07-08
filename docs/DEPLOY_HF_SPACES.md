@@ -47,32 +47,19 @@ SDK and port automatically.
 
 ## Option B — auto-deploy from GitHub on every push
 
-Keep GitHub as the source of truth and mirror to the Space in CI. Add an
-`HF_TOKEN` repo secret (a **write** token), then a workflow:
+The workflow at `.github/workflows/deploy-hf-space.yml` mirrors this repo to the
+Space on every push to `main` (and on manual dispatch), so the Space rebuilds
+from the latest commit. It's already committed — you just configure two values:
 
-```yaml
-# .github/workflows/deploy-hf-space.yml
-name: Deploy to HF Spaces
-on:
-  push:
-    branches: [main]        # or your deployment branch
-jobs:
-  sync:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
-      - name: Push to Space
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          git push --force \
-            https://user:$HF_TOKEN@huggingface.co/spaces/<your-username>/<space-name> \
-            HEAD:main
-```
+1. Create the Space first (see Option A, step 1).
+2. In the GitHub repo → **Settings → Secrets and variables → Actions**:
+   - **Secret** `HF_TOKEN` — a Hugging Face [token](https://huggingface.co/settings/tokens) with **write** access.
+   - **Variable** `HF_SPACE_ID` — `<your-hf-username>/<space-name>`.
+3. Push to `main` (or run the workflow manually from the **Actions** tab). The
+   Space picks up the new commit and rebuilds.
 
-This isn't committed by default — create the Space first, then drop it in and set
-`<your-username>/<space-name>`.
+The Space path and token are read from those settings, so nothing
+environment-specific is hardcoded in the workflow.
 
 ## Local smoke test (optional)
 
@@ -82,16 +69,12 @@ docker run --rm -p 7860:7860 poligrapher-app
 # open http://localhost:7860
 ```
 
-## Trimming image size (optional)
+## Image size
 
-The default `torch` wheel pulls CUDA libraries you don't need on a CPU Space. To
-slim the image, install the CPU build before the project in the Dockerfile:
-
-```dockerfile
-RUN pip install --user --no-cache-dir \
-      --index-url https://download.pytorch.org/whl/cpu torch \
-    && pip install --user --no-cache-dir .
-```
+The `Dockerfile` already installs the **CPU-only** torch wheel before the project
+(`--index-url https://download.pytorch.org/whl/cpu`), avoiding the ~2 GB of CUDA
+libraries the default wheel bundles — useless on a CPU Space. If you deploy to a
+**GPU** host instead, drop that line so the standard CUDA-enabled torch is used.
 
 ## Other hosts
 
