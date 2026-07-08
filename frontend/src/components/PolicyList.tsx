@@ -5,6 +5,7 @@ import type { Policy, Provider } from "../api/types";
 import { useDeletePolicy, usePolicies } from "../hooks/queries";
 import { usePolicyTasks } from "../hooks/usePolicyTasks";
 import { AddPolicyModal } from "./modals/AddPolicyModal";
+import { ScheduleModal } from "./modals/ScheduleModal";
 
 interface Props {
   provider: Provider | null;
@@ -22,6 +23,7 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy }: Props
   const { data: policies = [], isLoading } = usePolicies(provider?.id ?? null);
   const deletePolicy = useDeletePolicy(provider?.id ?? "");
   const [showAdd, setShowAdd] = useState(false);
+  const [showSchedule, setShowSchedule] = useState(false);
 
   // Per-policy tasks run concurrently; only the policy's own buttons disable
   // while its task is in flight.
@@ -43,9 +45,14 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy }: Props
     <div className="min-w-0 flex-1 overflow-auto p-4">
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-lg font-semibold">{provider.name}</h1>
-        <button className="btn-primary" onClick={() => setShowAdd(true)}>
-          + Policy
-        </button>
+        <div className="flex gap-2">
+          <button className="btn-secondary" onClick={() => setShowSchedule(true)}>
+            Schedule
+          </button>
+          <button className="btn-primary" onClick={() => setShowAdd(true)}>
+            + Policy
+          </button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -123,6 +130,7 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy }: Props
       )}
 
       {showAdd && <AddPolicyModal providerId={provider.id} onClose={() => setShowAdd(false)} />}
+      {showSchedule && <ScheduleModal provider={provider} onClose={() => setShowSchedule(false)} />}
     </div>
   );
 }

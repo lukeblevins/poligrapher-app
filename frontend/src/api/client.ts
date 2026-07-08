@@ -5,6 +5,8 @@ import type {
   ImportSummary,
   Policy,
   Provider,
+  Schedule,
+  SourcePreview,
   TaskStatus,
 } from "./types";
 
@@ -54,6 +56,32 @@ export const api = {
     request<TaskStatus>(`/api/policies/${id}/score`, { method: "POST" }),
   refreshAll: () => request<TaskStatus>("/api/refresh", { method: "POST" }),
   scoreAll: () => request<TaskStatus>("/api/score-all", { method: "POST" }),
+
+  // Schedules
+  listSchedules: (providerId: string) =>
+    request<Schedule[]>(`/api/providers/${providerId}/schedules`),
+  createSchedule: (providerId: string, body: { cadence: string; enabled: boolean; source_override_url?: string | null }) =>
+    request<Schedule>(`/api/providers/${providerId}/schedules`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  updateSchedule: (id: string, body: Partial<{ cadence: string; enabled: boolean; source_override_url: string | null }>) =>
+    request<Schedule>(`/api/schedules/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  deleteSchedule: (id: string) => request<void>(`/api/schedules/${id}`, { method: "DELETE" }),
+  runSchedule: (id: string) => request<Schedule>(`/api/schedules/${id}/run`, { method: "POST" }),
+  confirmSource: (id: string, url: string) =>
+    request<Schedule>(`/api/schedules/${id}/confirm-source`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    }),
+  sourcePreview: (providerId: string) =>
+    request<SourcePreview>(`/api/providers/${providerId}/source-preview`),
 
   // Analysis
   listTasks: () => request<TaskStatus[]>("/api/tasks"),

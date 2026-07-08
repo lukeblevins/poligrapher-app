@@ -17,10 +17,15 @@ class Provider(Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     industry: Mapped[str | None] = mapped_column(String(255))
+    # Stable discovery anchor for scheduled acquisition (e.g. "abbott.com").
+    domain: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     policies: Mapped[list["Policy"]] = relationship(
         "Policy", back_populates="provider", cascade="all, delete-orphan"
+    )
+    schedules: Mapped[list["Schedule"]] = relationship(
+        "Schedule", back_populates="provider", cascade="all, delete-orphan"
     )
 
 
@@ -47,6 +52,34 @@ class Policy(Base):
     analysis_results: Mapped[list["AnalysisResult"]] = relationship(
         "AnalysisResult", back_populates="policy", cascade="all, delete-orphan"
     )
+
+
+class Schedule(Base):
+    """A recurring 'acquire → generate → score' job for a provider."""
+
+    __tablename__ = "schedules"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    provider_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("providers.id", ondelete="CASCADE"), nullable=False
+    )
+    # 'daily' | 'weekly' | 'monthly' | raw cron ("m h dom mon dow")
+    cadence: Mapped[str] = mapped_column(String(64), default="weekly")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # A user-confirmed canonical URL that overrides discovery (strategy 'override').
+    source_override_url: Mapped[str | None] = mapped_column(String)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    next_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_status: Mapped[str] = mapped_column(String(32), default="idle")
+    last_source_url: Mapped[str | None] = mapped_column(String)
+    last_strategy: Mapped[str | None] = mapped_column(String(32))
+    last_confidence: Mapped[float | None] = mapped_column(Float)
+    last_content_hash: Mapped[str | None] = mapped_column(String(64))
+    # Set when acquisition could not confidently resolve a source and needs a human.
+    needs_attention: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    provider: Mapped["Provider"] = relationship("Provider", back_populates="schedules")
 
 
 class AnalysisResult(Base):

@@ -46,6 +46,7 @@ dependencies = [
     "requests-cache==0.9.8",
     "tldextract",
     "torch",
+    "apscheduler>=3.10,<4",
 ]
 
 [tool.hatch.metadata]

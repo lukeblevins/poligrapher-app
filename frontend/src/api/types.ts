@@ -4,10 +4,38 @@ export interface Provider {
   id: string;
   name: string;
   industry: string | null;
+  domain: string | null;
   created_at: string;
   policy_count: number;
   succeeded_count: number;
   failed_count: number;
+}
+
+export interface Schedule {
+  id: string;
+  provider_id: string;
+  cadence: string;
+  enabled: boolean;
+  source_override_url: string | null;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  last_status: string;
+  last_source_url: string | null;
+  last_strategy: string | null;
+  last_confidence: number | null;
+  last_content_hash: string | null;
+  needs_attention: boolean;
+  created_at: string;
+}
+
+export interface SourcePreview {
+  url: string | null;
+  strategy: string | null;
+  confidence: number;
+  auto: boolean;
+  select: unknown | null;
+  notes: string;
+  resolved: boolean;
 }
 
 export interface PipelineError {

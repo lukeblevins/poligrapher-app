@@ -15,6 +15,7 @@ class ProviderRead(BaseModel):
     id: uuid.UUID
     name: str
     industry: str | None
+    domain: str | None = None
     created_at: datetime
     policy_count: int = 0
     succeeded_count: int = 0
@@ -61,6 +62,51 @@ class ImportSummary(BaseModel):
     created: int
     skipped: int
     errors: int
+
+
+# ── Scheduling ────────────────────────────────────────────────────────────────
+
+class ScheduleCreate(BaseModel):
+    cadence: str = "weekly"
+    enabled: bool = True
+    source_override_url: str | None = None
+
+
+class ScheduleUpdate(BaseModel):
+    cadence: str | None = None
+    enabled: bool | None = None
+    source_override_url: str | None = None
+
+
+class ScheduleRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    provider_id: uuid.UUID
+    cadence: str
+    enabled: bool
+    source_override_url: str | None
+    last_run_at: datetime | None
+    next_run_at: datetime | None
+    last_status: str
+    last_source_url: str | None
+    last_strategy: str | None
+    last_confidence: float | None
+    last_content_hash: str | None
+    needs_attention: bool
+    created_at: datetime
+
+
+class SourcePreview(BaseModel):
+    """A resolved candidate source shown to the user for confirmation."""
+
+    url: str | None
+    strategy: str | None
+    confidence: float
+    auto: bool
+    select: object | None = None
+    notes: str = ""
+    resolved: bool
 
 
 class GraphElements(BaseModel):
