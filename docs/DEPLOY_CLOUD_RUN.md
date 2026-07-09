@@ -19,7 +19,10 @@ changes are needed. Cloud Run injects a `PORT` env var; the app already honors i
 >   Cloud SQL (Postgres) and set `DATABASE_URL`.
 > - **Scheduled acquisition won't fire while scaled to zero.** APScheduler only
 >   runs when an instance is alive. Use `--min-instances 1` if you need it.
-> - **Memory.** We request `4Gi`; bump to `8Gi` if the model load OOMs.
+> - **Memory.** `8Gi` is required — the transformer annotator OOMs at `4Gi`
+>   (`Memory limit of 4096 MiB exceeded`) partway through a comparison run.
+> - **Single instance.** Deploy with `--max-instances 1`: the in-memory task
+>   registry and the ephemeral SQLite DB don't tolerate more than one instance.
 
 ## Quick manual deploy (no CI)
 
@@ -34,8 +37,8 @@ gcloud run deploy poligrapher-app \
     --source . \
     --region us-central1 \
     --allow-unauthenticated \
-    --port 8080 --memory 4Gi --cpu 2 --timeout 3600 \
-    --min-instances 0 --max-instances 3 --no-cpu-throttling
+    --port 8080 --memory 8Gi --cpu 4 --timeout 3600 \
+    --min-instances 0 --max-instances 1 --no-cpu-throttling
 ```
 
 `--source .` uses Cloud Build to build the `Dockerfile`, pushes the image to

@@ -51,6 +51,18 @@ def _website_text_hash(policy, db) -> str | None:
         return None
 
 
+def _mark_failed(policies, db, message: str) -> None:
+    """Terminate a run's policies as failed so the UI stops polling 'pending'.
+
+    Reassigns pipeline_errors (rather than mutating in place) so SQLAlchemy
+    tracks the change on the plain JSON column.
+    """
+    for p in policies:
+        p.pipeline_status = "failed"
+        p.pipeline_errors = list(p.pipeline_errors or []) + [message]
+    db.commit()
+
+
 def run_comparison(provider_id, *, scheduled: bool, registry=None, task_id=None) -> str:
     """Fetch the provider's website source once and build both method graphs.
 
@@ -115,7 +127,11 @@ def run_comparison(provider_id, *, scheduled: bool, registry=None, task_id=None)
         try:
             generate_comparison(url, str(web_dir), str(pdf_dir), should_cancel)
         except PipelineCancelled:
+            _mark_failed([website, pdf], db, "Run cancelled")
             return "cancelled"
+        except Exception as exc:  # noqa: BLE001
+            _mark_failed([website, pdf], db, f"Comparison failed: {exc}")
+            raise
 
         _score(website, db)
         _score(pdf, db)
@@ -129,7 +145,7 @@ def run_comparison(provider_id, *, scheduled: bool, registry=None, task_id=None)
 def run_upload(policy_id, *, registry=None, task_id=None) -> str:
     """Analyse a one-off uploaded PDF (never scheduled)."""
     from poligrapher_app.api.database import SessionLocal
-    from poligrapher_app.api.mapping import policy_doc_from_db, sync_policy_from_doc
+    from poligrapher_app.api.mapping import policy_doc_from_db
     from poligrapher_app.api.models import Policy
     from poligrapher_app.services.pipeline import PipelineCancelled, generate_graph
 
@@ -143,10 +159,15 @@ def run_upload(policy_id, *, registry=None, task_id=None) -> str:
         try:
             generate_graph(doc, should_cancel=should_cancel)
         except PipelineCancelled:
+            _mark_failed([policy], db, "Run cancelled")
             return "cancelled"
+        except Exception as exc:  # noqa: BLE001
+            _mark_failed([policy], db, f"Upload analysis failed: {exc}")
+            raise
+        # _score() re-reads the generated doc, scores it, and syncs+commits — no
+        # second sync of the pre-generate `doc` (that clobbered the scored fields).
         _score(policy, db)
         policy.content_hash = file_hash(policy.url)
-        sync_policy_from_doc(policy, doc, db)
         db.commit()
         return "ok"
     finally:

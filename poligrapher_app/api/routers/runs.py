@@ -77,9 +77,17 @@ def list_runs(provider_id: uuid.UUID, db: Db):
     groups: dict[str, RunGroup] = {}
     ordered: list[RunGroup] = []
     for p in policies:
-        if p.method == "pdf_upload" or p.run_group is None:
+        if p.method == "pdf_upload":
             ordered.append(RunGroup(
                 run_group=None, kind="upload", scheduled=p.scheduled,
+                capture_date=p.capture_date, created_at=p.created_at, runs=[p],
+            ))
+            continue
+        if p.run_group is None:
+            # A website policy without a comparison group (legacy/imported): show it
+            # as its own standalone run — NOT an upload, and not merged with others.
+            ordered.append(RunGroup(
+                run_group=None, kind="comparison", scheduled=p.scheduled,
                 capture_date=p.capture_date, created_at=p.created_at, runs=[p],
             ))
             continue
@@ -121,7 +129,11 @@ async def upload_pdf(provider_id: uuid.UUID, request: Request, db: Db,
     out_dir = OUTPUT_BASE / provider_slug(provider.name) / f"{day.isoformat()}_upload_{uuid.uuid4().hex[:8]}"
     out_dir.mkdir(parents=True, exist_ok=True)
     dest = out_dir / Path(pdf_file.filename).name
-    dest.write_bytes(await pdf_file.read())
+    # Stream to disk in chunks rather than buffering the whole PDF in memory
+    # (a large upload could OOM the memory-constrained Cloud Run instance).
+    with dest.open("wb") as out:
+        while chunk := await pdf_file.read(1024 * 1024):
+            out.write(chunk)
 
     policy = Policy(provider_id=provider.id, url=str(dest), source="pdf", method="pdf_upload",
                     scheduled=False, capture_date=day, output_dir=str(out_dir),
