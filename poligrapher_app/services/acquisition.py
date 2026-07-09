@@ -23,7 +23,9 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import re
+import time
 import urllib.parse
 from dataclasses import dataclass, field
 
@@ -36,7 +38,124 @@ logger = logging.getLogger(__name__)
 OTA_COLLECTIONS = ("contrib-declarations",)
 OTA_RAW = "https://raw.githubusercontent.com/OpenTermsArchive/{col}/main/declarations/{name}.json"
 
-_UA = {"User-Agent": "Mozilla/5.0 (compatible; PoligrapherBot/1.0; +privacy-policy-analyzer)"}
+# Present as a current desktop Chrome, not a bot. Corporate WAFs (Akamai,
+# Cloudflare, Imperva) block obvious bot User-Agents on sight — the old
+# "PoligrapherBot/1.0" was an instant reject — so we send a full, realistic
+# browser header set for static fetches.
+BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+    ),
+    "Accept": (
+        "text/html,application/xhtml+xml,application/xml;q=0.9,"
+        "image/avif,image/webp,image/apng,*/*;q=0.8"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+    "Sec-CH-UA": '"Chromium";v="125", "Not.A/Brand";v="24", "Google Chrome";v="125"',
+    "Sec-CH-UA-Mobile": "?0",
+    "Sec-CH-UA-Platform": '"Windows"',
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "Upgrade-Insecure-Requests": "1",
+}
+
+# The Wayback Machine availability API. Fetching an archived snapshot sidesteps
+# live-site bot-blocking entirely and, as a bonus for a policy-comparison
+# research project, yields historical versions of the document.
+WAYBACK_AVAILABLE = "https://archive.org/wayback/available?url={url}"
+
+
+# ── optional Tier-2 anti-bot: proxy + unblocker API (env-gated, off by default) ─
+#
+# Datacenter-IP blocking is only reliably beaten by routing target requests
+# through non-datacenter IPs. These hooks stay dormant (and free) unless the
+# corresponding env vars are set, so nothing changes for the default deployment.
+#
+#   CRAWL_PROXY            e.g. http://user:pass@gw.provider.com:7777  (residential/ISP proxy)
+#   CRAWL_PROXY_USERNAME   optional, if creds aren't embedded in CRAWL_PROXY
+#   CRAWL_PROXY_PASSWORD   optional
+#
+#   SCRAPE_API_URL         unblocker/scraping-API template, e.g.
+#                          https://api.zyte.com/v1/... or
+#                          https://app.scrapingbee.com/api/v1/?api_key={key}&render_js=true&url={url}
+#   SCRAPE_API_KEY         substituted into {key} in SCRAPE_API_URL
+
+def _proxy_parts() -> tuple[str, str | None, str | None] | None:
+    server = (os.getenv("CRAWL_PROXY") or "").strip()
+    if not server:
+        return None
+    return server, os.getenv("CRAWL_PROXY_USERNAME"), os.getenv("CRAWL_PROXY_PASSWORD")
+
+
+def httpx_proxy() -> str | None:
+    """Proxy URL for httpx, or None when unconfigured (creds folded into URL)."""
+    parts = _proxy_parts()
+    if not parts:
+        return None
+    server, user, pwd = parts
+    if user and pwd and "@" not in server:
+        p = urllib.parse.urlparse(server)
+        creds = f"{urllib.parse.quote(user, safe='')}:{urllib.parse.quote(pwd, safe='')}"
+        return urllib.parse.urlunparse(p._replace(netloc=f"{creds}@{p.netloc}"))
+    return server
+
+
+def playwright_proxy() -> dict | None:
+    """Playwright ``proxy=`` config dict, or None when unconfigured."""
+    parts = _proxy_parts()
+    if not parts:
+        return None
+    server, user, pwd = parts
+    cfg: dict[str, str] = {"server": server}
+    if user:
+        cfg["username"] = user
+    if pwd:
+        cfg["password"] = pwd
+    return cfg
+
+
+def open_client(timeout: float, proxy: str | None = None) -> httpx.Client:
+    """Build an httpx.Client with browser headers, optionally proxied.
+
+    Version-agnostic: httpx renamed the proxy kwarg (``proxies`` -> ``proxy``),
+    and passing the wrong one raises TypeError. We only pass it when a proxy is
+    configured, trying the modern name first and falling back to the old one, so
+    the default (no-proxy) path works on every httpx version.
+    """
+    kwargs = dict(headers=BROWSER_HEADERS, follow_redirects=True, timeout=timeout)
+    if proxy:
+        try:
+            return httpx.Client(proxy=proxy, **kwargs)
+        except TypeError:
+            return httpx.Client(proxies=proxy, **kwargs)
+    return httpx.Client(**kwargs)
+
+
+def fetch_via_unblocker(url: str, timeout: float = 60.0) -> str:
+    """Fetch HTML through a configured unblocker/scraping API, or '' if unset.
+
+    The service handles IP rotation, JS rendering, and CAPTCHA solving and
+    returns the page HTML. Enabled only when SCRAPE_API_URL is set.
+    """
+    template = (os.getenv("SCRAPE_API_URL") or "").strip()
+    if not template:
+        return ""
+    endpoint = template.replace("{key}", os.getenv("SCRAPE_API_KEY", "")).replace(
+        "{url}", urllib.parse.quote(url, safe="")
+    )
+    try:
+        with httpx.Client(follow_redirects=True, timeout=timeout) as client:
+            r = client.get(endpoint)
+        if r.status_code == 200 and len(r.text) >= 2000:
+            logger.info("fetched via unblocker API: %s", url)
+            return r.text
+        logger.info("unblocker API returned %s / %d bytes for %s", r.status_code, len(r.text), url)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("unblocker API failed for %s: %s", url, exc)
+    return ""
 
 # Confidence a resolution must clear to run automatically; below this the source
 # is surfaced to the user for confirmation.
@@ -188,23 +307,66 @@ def content_hash(text: str) -> str:
 
 # ── network / headless fetching ───────────────────────────────────────────────
 
-def fetch_static(url: str, timeout: float = 15.0) -> tuple[int, str]:
-    try:
-        r = httpx.get(url, headers=_UA, follow_redirects=True, timeout=timeout)
-        return r.status_code, r.text
-    except Exception as exc:  # noqa: BLE001
-        logger.info("static fetch failed for %s: %s", url, exc)
-        return 0, ""
+def fetch_static(
+    url: str, timeout: float = 20.0, attempts: int = 3, use_proxy: bool = True
+) -> tuple[int, str]:
+    """GET a URL with realistic headers, retrying transient failures with backoff.
+
+    Corporate CDNs are slow and rate-limit bursts, so we retry on connection
+    errors/timeouts and on 429/503 with a short exponential backoff. Returns
+    (0, "") when every attempt fails. Routes through CRAWL_PROXY when configured;
+    callers fetching archive.org/OTA pass ``use_proxy=False`` to avoid burning
+    paid proxy bandwidth on hosts that don't block us.
+    """
+    proxy = httpx_proxy() if use_proxy else None
+    last_exc: Exception | None = None
+    for i in range(attempts):
+        try:
+            with open_client(timeout, proxy) as client:
+                r = client.get(url)
+            if r.status_code in (429, 503) and i < attempts - 1:
+                time.sleep(1.5 * (i + 1))
+                continue
+            return r.status_code, r.text
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            if i < attempts - 1:
+                time.sleep(1.0 * (i + 1))
+    logger.info("static fetch failed for %s: %s", url, last_exc)
+    return 0, ""
 
 
-def fetch_rendered(url: str, timeout_ms: int = 25000) -> str:
-    """Load a page in a headless browser (recovers SPA / bot-blocked sites)."""
+def fetch_rendered(url: str, timeout_ms: int = 35000) -> str:
+    """Load a page in a headless browser (recovers SPA / bot-blocked sites).
+
+    Uses light stealth so a default headless fingerprint doesn't get flagged:
+    a real UA + Accept-Language, a desktop viewport/locale/timezone, and a
+    masked ``navigator.webdriver``.
+    """
     from playwright.sync_api import sync_playwright
 
+    launch_kwargs: dict = {
+        "args": ["--disable-blink-features=AutomationControlled", "--no-sandbox"]
+    }
+    proxy = playwright_proxy()
+    if proxy:
+        launch_kwargs["proxy"] = proxy
+
     with sync_playwright() as p:
-        browser = p.chromium.launch()
+        browser = p.chromium.launch(**launch_kwargs)
         try:
-            page = browser.new_page(user_agent=_UA["User-Agent"])
+            context = browser.new_context(
+                user_agent=BROWSER_HEADERS["User-Agent"],
+                locale="en-US",
+                timezone_id="America/New_York",
+                viewport={"width": 1366, "height": 768},
+                extra_http_headers={"Accept-Language": BROWSER_HEADERS["Accept-Language"]},
+            )
+            # Hide the automation flag most bot-detectors check first.
+            context.add_init_script(
+                "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
+            )
+            page = context.new_page()
             page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
             page.wait_for_timeout(1500)  # let lazy footers/consent scripts settle
             return page.content()
@@ -212,16 +374,65 @@ def fetch_rendered(url: str, timeout_ms: int = 25000) -> str:
             browser.close()
 
 
+def wayback_snapshot_url(url: str, timeout: float = 15.0, raw: bool = True) -> str | None:
+    """Return the archived URL of the closest Wayback snapshot, or None.
+
+    ``raw=True`` uses the ``id_`` modifier to return the original archived
+    resource (no toolbar/rewriting) — best for an httpx text fetch. ``raw=False``
+    returns the standard https replay URL, which is what to navigate a browser to
+    (the raw ``id_`` endpoint refuses browser navigation from some networks).
+    """
+    try:
+        api = WAYBACK_AVAILABLE.format(url=urllib.parse.quote(url, safe=""))
+        r = httpx.get(api, headers=BROWSER_HEADERS, follow_redirects=True, timeout=timeout)
+        snap = ((r.json().get("archived_snapshots") or {}).get("closest") or {})
+        if not snap.get("available") or not snap.get("url"):
+            return None
+        snap_url = snap["url"].replace("http://", "https://", 1)  # avoid http refusals
+        if raw:
+            # https://web.archive.org/web/<ts>/<orig> -> .../web/<ts>id_/<orig>
+            return re.sub(r"/web/(\d+)/", r"/web/\1id_/", snap_url, count=1)
+        return snap_url
+    except Exception as exc:  # noqa: BLE001
+        logger.info("wayback lookup failed for %s: %s", url, exc)
+        return None
+
+
+def fetch_wayback(url: str, timeout: float = 20.0) -> str:
+    """Return archived HTML from the closest Wayback Machine snapshot, or ''."""
+    snap_url = wayback_snapshot_url(url, timeout=timeout)
+    if not snap_url:
+        return ""
+    status, html = fetch_static(snap_url, timeout=timeout, use_proxy=False)
+    if status == 200 and html:
+        logger.info("using Wayback snapshot for %s -> %s", url, snap_url)
+        return html
+    return ""
+
+
 def fetch_html(url: str, allow_headless: bool = True) -> str:
-    """Fetch HTML, escalating to a headless browser when static fetch is blocked."""
+    """Fetch HTML, escalating static -> headless browser -> Wayback snapshot."""
     status, html = fetch_static(url)
     blocked = status in (0, 403, 429, 503) or len(html) < 2000
     if blocked and allow_headless:
         logger.info("escalating to headless browser for %s (static status=%s)", url, status)
         try:
-            return fetch_rendered(url)
+            rendered = fetch_rendered(url)
+            if len(rendered) >= 2000:
+                return rendered
+            html = rendered or html
         except Exception as exc:  # noqa: BLE001
             logger.warning("headless fetch failed for %s: %s", url, exc)
+    # Tier-2 unblocker API, if configured (handles rotation + rendering + CAPTCHA).
+    if not html or len(html) < 2000:
+        via_api = fetch_via_unblocker(url)
+        if via_api:
+            return via_api
+    # Last resort: an archived copy sidesteps live bot-blocking entirely.
+    if not html or len(html) < 2000:
+        archived = fetch_wayback(url)
+        if archived:
+            return archived
     return html
 
 
@@ -233,7 +444,7 @@ def ota_declaration(provider_name: str) -> dict | None:
         quoted = urllib.parse.quote(name)
         for col in OTA_COLLECTIONS:
             url = OTA_RAW.format(col=col, name=quoted)
-            status, body = fetch_static(url, timeout=10.0)
+            status, body = fetch_static(url, timeout=10.0, use_proxy=False)
             if status != 200 or not body:
                 continue
             try:
