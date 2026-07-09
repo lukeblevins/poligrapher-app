@@ -5,10 +5,20 @@ export interface Provider {
   name: string;
   industry: string | null;
   domain: string | null;
+  source_url: string | null;
   created_at: string;
   policy_count: number;
   succeeded_count: number;
   failed_count: number;
+}
+
+export interface RunGroup {
+  run_group: string | null;
+  kind: "comparison" | "upload";
+  scheduled: boolean;
+  capture_date: string | null;
+  created_at: string;
+  runs: Policy[];
 }
 
 export interface Schedule {
@@ -48,6 +58,10 @@ export interface Policy {
   provider_id: string;
   url: string;
   source: "webpage" | "pdf";
+  method: "website" | "pdf_from_page" | "pdf_upload";
+  run_group: string | null;
+  scheduled: boolean;
+  content_hash: string | null;
   capture_date: string | null;
   output_dir: string | null;
   has_results: boolean;
