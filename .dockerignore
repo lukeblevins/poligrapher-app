@@ -1,0 +1,30 @@
+# Keep the build context small and reproducible — everything below is either
+# regenerated in the image or irrelevant to the build.
+.git
+.venv
+env/
+venv/
+ENV/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Frontend deps + build output are rebuilt inside the image.
+frontend/node_modules/
+frontend/dist/
+
+# Local dev artifacts / DBs / secrets.
+*.db
+*.db-wal
+*.db-shm
+*.sqlite3
+.env
+outputs/
+output/
+flagged/
+.pytest_cache/
+.coverage
+.vscode/
+.claude/

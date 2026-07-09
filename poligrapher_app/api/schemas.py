@@ -16,6 +16,7 @@ class ProviderRead(BaseModel):
     name: str
     industry: str | None
     domain: str | None = None
+    source_url: str | None = None
     created_at: datetime
     policy_count: int = 0
     succeeded_count: int = 0
@@ -29,6 +30,10 @@ class PolicyRead(BaseModel):
     provider_id: uuid.UUID
     url: str
     source: str
+    method: str = "website"
+    run_group: uuid.UUID | None = None
+    scheduled: bool = False
+    content_hash: str | None = None
     capture_date: date | None
     output_dir: str | None
     has_results: bool
@@ -38,6 +43,26 @@ class PolicyRead(BaseModel):
     gdpr_score: float | None
     graph_kind: str
     created_at: datetime
+
+
+class RunGroup(BaseModel):
+    """A comparison run (website + pdf_from_page) or a one-off uploaded PDF."""
+
+    run_group: str | None
+    kind: str  # 'comparison' | 'upload'
+    scheduled: bool
+    capture_date: date | None
+    created_at: datetime
+    runs: list[PolicyRead]
+
+
+class ProviderSourceUpdate(BaseModel):
+    source_url: str
+
+
+class ScheduleToggle(BaseModel):
+    enabled: bool
+    cadence: str | None = None
 
 
 class TaskStatus(BaseModel):

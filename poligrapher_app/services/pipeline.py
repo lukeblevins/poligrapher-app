@@ -14,12 +14,15 @@ import uuid
 from contextlib import contextmanager
 from typing import Callable
 
-import httpx
-
 from poligrapher_app.domain.policy_analysis import (
     DocumentCaptureSource,
     GraphKind,
     PolicyDocumentInfo,
+)
+from poligrapher_app.services.acquisition import (
+    httpx_proxy,
+    open_client,
+    wayback_snapshot_url,
 )
 
 logger = logging.getLogger(__name__)
@@ -131,20 +134,31 @@ def validate_url(url: str) -> dict:
     if is_ip_address(hostname):
         return {"valid": False, "message": "IP addresses not allowed. Please use domain names"}
 
-    try:
-        headers = {"User-Agent": "Mozilla/5.0 (compatible; PrivacyPolicyAnalyzer/1.0)"}
-        response = httpx.head(url, headers=headers, follow_redirects=True, timeout=10.0)
-        if response.status_code == 405:  # Method not allowed
-            response = httpx.get(url, headers=headers, follow_redirects=True, timeout=10.0)
-        if not response.is_success:
-            return {
-                "valid": False,
-                "message": f"URL not accessible (Status code: {response.status_code})",
-            }
-    except Exception as e:
-        return {"valid": False, "message": f"Error accessing URL: {str(e)}"}
+    if _url_reachable(url):
+        return {"valid": True, "message": "URL is valid"}
+    return {"valid": False, "message": "URL not accessible"}
 
-    return {"valid": True, "message": "URL is valid"}
+
+def _url_reachable(url: str, timeout: float = 15.0, attempts: int = 2) -> bool:
+    """Reachability probe with a realistic browser identity and retries.
+
+    Uses GET (many WAFs reject or stall bare HEAD requests) with the shared
+    browser headers, retrying transient timeouts/5xx. A response below 400 (after
+    redirect following) counts as reachable.
+    """
+    proxy = httpx_proxy()
+    for i in range(attempts):
+        try:
+            with open_client(timeout, proxy) as client:
+                r = client.get(url)
+            if r.status_code >= 500 and i < attempts - 1:
+                continue
+            return r.status_code < 400
+        except Exception as e:  # noqa: BLE001
+            if i < attempts - 1:
+                continue
+            logger.info("Error accessing URL %s: %s", url, str(e))
+    return False
 
 
 def test_document_url(url: str) -> bool:
@@ -161,15 +175,28 @@ def test_document_url(url: str) -> bool:
             return False
     except Exception:
         return False
+    return _url_reachable(url)
 
-    try:
-        response = httpx.head(url, follow_redirects=True, timeout=10.0)
-        if response.status_code == 405:  # Method not allowed
-            response = httpx.get(url, follow_redirects=True, timeout=10.0)
-        return response.status_code == 200
-    except Exception as e:
-        logger.error("Error accessing URL %s: %s", url, str(e))
-        return False
+
+def resolve_crawl_url(url: str) -> str:
+    """Return a crawlable URL for a live source, with a Wayback fallback.
+
+    If the live URL is reachable, use it. Otherwise (timeout, DNS failure, 404,
+    or a bot-block that fails the probe) fall back to the closest Wayback Machine
+    snapshot, which sidesteps live-site blocking. Raises FileNotFoundError only
+    when neither the live URL nor an archived copy is reachable.
+    """
+    if test_document_url(url):
+        return url
+    logger.warning("Live URL unreachable, trying Wayback Machine: %s", url)
+    # Trust the availability API rather than re-downloading the (often large,
+    # slow) archived page just to verify it — that probe was timing out. The
+    # crawler navigates it next with a generous timeout.
+    snapshot = wayback_snapshot_url(url, raw=False)  # https replay URL for browser nav
+    if snapshot:
+        logger.info("Using Wayback snapshot for crawl: %s", snapshot)
+        return snapshot
+    raise FileNotFoundError(f"Document is not accessible or does not exist: {url}")
 
 
 def generate_graph_from_html(
@@ -177,6 +204,7 @@ def generate_graph_from_html(
     output_folder: str,
     capture_pdf: bool,
     should_cancel: Callable[[], bool] | None = None,
+    emit_pdf: bool = False,
 ) -> None:
     """Run the PoliGraph pipeline stages for a single input into output_folder.
 
@@ -203,10 +231,17 @@ def generate_graph_from_html(
     # Prefer a local file check first to avoid URL probes on file paths.
     if os.path.isfile(path):
         logger.info("Verified local file input: %s", path)
-    elif not test_document_url(path):
-        raise FileNotFoundError(f"Document is not accessible or does not exist: {path}")
-    else:
+    elif capture_pdf:
+        # PDF sources: keep the strict reachability check — swapping in a Wayback
+        # snapshot of a binary PDF isn't handled by the PDF-copy step below.
+        if not test_document_url(path):
+            raise FileNotFoundError(f"Document is not accessible or does not exist: {path}")
         logger.info("Verified remote URL accessibility: %s", path)
+    else:
+        # Website crawl: fall back to an archived snapshot when the live site is
+        # unreachable or bot-blocked, so a transient block doesn't fail the run.
+        path = resolve_crawl_url(path)
+        logger.info("Resolved crawlable source: %s", path)
 
     def _cancelled() -> bool:
         return bool(should_cancel and should_cancel())
@@ -243,8 +278,12 @@ def generate_graph_from_html(
                 ("Crawling parsed HTML via html_crawler", lambda: html_crawler.main(html_path, staging))
             )
         else:
+            # When emit_pdf is set, the crawl also prints the rendered page to
+            # output.pdf so a PDF-parsing analysis can reuse this single fetch.
+            pdf_output = os.path.join(staging, "output.pdf") if emit_pdf else None
             steps.append(
-                ("Crawling source via html_crawler", lambda: html_crawler.main(path, staging))
+                ("Crawling source via html_crawler",
+                 lambda: html_crawler.main(path, staging, pdf_output=pdf_output))
             )
 
         def _run_annotators():
@@ -315,6 +354,30 @@ def generate_graph(
         logger.info("Pipeline succeeded for %s", policy.output_dir)
         policy.clear_errors()
         return True
+
+
+def generate_comparison(
+    url: str,
+    website_dir: str,
+    pdf_dir: str,
+    should_cancel: Callable[[], bool] | None = None,
+) -> None:
+    """Produce two graphs from a single website fetch, for method comparison.
+
+    1. Website method: crawl the live URL, and print that same rendered page to
+       ``website_dir/output.pdf``.
+    2. PDF-from-page method: run the PDF-parsing path on that emitted PDF (no
+       second fetch), yielding a comparable graph in ``pdf_dir``.
+    """
+    logger.info("Comparison run for %s -> website=%s pdf=%s", url, website_dir, pdf_dir)
+    generate_graph_from_html(url, website_dir, capture_pdf=False,
+                             should_cancel=should_cancel, emit_pdf=True)
+
+    shared_pdf = os.path.join(website_dir, "output.pdf")
+    if not os.path.exists(shared_pdf):
+        raise RuntimeError("Website crawl did not produce a PDF to compare against")
+
+    generate_graph_from_html(shared_pdf, pdf_dir, capture_pdf=True, should_cancel=should_cancel)
 
 
 def infer_graph_kind(policy: PolicyDocumentInfo) -> GraphKind:

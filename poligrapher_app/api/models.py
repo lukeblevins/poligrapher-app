@@ -19,6 +19,8 @@ class Provider(Base):
     industry: Mapped[str | None] = mapped_column(String(255))
     # Stable discovery anchor for scheduled acquisition (e.g. "abbott.com").
     domain: Mapped[str | None] = mapped_column(String(255))
+    # Provider-level website policy source; drives scheduled comparison runs.
+    source_url: Mapped[str | None] = mapped_column(String)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     policies: Mapped[list["Policy"]] = relationship(
@@ -38,6 +40,14 @@ class Policy(Base):
     )
     url: Mapped[str] = mapped_column(String, nullable=False)
     source: Mapped[str] = mapped_column(String(20), nullable=False)  # 'pdf' or 'webpage'
+    # Analysis method: 'website' | 'pdf_from_page' | 'pdf_upload'. The first two
+    # are the two halves of a single comparison run (grouped by run_group).
+    method: Mapped[str] = mapped_column(String(20), default="website")
+    run_group: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    # True for source/scheduled runs; False for one-off uploaded-PDF runs.
+    scheduled: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Website extracted-text hash or uploaded-PDF file hash, for change detection.
+    content_hash: Mapped[str | None] = mapped_column(String(64))
     capture_date: Mapped[date | None] = mapped_column(Date)
     output_dir: Mapped[str | None] = mapped_column(String)
     has_results: Mapped[bool] = mapped_column(Boolean, default=False)

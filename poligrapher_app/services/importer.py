@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 logger = logging.getLogger(__name__)
 
 from poligrapher_app.api.models import Policy, Provider
-from poligrapher_app.api.utils import parse_date, parse_pipeline_errors, provider_slug
+from poligrapher_app.api.utils import best_website_url, parse_date, parse_pipeline_errors, provider_slug
 
 # Mirrors the layout produced by add_policy / the pipeline:
 # output/<Provider_Slug>/<capture_date>_<source>/
@@ -80,6 +80,11 @@ def import_policies(df: pd.DataFrame, db: Session) -> dict:
                     )
                 )
                 created += 1
+
+            # Prefill the provider's website source from its (successful) policies.
+            db.flush()
+            if not provider.source_url:
+                provider.source_url = best_website_url(provider.policies)
         except Exception:
             logger.exception("Failed to import rows for provider %r", provider_name)
             errors += 1

@@ -5,6 +5,7 @@ import type {
   ImportSummary,
   Policy,
   Provider,
+  RunGroup,
   Schedule,
   SourcePreview,
   TaskStatus,
@@ -56,6 +57,28 @@ export const api = {
     request<TaskStatus>(`/api/policies/${id}/score`, { method: "POST" }),
   refreshAll: () => request<TaskStatus>("/api/refresh", { method: "POST" }),
   scoreAll: () => request<TaskStatus>("/api/score-all", { method: "POST" }),
+
+  // Provider runs & source
+  setSource: (providerId: string, source_url: string) =>
+    request<Provider>(`/api/providers/${providerId}/source`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source_url }),
+    }),
+  listRuns: (providerId: string) => request<RunGroup[]>(`/api/providers/${providerId}/runs`),
+  runNow: (providerId: string) =>
+    request<TaskStatus>(`/api/providers/${providerId}/runs`, { method: "POST" }),
+  uploadPdf: (providerId: string, file: File) => {
+    const form = new FormData();
+    form.append("pdf_file", file);
+    return request<TaskStatus>(`/api/providers/${providerId}/uploads`, { method: "POST", body: form });
+  },
+  toggleSchedule: (providerId: string, enabled: boolean, cadence?: string) =>
+    request<Schedule>(`/api/providers/${providerId}/schedule`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled, cadence }),
+    }),
 
   // Schedules
   listSchedules: (providerId: string) =>

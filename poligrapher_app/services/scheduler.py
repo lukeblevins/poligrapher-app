@@ -112,115 +112,57 @@ def _persist_next_run(schedule_id: str, when) -> None:
 
 
 def run_schedule_job(schedule_id: str, task_id: str | None = None) -> None:
-    """Resolve source → hash-gate → create Policy → generate + score."""
+    """Fired by the timer (or run-now): run the provider's comparison, gated by
+    website change detection. Delegates the heavy work to services.runs."""
     import uuid as _uuid
 
     from poligrapher_app.api.database import SessionLocal
-    from poligrapher_app.api.mapping import policy_doc_from_db, sync_policy_from_doc
-    from poligrapher_app.api.models import Policy, Schedule
-    from poligrapher_app.api.utils import provider_slug
-    from poligrapher_app.services.acquisition import PolicySourceResolver, provider_domain_from_urls
-    from poligrapher_app.services.pipeline import PipelineCancelled, generate_graph
-    from poligrapher_app.services.scoring import score_gdpr, score_privacy
+    from poligrapher_app.api.models import Schedule
+    from poligrapher_app.services.runs import run_comparison
 
+    # Resolve the provider and mark the schedule running.
     db = SessionLocal()
     try:
         sched = db.get(Schedule, _uuid.UUID(schedule_id))
         if not sched:
             return
-        provider = sched.provider
+        provider_id = sched.provider_id
+        provider_name = sched.provider.name
         sched.last_run_at = datetime.now(timezone.utc)
-        sched.last_status = "resolving"
+        sched.last_status = "running"
         db.commit()
+    finally:
+        db.close()
 
-        domain = provider.domain or provider_domain_from_urls([p.url for p in provider.policies])
-        if domain and not provider.domain:
-            provider.domain = domain
-            db.commit()
+    # Ensure the run shows up in the Status Center even when timer-fired.
+    own_task = task_id is None and _registry is not None
+    if own_task:
+        task_id = _registry.create(kind="schedule", title=f"Scheduled · {provider_name}",
+                                   total=1, schedule_id=schedule_id)
 
-        resolver = PolicySourceResolver(allow_headless=True)
-        resolved = resolver.resolve(provider.name, domain, sched.source_override_url)
-
-        if not resolved:
-            sched.last_status = "needs_source"
-            sched.needs_attention = True
-            db.commit()
-            if task_id and _registry:
-                _registry.set_failed(task_id, "Could not resolve a policy source")
-            return
-
-        sched.last_source_url = resolved.url
-        sched.last_strategy = resolved.strategy
-        sched.last_confidence = resolved.confidence
-
-        if not resolved.auto and not sched.source_override_url:
-            # Low-confidence discovery: don't silently analyze a maybe-wrong page.
-            sched.last_status = "needs_confirmation"
-            sched.needs_attention = True
-            db.commit()
-            if task_id and _registry:
-                _registry.set_failed(task_id, f"Low-confidence source ({resolved.confidence})")
-            return
-
-        if resolved.content_hash == sched.last_content_hash:
-            sched.last_status = "unchanged"
-            sched.needs_attention = False
-            db.commit()
-            if task_id and _registry:
-                _registry.update(task_id, completed=1)
-                _registry.set_done(task_id)
-            return
-
-        # Content changed (or first run): capture a new dated Policy and analyze.
-        today = date.today()
-        output_dir = OUTPUT_BASE / provider_slug(provider.name) / f"{today.isoformat()}_webpage"
-        policy = Policy(
-            provider_id=provider.id,
-            url=resolved.url,
-            source="webpage",
-            capture_date=today,
-            output_dir=str(output_dir),
-        )
-        db.add(policy)
-        db.commit()
-        db.refresh(policy)
-
-        doc = policy_doc_from_db(policy)
-        should_cancel = (lambda: _registry.is_cancelled(task_id)) if (task_id and _registry) else None
-        generate_graph(doc, should_cancel=should_cancel)
-        score_privacy(doc)
-        score_gdpr(doc)
-        sync_policy_from_doc(policy, doc, db)
-
-        sched.last_content_hash = resolved.content_hash
-        sched.last_status = "ok"
-        sched.needs_attention = False
-        db.commit()
-        if task_id and _registry:
-            _registry.update(task_id, completed=1)
-            _registry.set_done(task_id)
-    except PipelineCancelled:
-        # Cooperative cancel between pipeline stages; staging already discarded.
-        logger.info("scheduled run cancelled for %s", schedule_id)
-        try:
-            sched = db.get(Schedule, _uuid.UUID(schedule_id))
-            if sched:
-                sched.last_status = "cancelled"
-                db.commit()
-        except Exception:
-            pass
-        if task_id and _registry:
-            _registry.set_cancelled(task_id)
+    try:
+        status = run_comparison(provider_id, scheduled=True, registry=_registry, task_id=task_id)
     except Exception as exc:  # noqa: BLE001
         logger.exception("scheduled run failed for %s", schedule_id)
-        try:
-            sched = db.get(Schedule, _uuid.UUID(schedule_id))
-            if sched:
-                sched.last_status = "failed"
-                db.commit()
-        except Exception:
-            pass
+        status = "failed"
         if task_id and _registry:
             _registry.set_failed(task_id, str(exc))
+    else:
+        if task_id and _registry:
+            if status == "cancelled":
+                _registry.set_cancelled(task_id)
+            elif status == "needs_source":
+                _registry.set_failed(task_id, "Could not resolve a policy source")
+            else:
+                _registry.update(task_id, completed=1)
+                _registry.set_done(task_id)
+
+    db = SessionLocal()
+    try:
+        sched = db.get(Schedule, _uuid.UUID(schedule_id))
+        if sched:
+            sched.last_status = status
+            sched.needs_attention = status == "needs_source"
+            db.commit()
     finally:
         db.close()

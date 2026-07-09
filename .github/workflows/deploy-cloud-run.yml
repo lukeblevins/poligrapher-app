@@ -1,0 +1,73 @@
+# Builds this repo's Dockerfile with Cloud Build and deploys it to Google Cloud
+# Run on every push to main. See docs/DEPLOY_CLOUD_RUN.md for one-time setup.
+#
+# Required GitHub config (Settings → Secrets and variables → Actions):
+#   Variables:
+#     GCP_PROJECT_ID     e.g. my-project-123456
+#     GCP_REGION         e.g. us-central1
+#     CLOUD_RUN_SERVICE  e.g. poligrapher-app
+#   Secrets:
+#     GCP_WORKLOAD_IDENTITY_PROVIDER  projects/N/locations/global/workloadIdentityPools/POOL/providers/PROVIDER
+#     GCP_SERVICE_ACCOUNT             deployer@PROJECT.iam.gserviceaccount.com
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: cloud-run-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Required for Workload Identity Federation (keyless auth to GCP).
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check configuration
+        env:
+          WIF: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          SA: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          PROJECT: ${{ vars.GCP_PROJECT_ID }}
+          REGION: ${{ vars.GCP_REGION }}
+          SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}
+        run: |
+          missing=
+          for name in WIF SA PROJECT REGION SERVICE; do
+            [ -z "${!name}" ] && missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing config:$missing — see docs/DEPLOY_CLOUD_RUN.md."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build and deploy
+        run: |
+          gcloud run deploy "${{ vars.CLOUD_RUN_SERVICE }}" \
+            --source . \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --region "${{ vars.GCP_REGION }}" \
+            --platform managed \
+            --allow-unauthenticated \
+            --port 8080 \
+            --memory 8Gi \
+            --cpu 4 \
+            --timeout 3600 \
+            --min-instances 0 \
+            --max-instances 1 \
+            --no-cpu-throttling

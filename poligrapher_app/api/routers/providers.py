@@ -22,6 +22,7 @@ def _provider_read(provider: Provider) -> ProviderRead:
         name=provider.name,
         industry=provider.industry,
         domain=provider.domain,
+        source_url=provider.source_url,
         created_at=provider.created_at,
         policy_count=len(provider.policies),
         succeeded_count=succeeded,
