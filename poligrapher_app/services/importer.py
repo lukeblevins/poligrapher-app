@@ -7,7 +7,6 @@ Provider/Policy rows.
 
 import io
 import logging
-from pathlib import Path
 
 import pandas as pd
 from sqlalchemy.orm import Session
@@ -15,11 +14,7 @@ from sqlalchemy.orm import Session
 logger = logging.getLogger(__name__)
 
 from poligrapher_app.api.models import Policy, Provider
-from poligrapher_app.api.utils import best_website_url, parse_date, parse_pipeline_errors, provider_slug
-
-# Mirrors the layout produced by add_policy / the pipeline:
-# output/<Provider_Slug>/<capture_date>_<source>/
-OUTPUT_BASE = Path(__file__).parent.parent.parent / "output"
+from poligrapher_app.api.utils import best_website_url, parse_date, parse_pipeline_errors
 
 
 def read_policy_csv(content: bytes) -> pd.DataFrame:
@@ -57,20 +52,12 @@ def import_policies(df: pd.DataFrame, db: Session) -> dict:
                 privacy_raw = row.get("Score", "").strip()
                 gdpr_raw = row.get("GDPR Score", "").strip()
 
-                # Derive the artifact directory from the naming convention so
-                # seeded policies can locate graphs already on disk.
-                output_dir = None
-                if capture_date:
-                    slug = provider_slug(str(provider_name))
-                    output_dir = str(OUTPUT_BASE / slug / f"{capture_date.isoformat()}_{source}")
-
                 db.add(
                     Policy(
                         provider_id=provider.id,
                         url=url,
                         source=source,
                         capture_date=capture_date,
-                        output_dir=output_dir,
                         has_results=row.get("Status", "False").strip().lower() == "true",
                         pipeline_status=row.get("Pipeline Status", "pending").strip().lower() or "pending",
                         pipeline_errors=parse_pipeline_errors(row.get("Pipeline Errors", "")),

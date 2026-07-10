@@ -1,6 +1,7 @@
 import uuid
+import os
+import tempfile
 from datetime import date
-from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
@@ -16,16 +17,12 @@ from poligrapher_app.api.schemas import (
     ScheduleToggle,
     TaskStatus,
 )
-from poligrapher_app.api.utils import provider_slug
 from poligrapher_app.services import runs as runs_service
 from poligrapher_app.services import scheduler as sched_engine
 
 router = APIRouter(tags=["runs"])
 
 Db = Annotated[Session, Depends(get_db)]
-
-OUTPUT_BASE = Path(__file__).parent.parent.parent.parent / "output"
-
 
 def _provider_or_404(provider_id: uuid.UUID, db: Session) -> Provider:
     provider = db.get(Provider, provider_id)
@@ -125,22 +122,32 @@ async def upload_pdf(provider_id: uuid.UUID, request: Request, db: Db,
     if not pdf_file.filename:
         raise HTTPException(status_code=422, detail="A PDF file is required")
 
-    day = date.today()
-    out_dir = OUTPUT_BASE / provider_slug(provider.name) / f"{day.isoformat()}_upload_{uuid.uuid4().hex[:8]}"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    dest = out_dir / Path(pdf_file.filename).name
-    # Stream to disk in chunks rather than buffering the whole PDF in memory
-    # (a large upload could OOM the memory-constrained Cloud Run instance).
-    with dest.open("wb") as out:
-        while chunk := await pdf_file.read(1024 * 1024):
-            out.write(chunk)
+    from poligrapher_app.services.storage import get_storage, source_key
 
-    policy = Policy(provider_id=provider.id, url=str(dest), source="pdf", method="pdf_upload",
-                    scheduled=False, capture_date=day, output_dir=str(out_dir),
-                    content_hash=runs_service.file_hash(str(dest)))
+    day = date.today()
+    filename = os.path.basename(pdf_file.filename)
+    policy = Policy(provider_id=provider.id, url=filename, source="pdf", method="pdf_upload",
+                    scheduled=False, capture_date=day, source_filename=filename)
     db.add(policy)
     db.commit()
     db.refresh(policy)
+
+    temp_root = os.getenv("TEMP_WORKSPACE_ROOT") or None
+    try:
+        with tempfile.NamedTemporaryFile(prefix="poligrapher-upload-", suffix=".pdf",
+                                         dir=temp_root) as upload:
+            while chunk := await pdf_file.read(1024 * 1024):
+                upload.write(chunk)
+            upload.flush()
+            policy.content_hash = runs_service.file_hash(upload.name)
+            policy.source_blob_key = source_key(policy.id, filename)
+            get_storage().upload_file(policy.source_blob_key, upload.name,
+                                      content_type="application/pdf")
+            db.commit()
+    except Exception:
+        db.delete(policy)
+        db.commit()
+        raise
 
     registry = request.app.state.tasks
     task_id = registry.create(kind="upload", title=f"Upload · {provider.name}",

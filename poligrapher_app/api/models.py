@@ -50,6 +50,14 @@ class Policy(Base):
     content_hash: Mapped[str | None] = mapped_column(String(64))
     capture_date: Mapped[date | None] = mapped_column(Date)
     output_dir: Mapped[str | None] = mapped_column(String)
+    # Durable, cloud-safe analysis products. output_dir remains only for the
+    # one-time legacy importer and will be removed after migration.
+    graph_data: Mapped[dict | None] = mapped_column(JSON)
+    graph_stats: Mapped[dict | None] = mapped_column(JSON)
+    source_blob_key: Mapped[str | None] = mapped_column(String)
+    source_filename: Mapped[str | None] = mapped_column(String)
+    artifact_blob_key: Mapped[str | None] = mapped_column(String)
+    persistence_status: Mapped[str] = mapped_column(String(20), default="pending")
     has_results: Mapped[bool] = mapped_column(Boolean, default=False)
     pipeline_status: Mapped[str] = mapped_column(String(20), default="pending")
     pipeline_errors: Mapped[list] = mapped_column(JSON, default=list)

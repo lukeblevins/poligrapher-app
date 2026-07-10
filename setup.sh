@@ -20,7 +20,7 @@ echo "Downloading spaCy model..."
 "$VENV_PYTHON" -m spacy download en_core_web_md
 
 echo "Installing Playwright browser..."
-"$VENV_BIN/playwright" install firefox
+"$VENV_BIN/playwright" install chromium
 
 echo "Downloading poligrapher model data (~700MB)..."
 "$VENV_BIN/poligrapher-fetch-data"

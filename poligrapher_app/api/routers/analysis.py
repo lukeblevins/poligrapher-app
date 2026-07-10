@@ -1,19 +1,17 @@
 import uuid
+import hmac
+import io
+import os
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from poligrapher_app.api.deps import get_db
-from poligrapher_app.api.mapping import policy_doc_from_db
 from poligrapher_app.api.models import AnalysisResult, Policy
 from poligrapher_app.api.schemas import Assessments, GraphElements, GraphStats, TaskStatus
-from poligrapher_app.services.graph import (
-    build_cytoscape_elements,
-    gdpr_report,
-    graph_statistics,
-    readability_from_gdpr,
-)
+from poligrapher_app.services.graph import gdpr_report, readability_from_gdpr
 
 router = APIRouter(tags=["analysis"])
 
@@ -40,21 +38,70 @@ def _latest_details(policy_id: uuid.UUID, analysis_type: str, db: Session) -> di
 @router.get("/api/policies/{policy_id}/graph", response_model=GraphElements)
 def get_graph(policy_id: uuid.UUID, db: Db):
     policy = _get_policy_or_404(policy_id, db)
-    doc = policy_doc_from_db(policy)
-    if not doc.has_graph() and not doc.has_graphml():
+    if not policy.graph_data:
         raise HTTPException(status_code=404, detail="No graph artifacts found for this policy")
-    return GraphElements(elements=build_cytoscape_elements(doc))
+    return GraphElements(elements=policy.graph_data.get("elements", []))
 
 
 @router.get("/api/policies/{policy_id}/stats", response_model=GraphStats)
 def get_stats(policy_id: uuid.UUID, db: Db):
     policy = _get_policy_or_404(policy_id, db)
-    doc = policy_doc_from_db(policy)
-    try:
-        stats = graph_statistics(doc)
-    except Exception:
-        stats = None
-    return GraphStats(stats=stats)
+    return GraphStats(stats=policy.graph_stats)
+
+
+@router.get("/api/policies/{policy_id}/export")
+def export_canonical(policy_id: uuid.UUID, db: Db):
+    policy = _get_policy_or_404(policy_id, db)
+    if not policy.graph_data:
+        raise HTTPException(status_code=404, detail="No persisted analysis found")
+    return JSONResponse({
+        "policy_id": str(policy.id),
+        "source": policy.source,
+        "method": policy.method,
+        "capture_date": policy.capture_date.isoformat() if policy.capture_date else None,
+        "graph": policy.graph_data,
+        "statistics": policy.graph_stats,
+        "privacy": _latest_details(policy.id, "privacy", db),
+        "gdpr": _latest_details(policy.id, "gdpr", db),
+    })
+
+
+def _require_export_token(authorization: str | None) -> None:
+    expected = os.getenv("EXPORT_TOKEN")
+    supplied = authorization.removeprefix("Bearer ") if authorization else ""
+    if not expected or not hmac.compare_digest(supplied, expected):
+        raise HTTPException(status_code=401, detail="A valid export token is required")
+
+
+@router.get("/api/policies/{policy_id}/artifacts")
+def download_artifacts(policy_id: uuid.UUID, db: Db,
+                       authorization: str | None = Header(default=None)):
+    _require_export_token(authorization)
+    policy = _get_policy_or_404(policy_id, db)
+    if not policy.artifact_blob_key:
+        raise HTTPException(status_code=404, detail="No artifact archive found")
+    from poligrapher_app.services.storage import get_storage
+
+    payload = get_storage().open_bytes(policy.artifact_blob_key)
+    return StreamingResponse(io.BytesIO(payload), media_type="application/zip",
+                             headers={"Content-Disposition":
+                                      f'attachment; filename="{policy.id}-artifacts.zip"'})
+
+
+@router.get("/api/policies/{policy_id}/source")
+def download_source(policy_id: uuid.UUID, db: Db,
+                    authorization: str | None = Header(default=None)):
+    _require_export_token(authorization)
+    policy = _get_policy_or_404(policy_id, db)
+    if not policy.source_blob_key:
+        raise HTTPException(status_code=404, detail="No retained source file found")
+    from poligrapher_app.services.storage import get_storage
+
+    payload = get_storage().open_bytes(policy.source_blob_key)
+    filename = policy.source_filename or "source.pdf"
+    return StreamingResponse(io.BytesIO(payload), media_type="application/pdf",
+                             headers={"Content-Disposition":
+                                      f'attachment; filename="{filename}"'})
 
 
 @router.get("/api/policies/{policy_id}/assessments", response_model=Assessments)

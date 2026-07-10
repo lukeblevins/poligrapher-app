@@ -28,7 +28,9 @@ def policy_doc_from_db(policy: Policy) -> PolicyDocumentInfo:
     )
 
 
-def sync_policy_from_doc(policy: Policy, doc: PolicyDocumentInfo, db: Session) -> None:
+def sync_policy_from_doc(
+    policy: Policy, doc: PolicyDocumentInfo, db: Session, *, commit: bool = True
+) -> None:
     """Write pipeline/scoring results from a PolicyDocumentInfo back to the row."""
     # Pipeline status reflects whether graph artifacts exist on disk, independent
     # of scoring: a successful generate makes the policy "succeeded", and scoring
@@ -68,4 +70,5 @@ def sync_policy_from_doc(policy: Policy, doc: PolicyDocumentInfo, db: Session) -
     # `has_results` means the policy has produced scoring results.
     policy.has_results = policy.privacy_score is not None or policy.gdpr_score is not None
 
-    db.commit()
+    if commit:
+        db.commit()

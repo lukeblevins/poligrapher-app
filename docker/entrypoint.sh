@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Seed the SQLite database from the bundled CSV. migrate_csv is idempotent
-# (existing rows are skipped), so this is safe on every start — which matters on
-# Cloud Run where the container's filesystem is in-memory and resets per instance.
+# Apply explicit schema migrations before serving traffic.
+echo "Applying database migrations..."
+alembic upgrade head
+
+# Seed the database from the bundled CSV. migrate_csv is idempotent.
 echo "Seeding database..."
 python -m poligrapher_app.migrate_csv || echo "Seed step failed (continuing)."
 
