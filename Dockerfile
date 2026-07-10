@@ -66,6 +66,8 @@ RUN pip install --user --no-cache-dir \
 # first so this layer caches across SPA-only changes.
 COPY --chown=user pyproject.toml ./
 COPY --chown=user poligrapher_app ./poligrapher_app
+COPY --chown=user alembic.ini ./
+COPY --chown=user alembic ./alembic
 RUN pip install --user --no-cache-dir .
 
 # Bake models + browser into the image (user-owned caches).

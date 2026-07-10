@@ -16,6 +16,7 @@ outputs/
 flagged/
 gradio_cached_examples/
 *.db
+*.db.backup-*
 *.db-wal
 *.db-shm
 *.sqlite3
@@ -28,4 +29,5 @@ frontend/dist/
 */extra-data/named_entity_recognition/
 */extra-data/purpose_classification/
 output/*
+storage/
 .claude/

@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime, timezone
-from pathlib import Path
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -23,9 +22,6 @@ logger = logging.getLogger(__name__)
 
 _scheduler: BackgroundScheduler | None = None
 _registry = None  # TaskRegistry, set in init_scheduler
-
-OUTPUT_BASE = Path(__file__).parent.parent.parent / "output"
-
 
 def cadence_to_trigger(cadence: str) -> CronTrigger:
     """Map a friendly cadence or raw 5-field cron string to a CronTrigger."""

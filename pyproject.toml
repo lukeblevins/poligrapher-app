@@ -17,6 +17,9 @@ dependencies = [
     "fastapi[standard]",
     "uvicorn[standard]",
     "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.2",
+    "azure-storage-blob>=12.24",
     "python-multipart",
     "python-dotenv",
     "huggingface-hub==0.24.0",
@@ -48,6 +51,9 @@ dependencies = [
     "torch",
     "apscheduler>=3.10,<4",
 ]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "pytest-cov>=5"]
 
 [tool.hatch.metadata]
 allow-direct-references = true

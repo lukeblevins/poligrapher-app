@@ -22,7 +22,7 @@ cd frontend && npm install # frontend deps
 ```
 
 `setup.sh` creates a `.venv`, installs backend dependencies, installs the
-Playwright Firefox browser, and downloads the ~700 MB poligrapher model files
+Playwright Chromium browser, and downloads the ~700 MB poligrapher model files
 (`poligrapher-fetch-data`). Requires Python 3.11+ and Node 18+.
 
 The app uses **SQLite by default** — no database server needed. Copy the env file
@@ -32,10 +32,25 @@ The app uses **SQLite by default** — no database server needed. Copy the env f
 cp .env.example .env
 ```
 
+Development stores retained uploads and raw artifact archives under `./storage`.
+Production requires PostgreSQL plus private object storage; SQLite is rejected
+when `APP_ENV=production`. Apply schema changes explicitly before starting:
+
+```sh
+alembic upgrade head
+```
+
 Seed the database from the bundled CSV:
 
 ```sh
 python -m poligrapher_app.migrate_csv
+```
+
+Legacy filesystem artifacts can be previewed and imported idempotently:
+
+```sh
+python -m poligrapher_app.migrate_artifacts          # dry run
+python -m poligrapher_app.migrate_artifacts --apply  # persist JSON + archives
 ```
 
 ## Running

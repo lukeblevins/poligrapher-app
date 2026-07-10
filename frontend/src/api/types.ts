@@ -63,7 +63,6 @@ export interface Policy {
   scheduled: boolean;
   content_hash: string | null;
   capture_date: string | null;
-  output_dir: string | null;
   has_results: boolean;
   pipeline_status: "pending" | "succeeded" | "failed";
   pipeline_errors: PipelineError[];

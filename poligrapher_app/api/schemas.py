@@ -35,7 +35,8 @@ class PolicyRead(BaseModel):
     scheduled: bool = False
     content_hash: str | None = None
     capture_date: date | None
-    output_dir: str | None
+    # Deprecated legacy field; always omitted from new cloud-native runs.
+    output_dir: str | None = None
     has_results: bool
     pipeline_status: str
     pipeline_errors: list
