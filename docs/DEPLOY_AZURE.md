@@ -18,6 +18,11 @@ No resources are created by these files alone. Before deployment:
    and deploy `infra/budget.bicep` at subscription scope.
 4. Confirm the app reaches zero replicas after idle and review Cost Management.
 
+To transfer an already migrated local dataset, set `TARGET_DATABASE_URL` and
+`AZURE_STORAGE_CONNECTION_STRING`, then run
+`python -m poligrapher_app.migrate_cloud`. It replaces the target seed rows in a
+single database transaction and uploads the local private object store.
+
 Example preview (replace placeholders; never commit passwords or tokens):
 
 ```sh

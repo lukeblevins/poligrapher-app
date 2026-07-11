@@ -106,10 +106,16 @@ resource database 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2023-12-0
 }
 
 resource containerEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
-  name: '${namePrefix}-env'
+  name: '${namePrefix}-env-v2'
   location: location
   tags: tags
   properties: {
+    workloadProfiles: [
+      {
+        name: 'Consumption'
+        workloadProfileType: 'Consumption'
+      }
+    ]
     appLogsConfiguration: {
       destination: 'log-analytics'
       logAnalyticsConfiguration: {
@@ -129,6 +135,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
   tags: tags
   properties: {
     managedEnvironmentId: containerEnv.id
+    workloadProfileName: 'Consumption'
     configuration: {
       activeRevisionsMode: 'Single'
       ingress: { external: true, targetPort: 8080, transport: 'auto', allowInsecure: false }
@@ -168,6 +175,7 @@ resource scheduledRuns 'Microsoft.App/jobs@2024-03-01' = {
   tags: tags
   properties: {
     environmentId: containerEnv.id
+    workloadProfileName: 'Consumption'
     configuration: {
       triggerType: 'Schedule'
       replicaTimeout: 3600
