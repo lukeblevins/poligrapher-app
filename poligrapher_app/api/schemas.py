@@ -7,6 +7,23 @@ from pydantic import BaseModel, ConfigDict
 class ProviderCreate(BaseModel):
     name: str
     industry: str | None = None
+    domain: str | None = None
+    source_url: str | None = None
+
+
+class CompanyCatalogResult(BaseModel):
+    id: str
+    name: str
+    domain: str | None = None
+    source_url: str
+    source: str
+    attribution_url: str
+    requires_javascript: bool = False
+
+
+class CompanyCatalogSearch(BaseModel):
+    results: list[CompanyCatalogResult]
+    source_available: bool = True
 
 
 class ProviderRead(BaseModel):
@@ -17,10 +34,60 @@ class ProviderRead(BaseModel):
     industry: str | None
     domain: str | None = None
     source_url: str | None = None
+    ticker: str | None = None
+    tickers: list[str] = []
+    cik: str | None = None
+    source_status: str = "unchecked"
+    source_checked_at: datetime | None = None
+    source_http_status: int | None = None
+    source_final_url: str | None = None
+    collection_ids: list[uuid.UUID] = []
     created_at: datetime
     policy_count: int = 0
     succeeded_count: int = 0
     failed_count: int = 0
+
+
+class CompanyCollectionCreate(BaseModel):
+    name: str
+    description: str | None = None
+    provider_ids: list[uuid.UUID] = []
+
+
+class CompanyCollectionUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    provider_ids: list[uuid.UUID] | None = None
+
+
+class CompanyCollectionRead(BaseModel):
+    id: uuid.UUID
+    name: str
+    description: str | None
+    kind: str
+    source_url: str | None
+    snapshot_date: date | None
+    provider_ids: list[uuid.UUID]
+    provider_count: int
+    created_at: datetime
+
+
+class IndexSyncSummary(BaseModel):
+    collection_id: uuid.UUID
+    securities: int
+    companies: int
+    created: int
+    updated: int
+    snapshot_date: date
+
+
+class SourceVerificationSummary(BaseModel):
+    checked: int
+    available: int
+    restricted: int
+    broken: int
+    errors: int
+    missing: int
 
 
 class PolicyRead(BaseModel):
@@ -47,10 +114,10 @@ class PolicyRead(BaseModel):
 
 
 class RunGroup(BaseModel):
-    """A comparison run (website + pdf_from_page) or a one-off uploaded PDF."""
+    """A grouped analysis, uploaded PDF, or standalone legacy result."""
 
     run_group: str | None
-    kind: str  # 'comparison' | 'upload'
+    kind: str  # 'comparison' | 'upload' | 'legacy'
     scheduled: bool
     capture_date: date | None
     created_at: datetime

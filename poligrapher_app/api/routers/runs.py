@@ -57,6 +57,10 @@ def _submit(registry, task_id, fn) -> None:
 def set_source(provider_id: uuid.UUID, body: ProviderSourceUpdate, db: Db):
     provider = _provider_or_404(provider_id, db)
     provider.source_url = body.source_url.strip() or None
+    provider.source_status = "unchecked" if provider.source_url else "missing"
+    provider.source_checked_at = None
+    provider.source_http_status = None
+    provider.source_final_url = None
     db.commit()
     db.refresh(provider)
     from poligrapher_app.api.routers.providers import _provider_read
@@ -81,10 +85,10 @@ def list_runs(provider_id: uuid.UUID, db: Db):
             ))
             continue
         if p.run_group is None:
-            # A website policy without a comparison group (legacy/imported): show it
-            # as its own standalone run — NOT an upload, and not merged with others.
+            # Imported records predate method/run-group metadata. Keep them
+            # standalone and do not infer how the source was processed.
             ordered.append(RunGroup(
-                run_group=None, kind="comparison", scheduled=p.scheduled,
+                run_group=None, kind="legacy", scheduled=p.scheduled,
                 capture_date=p.capture_date, created_at=p.created_at, runs=[p],
             ))
             continue

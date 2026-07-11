@@ -4,13 +4,13 @@ import { useStats } from "../hooks/queries";
 export function StatsPanel({ policyId }: { policyId: string }) {
   const { data, isLoading, isError } = useStats(policyId);
 
-  if (isLoading) return <p className="text-sm text-zinc-400">Loading…</p>;
+  if (isLoading) return <p className="quiet-state">Loading graph statistics…</p>;
   if (isError || !data?.stats)
-    return <p className="text-sm text-zinc-400">No graph statistics available.</p>;
+    return <p className="quiet-state">No graph statistics are available for this analysis.</p>;
 
   const s = data.stats;
   return (
-    <div className="space-y-4 text-sm">
+    <div className="space-y-6 text-sm">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <Metric label="Nodes" value={s.node_count} />
         <Metric label="Edges" value={s.edge_count} />
@@ -36,9 +36,9 @@ export function StatsPanel({ policyId }: { policyId: string }) {
 
 function Metric({ label, value }: { label: string; value: number | string }) {
   return (
-    <div className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800/50">
-      <div className="text-xs text-zinc-500 dark:text-zinc-400">{label}</div>
-      <div className="font-mono text-sm">{value}</div>
+    <div className="rounded-md border border-slate-300 bg-slate-50/70 px-3.5 py-3 dark:border-slate-700 dark:bg-slate-800/50">
+      <div className="text-[11px] font-medium text-slate-500 dark:text-slate-400">{label}</div>
+      <div className="data-value mt-1 text-base font-semibold text-slate-900 dark:text-white">{value}</div>
     </div>
   );
 }
@@ -48,14 +48,14 @@ function CountSection({ title, counts }: { title: string; counts: Record<string,
   if (entries.length === 0) return null;
   return (
     <div>
-      <h3 className="mb-1 text-xs font-semibold uppercase text-zinc-500 dark:text-zinc-400">
+      <h3 className="section-kicker mb-2">
         {title}
       </h3>
       <div className="flex flex-wrap gap-1.5">
         {entries.map(([name, count]) => (
           <span
             key={name}
-            className="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-xs dark:bg-zinc-800"
+            className="data-value rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300"
           >
             {name}: {count}
           </span>
@@ -73,12 +73,12 @@ function DegreeSection({ s }: { s: GraphStatsData }) {
   ];
   return (
     <div>
-      <h3 className="mb-1 text-xs font-semibold uppercase text-zinc-500 dark:text-zinc-400">
+      <h3 className="section-kicker mb-2">
         Degree
       </h3>
-      <table className="w-full text-xs">
+      <table className="w-full overflow-hidden rounded-lg text-xs tabular-nums">
         <thead>
-          <tr className="text-left text-zinc-400">
+          <tr className="text-left text-slate-400">
             <th className="py-1 font-medium"></th>
             <th className="py-1 font-medium">min</th>
             <th className="py-1 font-medium">max</th>
@@ -88,12 +88,12 @@ function DegreeSection({ s }: { s: GraphStatsData }) {
         </thead>
         <tbody className="font-mono">
           {rows.map(([label, d]) => (
-            <tr key={label} className="border-t border-zinc-100 dark:border-zinc-800">
-              <td className="py-1 font-sans text-zinc-500">{label}</td>
-              <td className="py-1">{d.min}</td>
-              <td className="py-1">{d.max}</td>
-              <td className="py-1">{d.mean.toFixed(2)}</td>
-              <td className="py-1">{d.median.toFixed(2)}</td>
+            <tr key={label} className="border-t border-slate-100 dark:border-slate-800">
+              <td className="py-2 font-sans font-medium text-slate-500">{label}</td>
+              <td className="py-2">{d.min}</td>
+              <td className="py-2">{d.max}</td>
+              <td className="py-2">{d.mean.toFixed(2)}</td>
+              <td className="py-2">{d.median.toFixed(2)}</td>
             </tr>
           ))}
         </tbody>
@@ -106,14 +106,14 @@ function HubSection({ title, nodes }: { title: string; nodes: [string, number][]
   if (!nodes?.length) return null;
   return (
     <div>
-      <h3 className="mb-1 text-xs font-semibold uppercase text-zinc-500 dark:text-zinc-400">
+      <h3 className="section-kicker mb-2">
         {title}
       </h3>
       <div className="flex flex-wrap gap-1.5">
         {nodes.slice(0, 8).map(([node, deg]) => (
           <span
             key={node}
-            className="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-xs dark:bg-zinc-800"
+            className="data-value rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300"
           >
             {node} ({deg})
           </span>

@@ -20,6 +20,7 @@ from poligrapher_app.domain.policy_analysis import (
     PolicyDocumentInfo,
 )
 from poligrapher_app.services.acquisition import (
+    crawl_proxy_mode,
     httpx_proxy,
     open_client,
     wayback_snapshot_url,
@@ -146,18 +147,25 @@ def _url_reachable(url: str, timeout: float = 15.0, attempts: int = 2) -> bool:
     browser headers, retrying transient timeouts/5xx. A response below 400 (after
     redirect following) counts as reachable.
     """
-    proxy = httpx_proxy()
-    for i in range(attempts):
-        try:
-            with open_client(timeout, proxy) as client:
-                r = client.get(url)
-            if r.status_code >= 500 and i < attempts - 1:
-                continue
-            return r.status_code < 400
-        except Exception as e:  # noqa: BLE001
-            if i < attempts - 1:
-                continue
-            logger.info("Error accessing URL %s: %s", url, str(e))
+    configured_proxy = httpx_proxy()
+    mode = crawl_proxy_mode()
+    routes = [configured_proxy] if configured_proxy and mode == "always" else [None]
+    if configured_proxy and mode == "fallback":
+        routes.append(configured_proxy)
+    for proxy in routes:
+        for i in range(attempts):
+            try:
+                with open_client(timeout, proxy) as client:
+                    r = client.get(url)
+                if r.status_code >= 500 and i < attempts - 1:
+                    continue
+                if r.status_code < 400:
+                    return True
+                break
+            except Exception as e:  # noqa: BLE001
+                if i < attempts - 1:
+                    continue
+                logger.info("Error accessing URL %s: %s", url, str(e))
     return False
 
 

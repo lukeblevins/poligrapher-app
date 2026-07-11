@@ -14,8 +14,8 @@ Adobe Inc.,./output/data/Adobe.pdf,Information Technology,pdf,2025-10-30,True,70
 Advanced Micro Devices,https://www.amd.com/en/legal/privacy.html,Information Technology,pdf,2025-09-05,False,,,none,failed,"[{""message"": ""Graph generation failed: Document is not accessible or does not exist: https://www.amd.com/en/legal/privacy.html"", ""timestamp"": ""2025-11-14T23:07:00.426582+00:00""}, {""message"": ""Graph generation error: Document is not accessible or does not exist: https://www.amd.com/en/legal/privacy.html"", ""timestamp"": ""2025-11-14T23:07:00.427299+00:00""}]"
 Advanced Micro Devices,https://www.amd.com/en/legal/privacy.html,Information Technology,webpage,2025-09-05,False,,,none,failed,"[{""message"": ""Graph generation failed: Document is not accessible or does not exist: https://www.amd.com/en/legal/privacy.html"", ""timestamp"": ""2025-11-14T23:07:50.247442+00:00""}, {""message"": ""Graph generation error: Document is not accessible or does not exist: https://www.amd.com/en/legal/privacy.html"", ""timestamp"": ""2025-11-14T23:07:53.146953+00:00""}]"
 Advanced Micro Devices,./output/data/AMD.pdf,Information Technology,pdf,2025-10-30,True,79.2,77.4,standard,succeeded,[]
-Aflac,https://www.aflac.com/privacy-policy,Financials,pdf,2025-09-05,True,87.5,78.2,standard,succeeded,[]
-Aflac,https://www.aflac.com/privacy-policy,Financials,webpage,2025-09-05,True,41.7,59.9,standard,succeeded,[]
+Aflac,https://www.aflac.com/privacy-center/privacy-policy.aspx,Financials,pdf,2025-09-05,True,87.5,78.2,standard,succeeded,[]
+Aflac,https://www.aflac.com/privacy-center/privacy-policy.aspx,Financials,webpage,2025-09-05,True,41.7,59.9,standard,succeeded,[]
 Aflac,./output/data/Aflac.pdf,Financials,pdf,2025-10-30,True,83.3,75.1,standard,succeeded,[]
 Agilent Technologies,https://www.agilent.com/home/privacy-policy,Healthcare,pdf,2025-09-05,False,,,none,pending,[]
 Agilent Technologies,https://www.agilent.com/home/privacy-policy,Healthcare,webpage,2025-09-05,True,91.7,83.1,standard,succeeded,[]
@@ -413,8 +413,8 @@ Morgan Stanley,./output/data/MorganStanley.pdf,Financials,pdf,2025-10-30,True,83
 Motorola Solutions,https://www.motorolasolutions.com/en_us/about/privacy-policy.html,Information Technology,pdf,2025-09-05,False,,,none,pending,[]
 Motorola Solutions,https://www.motorolasolutions.com/en_us/about/privacy-policy.html,Information Technology,webpage,2025-09-05,True,87.5,79.6,standard,succeeded,[]
 Motorola Solutions,./output/data/MotorolaSolutions.pdf,Information Technology,pdf,2025-10-30,True,79.2,81.0,standard,succeeded,[]
-NXP Semiconductors,https://www.nxp.com/pages/privacy-statement:PRIVACYPRACTICES,Information Technology,pdf,2025-09-05,False,,,none,pending,[]
-NXP Semiconductors,https://www.nxp.com/pages/privacy-statement:PRIVACYPRACTICES,Information Technology,webpage,2025-09-05,True,75.0,99.6,standard,succeeded,[]
+NXP Semiconductors,https://www.nxp.com/company/about-nxp/nxp-privacy-notice:PRIVACYPRACTICES,Information Technology,pdf,2025-09-05,False,,,none,pending,[]
+NXP Semiconductors,https://www.nxp.com/company/about-nxp/nxp-privacy-notice:PRIVACYPRACTICES,Information Technology,webpage,2025-09-05,True,75.0,99.6,standard,succeeded,[]
 NXP Semiconductors,./output/data/NXP.pdf,Information Technology,pdf,2025-10-30,False,,,none,failed,"[{""message"": ""Graph generation failed: html_crawler failure: Not like a privacy policy"", ""timestamp"": ""2025-11-16T17:27:12.002462+00:00""}, {""message"": ""Graph generation error: html_crawler failure: Not like a privacy policy"", ""timestamp"": ""2025-11-16T17:27:12.002695+00:00""}]"
 "Nasdaq, Inc.",https://www.nasdaq.com/privacy-statement,Financials,pdf,2025-09-05,False,,,none,pending,[]
 "Nasdaq, Inc.",https://www.nasdaq.com/privacy-statement,Financials,webpage,2025-09-05,False,,,none,pending,[]

@@ -19,28 +19,28 @@ type Theme = {
 
 const THEMES: Record<"light" | "dark", Theme> = {
   light: {
-    nodeBg: "#74b9ff",
-    nodeText: "#1a1a2e",
-    actorBg: "#fab1a0",
-    weBg: "#55efc4",
-    edgeLine: "#636e72",
-    edgeText: "#555555",
+    nodeBg: "#b9d2ce",
+    nodeText: "#17202a",
+    actorBg: "#dfc0af",
+    weBg: "#d5d2a6",
+    edgeLine: "#64748b",
+    edgeText: "#475569",
     edgeLabelBg: "#ffffff",
-    subsum: "#6c5ce7",
-    subsumBy: "#a29bfe",
-    coref: "#b2bec3",
+    subsum: "#766b8f",
+    subsumBy: "#8a7f6a",
+    coref: "#94a3b8",
   },
   dark: {
-    nodeBg: "#89b4fa",
-    nodeText: "#1e1e2e",
-    actorBg: "#f38ba8",
-    weBg: "#a6e3a1",
-    edgeLine: "#9399b2",
-    edgeText: "#cdd6f4",
-    edgeLabelBg: "#1e1e2e",
-    subsum: "#cba6f7",
-    subsumBy: "#b4befe",
-    coref: "#585b70",
+    nodeBg: "#2f6f69",
+    nodeText: "#f8fafc",
+    actorBg: "#8c5145",
+    weBg: "#66744a",
+    edgeLine: "#64748b",
+    edgeText: "#cbd5e1",
+    edgeLabelBg: "#111827",
+    subsum: "#8b7aaa",
+    subsumBy: "#9a8b70",
+    coref: "#475569",
   },
 };
 
@@ -51,6 +51,7 @@ function buildStyle(t: Theme): StylesheetJson {
       style: {
         label: "data(label)",
         "font-size": "11px",
+        "font-family": "Source Sans 3 Variable, sans-serif",
         "text-valign": "center",
         "text-halign": "center",
         "background-color": t.nodeBg,
@@ -60,7 +61,7 @@ function buildStyle(t: Theme): StylesheetJson {
         width: "label",
         height: "label",
         padding: "8px",
-        shape: "round-rectangle",
+        shape: "rectangle",
       },
     },
     {
@@ -76,10 +77,11 @@ function buildStyle(t: Theme): StylesheetJson {
       style: {
         label: "data(label)",
         "font-size": "10px",
+        "font-family": "Source Sans 3 Variable, sans-serif",
         color: t.edgeText,
         "curve-style": "bezier",
         "target-arrow-shape": "triangle",
-        "arrow-scale": 1.2,
+        "arrow-scale": 0.9,
         "line-color": t.edgeLine,
         "target-arrow-color": t.edgeLine,
         "text-rotation": "autorotate",
@@ -104,9 +106,9 @@ function buildStyle(t: Theme): StylesheetJson {
 }
 
 const LEGEND = [
-  { label: "DATA", light: "#2980b9", dark: "#89b4fa" },
-  { label: "ACTOR", light: "#c0392b", dark: "#f38ba8" },
-  { label: "we", light: "#27ae60", dark: "#a6e3a1" },
+  { label: "DATA", light: "#6b9690", dark: "#2f6f69" },
+  { label: "ACTOR", light: "#b5775f", dark: "#8c5145" },
+  { label: "we", light: "#8d8a55", dark: "#66744a" },
 ];
 
 export function GraphViewer({ policyId }: { policyId: string }) {
@@ -153,12 +155,12 @@ export function GraphViewer({ policyId }: { policyId: string }) {
 
   return (
     <div className="relative h-full w-full">
-      <div className="absolute left-2 top-2 z-10 flex gap-3 rounded bg-white/80 px-2 py-1 text-xs dark:bg-zinc-900/80">
+      <div className="absolute left-3 top-3 z-10 flex gap-3 rounded border border-slate-300 bg-white px-2.5 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-900">
         {LEGEND.map((item) => (
           <LegendDot key={item.label} {...item} />
         ))}
       </div>
-      <div ref={containerRef} className="h-full w-full rounded bg-[#fafafa] dark:bg-[#1e1e2e]" />
+      <div ref={containerRef} className="h-full w-full bg-slate-50 dark:bg-slate-900" />
     </div>
   );
 }
@@ -178,7 +180,7 @@ function LegendDot({ label, light, dark }: { label: string; light: string; dark:
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-full items-center justify-center p-4 text-center text-sm text-zinc-400 dark:text-zinc-500">
+    <div className="flex h-full items-center justify-center p-4 text-center text-sm text-slate-400 dark:text-slate-500">
       {children}
     </div>
   );

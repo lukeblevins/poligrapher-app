@@ -9,7 +9,8 @@ GDPR and custom privacy compliance scores.
 
 | Package | Role |
 |---|---|
-| [`lukeblevins/PoliGraph`](https://github.com/lukeblevins/PoliGraph) | NLP pipeline: HTML/PDF crawling, annotation, knowledge-graph construction |
+| [`UCI-Networking-Group/PoliGraph`](https://github.com/UCI-Networking-Group/PoliGraph) | Original PoliGraph research code by Cui, Trimananda, Markopoulou, and Jordan (USENIX Security 2023) |
+| [`lukeblevins/PoliGraph`](https://github.com/lukeblevins/PoliGraph) | Enhanced fork used by this app for HTML/PDF crawling, annotation, and knowledge-graph construction |
 | [`lukeblevins/policy-scorer`](https://github.com/lukeblevins/policy-scorer) | GDPR compliance scoring (RQ1–RQ6, 80 violation codes) |
 
 ## Setup

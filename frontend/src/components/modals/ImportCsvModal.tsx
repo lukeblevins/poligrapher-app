@@ -20,7 +20,7 @@ export function ImportCsvModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Modal title="Import policies from CSV" onClose={onClose}>
+    <Modal title="Import companies from CSV" onClose={onClose}>
       <form onSubmit={submit} className="space-y-3">
         <p className="text-xs text-zinc-500 dark:text-zinc-400">
           CSV columns: Provider, Policy URL, Industry, Source, Date, Status, Score, GDPR Score,

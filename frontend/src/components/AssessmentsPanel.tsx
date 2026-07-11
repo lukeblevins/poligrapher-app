@@ -16,20 +16,20 @@ const SEVERITY_STYLES: Record<string, string> = {
 export function AssessmentsPanel({ policyId }: { policyId: string }) {
   const { data, isLoading, isError } = useAssessments(policyId);
 
-  if (isLoading) return <p className="text-sm text-zinc-400">Loading…</p>;
-  if (isError || !data) return <p className="text-sm text-zinc-400">No assessments available.</p>;
+  if (isLoading) return <p className="quiet-state">Loading assessments…</p>;
+  if (isError || !data) return <p className="quiet-state">No assessments are available for this analysis.</p>;
 
   const { privacy, gdpr, readability } = data;
   if (!privacy && !gdpr) {
     return (
-      <p className="text-sm text-zinc-400">
-        No scores yet. Use the Score button on the policy row.
+      <p className="quiet-state">
+        No scores yet. Run scoring to generate privacy and GDPR assessments.
       </p>
     );
   }
 
   return (
-    <div className="space-y-6 text-sm">
+    <div className="space-y-8 text-sm leading-6">
       {privacy && <PrivacySection privacy={privacy} />}
       {gdpr && <GdprSection gdpr={gdpr} />}
       {readability && <ReadabilitySection readability={readability} />}
@@ -44,10 +44,10 @@ function ScoreHeader({ title, score, badge, badgeClass }: {
   badgeClass: string;
 }) {
   return (
-    <div className="mb-2 flex items-center gap-2">
-      <h3 className="text-sm font-semibold">{title}</h3>
-      <span className="font-mono text-sm">{score}</span>
-      <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${badgeClass}`}>{badge}</span>
+    <div className="mb-3 flex items-center gap-2.5 border-b border-slate-100 pb-3 dark:border-slate-800">
+      <h3 className="font-display text-base font-bold tracking-tight">{title}</h3>
+      <span className="data-value ml-auto text-sm font-semibold">{score}</span>
+      <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold tracking-wide ${badgeClass}`}>{badge}</span>
     </div>
   );
 }
@@ -59,16 +59,16 @@ function PrivacySection({ privacy }: { privacy: PrivacyAssessment }) {
         title="Privacy"
         score={`${privacy.total_score.toFixed(1)} / 100`}
         badge={privacy.grade}
-        badgeClass="bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300"
+        badgeClass="bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300"
       />
-      <p className="mb-2 text-zinc-600 dark:text-zinc-400">{privacy.summary}</p>
-      <div className="space-y-1.5">
+      <p className="mb-3 text-slate-600 dark:text-slate-400">{privacy.summary}</p>
+      <div className="space-y-2">
         {Object.entries(privacy.category_scores).map(([name, cat]) => (
-          <details key={name} className="rounded border border-zinc-200 dark:border-zinc-700">
-            <summary className="cursor-pointer px-3 py-1.5 text-xs font-medium capitalize">
+          <details key={name} className="rounded-lg border border-slate-200 dark:border-slate-700">
+            <summary className="cursor-pointer px-3 py-2 text-xs font-semibold capitalize">
               {name.replace(/_/g, " ")} — {cat.weighted_score.toFixed(1)}
             </summary>
-            <ul className="list-disc space-y-0.5 px-6 py-2 text-xs text-zinc-600 dark:text-zinc-400">
+            <ul className="list-disc space-y-1 px-6 pb-3 pt-1 text-xs leading-5 text-slate-600 dark:text-slate-400">
               {cat.feedback.map((f, i) => (
                 <li key={i}>{f}</li>
               ))}
@@ -99,26 +99,26 @@ function GdprSection({ gdpr }: { gdpr: GdprAssessment }) {
         title="GDPR"
         score={`${(gdpr.total_score ?? 0).toFixed(1)} / 100`}
         badge={gdpr.tier ?? "UNKNOWN"}
-        badgeClass={TIER_STYLES[gdpr.tier ?? ""] ?? "bg-zinc-100 text-zinc-700 dark:bg-zinc-800"}
+        badgeClass={TIER_STYLES[gdpr.tier ?? ""] ?? "bg-slate-100 text-slate-700 dark:bg-slate-800"}
       />
-      <p className="mb-2 text-zinc-600 dark:text-zinc-400">{gdpr.summary}</p>
+      <p className="mb-3 text-slate-600 dark:text-slate-400">{gdpr.summary}</p>
 
       {gdpr.component_scores && (
         <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
           {Object.entries(gdpr.component_scores).map(([name, c]) => (
             <div
               key={name}
-              className="rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1.5 dark:border-zinc-700 dark:bg-zinc-800/50"
+              className="rounded-md border border-slate-300 bg-slate-50/70 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800/50"
             >
-              <div className="text-xs capitalize text-zinc-500 dark:text-zinc-400">{name}</div>
-              <div className="font-mono text-sm">{c.score.toFixed(2)}</div>
+              <div className="text-[11px] font-medium capitalize text-slate-500 dark:text-slate-400">{name}</div>
+              <div className="data-value mt-1 text-sm font-semibold">{c.score.toFixed(2)}</div>
             </div>
           ))}
         </div>
       )}
 
       {gdpr.severity_counts && (
-        <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+        <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
           Severity — CRITICAL {gdpr.severity_counts.CRITICAL ?? 0}, HIGH{" "}
           {gdpr.severity_counts.HIGH ?? 0}, MEDIUM {gdpr.severity_counts.MEDIUM ?? 0}
         </p>
@@ -126,16 +126,16 @@ function GdprSection({ gdpr }: { gdpr: GdprAssessment }) {
 
       {violationGroups.length > 0 && (
         <div>
-          <h4 className="mb-1 text-xs font-semibold uppercase text-zinc-500 dark:text-zinc-400">
+          <h4 className="section-kicker mb-2">
             Top violations
           </h4>
           <div className="space-y-2">
             {violationGroups.map(([rq, violations]) => (
               <div key={rq}>
-                <div className="text-xs font-medium text-zinc-600 dark:text-zinc-300">{rq}</div>
+                <div className="text-xs font-semibold text-slate-600 dark:text-slate-300">{rq}</div>
                 <ul className="space-y-0.5">
                   {violations.map((v) => (
-                    <li key={v.code} className="text-xs text-zinc-600 dark:text-zinc-400">
+                    <li key={v.code} className="text-xs leading-5 text-slate-600 dark:text-slate-400">
                       <span className="font-mono">{v.code}</span>{" "}
                       <span className={SEVERITY_STYLES[v.severity] ?? ""}>[{v.severity}]</span>{" "}
                       {v.description}
@@ -162,15 +162,15 @@ function ReadabilitySection({ readability }: { readability: Readability }) {
   ];
   return (
     <section>
-      <h3 className="mb-2 text-sm font-semibold">Readability</h3>
+      <h3 className="mb-3 border-b border-slate-100 pb-3 font-display text-base font-bold tracking-tight dark:border-slate-800">Readability</h3>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         {metrics.map(([label, value]) => (
           <div
             key={label}
-            className="rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1.5 dark:border-zinc-700 dark:bg-zinc-800/50"
+            className="rounded-md border border-slate-300 bg-slate-50/70 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800/50"
           >
-            <div className="text-xs text-zinc-500 dark:text-zinc-400">{label}</div>
-            <div className="font-mono text-sm">
+            <div className="text-[11px] font-medium text-slate-500 dark:text-slate-400">{label}</div>
+            <div className="data-value mt-1 text-sm font-semibold">
               {Number.isInteger(value) ? value : value.toFixed(2)}
             </div>
           </div>

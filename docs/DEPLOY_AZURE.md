@@ -18,6 +18,52 @@ No resources are created by these files alone. Before deployment:
    and deploy `infra/budget.bicep` at subscription scope.
 4. Confirm the app reaches zero replicas after idle and review Cost Management.
 
+## Existing crawl proxy / unblocker
+
+The Azure definition can reuse the same external proxy or unblocker account as
+the previous Cloud Run environment. It does not create a metered proxy appliance
+inside Azure. The endpoint and credentials are stored as Container Apps secrets
+and injected into both the web app and the scheduled-acquisition job:
+
+- `CRAWL_PROXY`, with optional `CRAWL_PROXY_USERNAME` and
+  `CRAWL_PROXY_PASSWORD`, routes HTTP and Chromium acquisition through an
+  existing residential/ISP proxy.
+- `SCRAPE_API_URL` and optional `SCRAPE_API_KEY` configure an existing web
+  unblocker API. The URL template can contain `{key}` and `{url}` placeholders.
+
+Pass only the mode used by the existing service. For example:
+
+```sh
+az deployment group what-if --resource-group poligrapher-rg \
+  --template-file infra/main.bicep \
+  --parameters namePrefix=poligrapherabc123 image=REGISTRY/IMAGE:TAG \
+  postgresPassword='...' exportToken='...' \
+  crawlProxy='http://gate.decodo.com:7000' crawlProxyMode='fallback' \
+  crawlProxyUsername='...' crawlProxyPassword='...'
+```
+
+For Decodo residential proxies, use the rotating gateway
+`http://gate.decodo.com:7000` with the proxy user and generated password from
+Residential → Proxy setup. Username/password authentication is preferable to IP
+whitelisting because Container Apps Consumption does not provide a stable
+outbound address by default. Keep `crawlProxyMode=fallback`: direct HTTP and
+Chromium are attempted first, and Decodo bandwidth is used only after blocking.
+Decodo also supports a traffic limit on each proxy user; set that limit before
+deploying. A dedicated proxy user makes the research application's usage easy
+to isolate and revoke.
+
+Do not put these values in a checked-in parameter file. Azure Cost Management
+cannot cap charges billed directly by an external proxy vendor, so configure a
+hard monthly spending or bandwidth limit and usage alerts in that vendor's
+account. Container Apps remains limited to one replica and the scheduled job to
+one execution at a time, which bounds concurrency but not per-gigabyte vendor
+charges.
+
+Decodo's public free offer is currently a 3-day, 100 MB trial rather than a
+permanent free tier, and the selected plan activates automatically after the
+trial unless cancelled. Treat the dashboard traffic limit—not the Azure budget—
+as the primary proxy-cost guardrail.
+
 To transfer an already migrated local dataset, set `TARGET_DATABASE_URL` and
 `AZURE_STORAGE_CONNECTION_STRING`, then run
 `python -m poligrapher_app.migrate_cloud`. It replaces the target seed rows in a
@@ -29,7 +75,7 @@ Example preview (replace placeholders; never commit passwords or tokens):
 az deployment group what-if --resource-group poligrapher-rg \
   --template-file infra/main.bicep \
   --parameters namePrefix=poligrapherabc123 image=REGISTRY/IMAGE:TAG \
-  postgresPassword='...' exportToken='...'
+   postgresPassword='...' exportToken='...'
 ```
 
 Raw research archives are private and expire after 90 days. Uploaded source

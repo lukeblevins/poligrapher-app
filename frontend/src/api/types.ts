@@ -6,15 +6,59 @@ export interface Provider {
   industry: string | null;
   domain: string | null;
   source_url: string | null;
+  ticker: string | null;
+  tickers: string[];
+  cik: string | null;
+  source_status: "unchecked" | "available" | "restricted" | "broken" | "error" | "missing";
+  source_checked_at: string | null;
+  source_http_status: number | null;
+  source_final_url: string | null;
+  collection_ids: string[];
   created_at: string;
   policy_count: number;
   succeeded_count: number;
   failed_count: number;
 }
 
+export interface CompanyCollection {
+  id: string;
+  name: string;
+  description: string | null;
+  kind: "system" | "custom";
+  source_url: string | null;
+  snapshot_date: string | null;
+  provider_ids: string[];
+  provider_count: number;
+  created_at: string;
+}
+
+export interface IndexSyncSummary {
+  collection_id: string;
+  securities: number;
+  companies: number;
+  created: number;
+  updated: number;
+  snapshot_date: string;
+}
+
+export interface CompanyCatalogResult {
+  id: string;
+  name: string;
+  domain: string | null;
+  source_url: string;
+  source: "open_terms_archive";
+  attribution_url: string;
+  requires_javascript: boolean;
+}
+
+export interface CompanyCatalogSearch {
+  results: CompanyCatalogResult[];
+  source_available: boolean;
+}
+
 export interface RunGroup {
   run_group: string | null;
-  kind: "comparison" | "upload";
+  kind: "comparison" | "upload" | "legacy";
   scheduled: boolean;
   capture_date: string | null;
   created_at: string;

@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from poligrapher_app.api.database import Base, engine
-from poligrapher_app.api.routers import analysis, policies, providers, runs, schedules
+from poligrapher_app.api.routers import analysis, collections, policies, providers, runs, schedules
 from poligrapher_app.services import scheduler as sched_engine
 from poligrapher_app.services.tasks import TaskRegistry
 
@@ -43,6 +43,7 @@ app.include_router(policies.router)
 app.include_router(analysis.router)
 app.include_router(schedules.router)
 app.include_router(runs.router)
+app.include_router(collections.router)
 
 # Serve the built SPA (index.html + assets) when present. Registered last so it
 # doesn't shadow the /api routes. html=True makes client-side routing work.
