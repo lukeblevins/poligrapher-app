@@ -15,25 +15,29 @@ RUN npm ci
 COPY frontend/ ./
 RUN npm run build          # emits /app/frontend/dist
 
-# ---- Stage 2: Python backend runtime ----
+# ---- Stage 2: shared Python runtime base ----
 # Pin to Debian bookworm: Playwright 1.45.0 officially supports it, so
 # `playwright install-deps` resolves the right Debian packages. The plain
 # `-slim` tag now points to Debian trixie, which Playwright doesn't recognize —
 # it falls back to ubuntu20.04 package names that trixie's apt can't satisfy.
-FROM python:3.11-slim-bookworm
+FROM python:3.11-slim-bookworm AS python-runtime
 
-# Build-time system deps: git (for the git+https PoliGraph / policy-scorer deps)
-# and a compiler toolchain for any packages without wheels. Playwright's Chromium
-# OS libraries are installed further down (needs root, before we drop privileges).
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        git build-essential curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Playwright's Chromium system libraries as root (apt), before switching
-# to the unprivileged user. Both crawl paths (poligrapher's html_crawler and the
-# app's acquisition service) launch Chromium. Pinned to pyproject's playwright.
+# Install only Chromium's runtime libraries in the shared base. The temporary
+# system-level Playwright package is removed in this same layer; the application
+# copy is installed under the unprivileged user's home in the builder below.
 RUN pip install --no-cache-dir playwright==1.45.0 \
-    && playwright install-deps chromium
+    && playwright install-deps chromium \
+    && pip uninstall -y playwright pyee greenlet \
+    && rm -rf /root/.cache /var/lib/apt/lists/*
+
+# ---- Stage 3: Python dependency and model builder ----
+# Git, compilers, headers, and other build-only files stay in this stage and are
+# never copied into the production image.
+FROM python-runtime AS python-builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
 # Run as a non-root user with UID 1000. Create the app dir (incl. the writable
 # data/ dir) as root and hand it to `user` now: a later `WORKDIR /home/user/app`
@@ -74,6 +78,35 @@ RUN pip install --user --no-cache-dir .
 RUN python -m spacy download en_core_web_md \
     && playwright install chromium \
     && poligrapher-fetch-data
+
+# ---- Stage 4: production backend runtime ----
+FROM python-runtime AS production
+
+RUN useradd -m -u 1000 user \
+    && mkdir -p /home/user/app/data \
+    && chown -R user:user /home/user/app
+
+USER user
+
+ENV HOME=/home/user \
+    PATH=/home/user/.local/bin:$PATH \
+    PLAYWRIGHT_BROWSERS_PATH=/home/user/.cache/ms-playwright \
+    HF_HOME=/home/user/.cache/huggingface \
+    HOST=0.0.0.0 \
+    PORT=8080 \
+    RELOAD=false \
+    DATABASE_URL=sqlite:////home/user/app/data/poligrapher.db
+
+WORKDIR /home/user/app
+
+# Copy only installed Python packages, command-line entry points, and the model /
+# browser caches. This is the key size reduction: the builder toolchain and its
+# package-manager state are excluded from the final image.
+COPY --chown=user:user --from=python-builder /home/user/.local /home/user/.local
+COPY --chown=user:user --from=python-builder /home/user/.cache /home/user/.cache
+COPY --chown=user:user poligrapher_app ./poligrapher_app
+COPY --chown=user:user alembic.ini ./
+COPY --chown=user:user alembic ./alembic
 
 # Bundle Readability.js so the crawler never fetches it from GitHub at runtime
 # (raw.githubusercontent.com 429-rate-limits shared datacenter IPs, failing the
