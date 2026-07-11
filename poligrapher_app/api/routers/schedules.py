@@ -96,11 +96,13 @@ def delete_schedule(schedule_id: uuid.UUID, db: Db):
 
 
 @router.post("/api/schedules/{schedule_id}/run", response_model=ScheduleRead)
-def run_schedule_now(schedule_id: uuid.UUID, db: Db):
+def run_schedule_now(schedule_id: uuid.UUID, request: Request, db: Db):
     sched = db.get(Schedule, schedule_id)
     if not sched:
         raise HTTPException(status_code=404, detail="Schedule not found")
-    sched_engine.trigger_now(str(sched.id))
+    # Request is accepted immediately; status appears in the shared task center.
+    # The event-driven analysis worker scales from zero when the queue receives it.
+    sched_engine.trigger_now(str(sched.id), request.app.state.tasks)
     return sched
 
 
@@ -129,7 +131,9 @@ def source_preview(provider_id: uuid.UUID, request: Request, db: Db):
         raise HTTPException(status_code=404, detail="Provider not found")
     domain = _ensure_domain(provider, db)
 
-    resolver = PolicySourceResolver(allow_headless=True)
+    # Browser rendering belongs to the queued analysis worker. The web image
+    # deliberately stays lightweight and uses static/API discovery here.
+    resolver = PolicySourceResolver(allow_headless=False)
     cand = resolver.resolve_candidate(provider.name, domain)
     if not cand:
         return SourcePreview(url=None, strategy=None, confidence=0.0, auto=False,

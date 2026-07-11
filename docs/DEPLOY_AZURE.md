@@ -1,18 +1,19 @@
 # Deploying safely to Azure
 
-The checked-in Bicep configuration uses Container Apps Consumption with hard
-scaling bounds (`minReplicas=0`, `maxReplicas=1`), PostgreSQL B1ms without HA,
-private Standard LRS Blob Storage, 30-day log retention, and a $35 monthly
-notification budget. Budgets notify; the replica and SKU limits provide the
-actual spending guardrails.
+The checked-in Bicep configuration uses a lightweight web Container App with
+hard scaling bounds (`minReplicas=0`, `maxReplicas=1`), plus an event-driven
+analysis job triggered by Azure Queue Storage (`minExecutions=0`,
+`maxExecutions=1`). PostgreSQL uses B1ms without HA; storage is private Standard
+LRS; logs retain 30 days; and a $35 monthly budget sends notifications. Budgets
+notify, while the scale and SKU limits provide the actual spending guardrails.
 
-Scheduled acquisition is handled by an daily Container Apps Job. The job exits
-immediately when nothing is due and permits only one execution with no automatic
-retries; due analyses reuse the same 4-vCPU/8-GiB pipeline allocation.
+The web and hourly scheduler images request only 0.5 vCPU/1 GiB. Chromium, Torch,
+spaCy, transformers, and model data exist only in the 4-vCPU/8-GiB analysis
+worker image, which runs only while an analysis queue message exists.
 
 No resources are created by these files alone. Before deployment:
 
-1. Build and push the container image to a registry.
+1. Build and push both Docker targets (`web` and `worker`) to a registry.
 2. Create a resource group and preview changes with `az deployment group what-if`.
 3. Deploy `infra/main.bicep`, run `alembic upgrade head` as a one-off migration,
    and deploy `infra/budget.bicep` at subscription scope.
@@ -36,7 +37,8 @@ Pass only the mode used by the existing service. For example:
 ```sh
 az deployment group what-if --resource-group poligrapher-rg \
   --template-file infra/main.bicep \
-  --parameters namePrefix=poligrapherabc123 image=REGISTRY/IMAGE:TAG \
+  --parameters namePrefix=poligrapherabc123 \
+  webImage=REGISTRY/IMAGE:WEB_TAG workerImage=REGISTRY/IMAGE:WORKER_TAG \
   postgresPassword='...' exportToken='...' \
   crawlProxy='http://gate.decodo.com:7000' crawlProxyMode='fallback' \
   crawlProxyUsername='...' crawlProxyPassword='...'
@@ -74,7 +76,8 @@ Example preview (replace placeholders; never commit passwords or tokens):
 ```sh
 az deployment group what-if --resource-group poligrapher-rg \
   --template-file infra/main.bicep \
-  --parameters namePrefix=poligrapherabc123 image=REGISTRY/IMAGE:TAG \
+  --parameters namePrefix=poligrapherabc123 \
+  webImage=REGISTRY/IMAGE:WEB_TAG workerImage=REGISTRY/IMAGE:WORKER_TAG \
    postgresPassword='...' exportToken='...'
 ```
 

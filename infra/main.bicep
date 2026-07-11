@@ -5,7 +5,8 @@ targetScope = 'resourceGroup'
 @maxLength(18)
 param namePrefix string
 param location string = resourceGroup().location
-param image string
+param webImage string
+param workerImage string
 @secure()
 param postgresPassword string
 @secure()
@@ -69,6 +70,17 @@ resource blobs 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-0
   parent: blobService
   name: 'poligrapher'
   properties: { publicAccess: 'None' }
+}
+
+resource queueService 'Microsoft.Storage/storageAccounts/queueServices@2023-05-01' = {
+  parent: storage
+  name: 'default'
+}
+
+resource analysisQueue 'Microsoft.Storage/storageAccounts/queueServices/queues@2023-05-01' = {
+  parent: queueService
+  name: 'analysis-tasks'
+  properties: {}
 }
 
 resource lifecycle 'Microsoft.Storage/storageAccounts/managementPolicies@2023-05-01' = {
@@ -179,8 +191,8 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
       containers: [
         {
           name: 'app'
-          image: image
-          resources: { cpu: json('4.0'), memory: '8Gi' }
+          image: webImage
+          resources: { cpu: json('0.5'), memory: '1Gi' }
           env: concat([
             { name: 'APP_ENV', value: 'production' }
             { name: 'DATABASE_URL', secretRef: 'database-url' }
@@ -190,6 +202,8 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'EXPORT_TOKEN', secretRef: 'export-token' }
             { name: 'ARTIFACT_RETENTION_DAYS', value: '90' }
             { name: 'SCHEDULER_ENABLED', value: 'false' }
+            { name: 'TASK_BACKEND', value: 'azure_queue' }
+            { name: 'AZURE_STORAGE_QUEUE_NAME', value: analysisQueue.name }
           ], proxyEnvironment)
         }
       ]
@@ -223,8 +237,69 @@ resource scheduledRuns 'Microsoft.App/jobs@2024-03-01' = {
       containers: [
         {
           name: 'scheduler'
-          image: image
+          image: webImage
           command: [ 'python', '-m', 'poligrapher_app.run_due_schedules' ]
+          resources: { cpu: json('0.5'), memory: '1Gi' }
+          env: concat([
+            { name: 'APP_ENV', value: 'production' }
+            { name: 'DATABASE_URL', secretRef: 'database-url' }
+            { name: 'STORAGE_BACKEND', value: 'azure' }
+            { name: 'AZURE_STORAGE_CONNECTION_STRING', secretRef: 'storage-connection' }
+            { name: 'AZURE_STORAGE_CONTAINER', value: blobs.name }
+            { name: 'TASK_BACKEND', value: 'azure_queue' }
+            { name: 'AZURE_STORAGE_QUEUE_NAME', value: analysisQueue.name }
+          ], proxyEnvironment)
+        }
+      ]
+    }
+  }
+}
+
+resource analysisWorker 'Microsoft.App/jobs@2024-03-01' = {
+  name: '${namePrefix}-worker'
+  location: location
+  tags: tags
+  properties: {
+    environmentId: containerEnv.id
+    workloadProfileName: 'Consumption'
+    configuration: {
+      triggerType: 'Event'
+      replicaTimeout: 7200
+      replicaRetryLimit: 0
+      eventTriggerConfig: {
+        parallelism: 1
+        replicaCompletionCount: 1
+        scale: {
+          minExecutions: 0
+          maxExecutions: 1
+          pollingInterval: 30
+          rules: [
+            {
+              name: 'analysis-queue'
+              type: 'azure-queue'
+              metadata: {
+                accountName: storage.name
+                queueName: analysisQueue.name
+                queueLength: '1'
+              }
+              auth: [
+                { triggerParameter: 'connection', secretRef: 'storage-connection' }
+              ]
+            }
+          ]
+        }
+      }
+      secrets: concat([
+        { name: 'database-url', value: databaseUrl }
+        { name: 'storage-connection', value: storageConnection }
+      ], proxySecrets)
+    }
+    template: {
+      containers: [
+        {
+          name: 'worker'
+          image: workerImage
+          command: [ 'python', '-m', 'poligrapher_app.worker' ]
           resources: { cpu: json('4.0'), memory: '8Gi' }
           env: concat([
             { name: 'APP_ENV', value: 'production' }
@@ -232,6 +307,8 @@ resource scheduledRuns 'Microsoft.App/jobs@2024-03-01' = {
             { name: 'STORAGE_BACKEND', value: 'azure' }
             { name: 'AZURE_STORAGE_CONNECTION_STRING', secretRef: 'storage-connection' }
             { name: 'AZURE_STORAGE_CONTAINER', value: blobs.name }
+            { name: 'AZURE_STORAGE_QUEUE_NAME', value: analysisQueue.name }
+            { name: 'TASK_BACKEND', value: 'azure_queue' }
           ], proxyEnvironment)
         }
       ]

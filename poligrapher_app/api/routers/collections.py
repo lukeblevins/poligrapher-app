@@ -120,28 +120,11 @@ def verify_collection_sources(collection_id: uuid.UUID, request: Request, db: Db
         total=len(provider_ids),
     )
 
-    def _run():
-        from poligrapher_app.api.database import SessionLocal
-        from poligrapher_app.services.source_verification import verify_provider_sources
-
-        db2 = SessionLocal()
-        try:
-            providers = db2.query(Provider).filter(Provider.id.in_(provider_ids)).all()
-            verify_provider_sources(
-                db2,
-                providers,
-                on_result=lambda _check: registry.incr(task_id, "completed"),
-                should_cancel=lambda: registry.is_cancelled(task_id),
-            )
-            if registry.is_cancelled(task_id):
-                registry.set_cancelled(task_id)
-            else:
-                registry.set_done(task_id)
-        finally:
-            db2.close()
-
-    registry.submit(task_id, _run)
-    return TaskStatus(task_id=task_id, **registry.get(task_id))
+    registry.enqueue(task_id, {
+        "kind": "source-verification",
+        "provider_ids": [str(provider_id) for provider_id in provider_ids],
+    })
+    return TaskStatus(**registry.get(task_id))
 
 
 @router.post("/{collection_id}/runs", response_model=TaskStatus)
@@ -157,23 +140,8 @@ def analyze_collection(collection_id: uuid.UUID, request: Request, db: Db):
         total=len(provider_ids),
     )
 
-    def _run():
-        from poligrapher_app.services import runs as runs_service
-
-        for provider_id in provider_ids:
-            if registry.is_cancelled(task_id):
-                registry.set_cancelled(task_id)
-                return
-            try:
-                result = runs_service.run_comparison(
-                    provider_id, scheduled=False, registry=registry, task_id=task_id
-                )
-                if result not in ("ok", "unchanged"):
-                    registry.incr(task_id, "failed")
-            except Exception:
-                registry.incr(task_id, "failed")
-            registry.incr(task_id, "completed")
-        registry.set_done(task_id)
-
-    registry.submit(task_id, _run)
-    return TaskStatus(task_id=task_id, **registry.get(task_id))
+    registry.enqueue(task_id, {
+        "kind": "collection-analysis",
+        "provider_ids": [str(provider_id) for provider_id in provider_ids],
+    })
+    return TaskStatus(**registry.get(task_id))
