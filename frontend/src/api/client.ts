@@ -5,6 +5,9 @@ import type {
   ImportSummary,
   Policy,
   Provider,
+  CompanyCatalogSearch,
+  CompanyCollection,
+  IndexSyncSummary,
   RunGroup,
   Schedule,
   SourcePreview,
@@ -30,11 +33,18 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 export const api = {
   // Providers
   listProviders: () => request<Provider[]>("/api/providers"),
-  createProvider: (name: string, industry: string | null) =>
+  searchCompanyCatalog: (query: string) =>
+    request<CompanyCatalogSearch>(`/api/providers/catalog/search?q=${encodeURIComponent(query)}`),
+  createProvider: (body: {
+    name: string;
+    industry: string | null;
+    domain?: string | null;
+    source_url?: string | null;
+  }) =>
     request<Provider>("/api/providers", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, industry }),
+      body: JSON.stringify(body),
     }),
   deleteProvider: (id: string) =>
     request<void>(`/api/providers/${id}`, { method: "DELETE" }),
@@ -43,6 +53,29 @@ export const api = {
     form.append("file", file);
     return request<ImportSummary>("/api/providers/import", { method: "POST", body: form });
   },
+
+  // Company collections
+  listCollections: () => request<CompanyCollection[]>("/api/collections"),
+  createCollection: (body: { name: string; description?: string | null; provider_ids: string[] }) =>
+    request<CompanyCollection>("/api/collections", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  updateCollection: (id: string, body: Partial<{ name: string; description: string | null; provider_ids: string[] }>) =>
+    request<CompanyCollection>(`/api/collections/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  deleteCollection: (id: string) =>
+    request<void>(`/api/collections/${id}`, { method: "DELETE" }),
+  syncSp500: () =>
+    request<IndexSyncSummary>("/api/collections/sp500/sync", { method: "POST" }),
+  verifyCollectionSources: (id: string) =>
+    request<TaskStatus>(`/api/collections/${id}/verify-sources`, { method: "POST" }),
+  analyzeCollection: (id: string) =>
+    request<TaskStatus>(`/api/collections/${id}/runs`, { method: "POST" }),
 
   // Policies
   listPolicies: (providerId: string) =>
@@ -65,6 +98,8 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ source_url }),
     }),
+  verifyProviderSource: (providerId: string) =>
+    request<Provider>(`/api/providers/${providerId}/verify-source`, { method: "POST" }),
   listRuns: (providerId: string) => request<RunGroup[]>(`/api/providers/${providerId}/runs`),
   runNow: (providerId: string) =>
     request<TaskStatus>(`/api/providers/${providerId}/runs`, { method: "POST" }),

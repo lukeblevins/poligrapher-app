@@ -90,6 +90,12 @@ def _proxy_parts() -> tuple[str, str | None, str | None] | None:
     return server, os.getenv("CRAWL_PROXY_USERNAME"), os.getenv("CRAWL_PROXY_PASSWORD")
 
 
+def crawl_proxy_mode() -> str:
+    """Return ``fallback`` (default), ``always``, or ``off``."""
+    mode = (os.getenv("CRAWL_PROXY_MODE") or "fallback").strip().lower()
+    return mode if mode in {"fallback", "always", "off"} else "fallback"
+
+
 def httpx_proxy() -> str | None:
     """Proxy URL for httpx, or None when unconfigured (creds folded into URL)."""
     parts = _proxy_parts()
@@ -308,17 +314,23 @@ def content_hash(text: str) -> str:
 # ── network / headless fetching ───────────────────────────────────────────────
 
 def fetch_static(
-    url: str, timeout: float = 20.0, attempts: int = 3, use_proxy: bool = True
+    url: str,
+    timeout: float = 20.0,
+    attempts: int = 3,
+    use_proxy: bool = True,
+    force_proxy: bool = False,
 ) -> tuple[int, str]:
     """GET a URL with realistic headers, retrying transient failures with backoff.
 
     Corporate CDNs are slow and rate-limit bursts, so we retry on connection
-    errors/timeouts and on 429/503 with a short exponential backoff. Returns
-    (0, "") when every attempt fails. Routes through CRAWL_PROXY when configured;
-    callers fetching archive.org/OTA pass ``use_proxy=False`` to avoid burning
-    paid proxy bandwidth on hosts that don't block us.
+    errors/timeouts and on 429/503 with a short exponential backoff. In the
+    default ``fallback`` mode this function tries direct access; ``fetch_html``
+    explicitly retries through the proxy only after a block. ``always`` routes
+    every eligible request through the proxy, while archive/OTA callers pass
+    ``use_proxy=False`` to avoid spending proxy bandwidth.
     """
-    proxy = httpx_proxy() if use_proxy else None
+    mode = crawl_proxy_mode()
+    proxy = httpx_proxy() if use_proxy and mode != "off" and (force_proxy or mode == "always") else None
     last_exc: Exception | None = None
     for i in range(attempts):
         try:
@@ -336,7 +348,7 @@ def fetch_static(
     return 0, ""
 
 
-def fetch_rendered(url: str, timeout_ms: int = 35000) -> str:
+def fetch_rendered(url: str, timeout_ms: int = 35000, *, use_proxy: bool = False) -> str:
     """Load a page in a headless browser (recovers SPA / bot-blocked sites).
 
     Uses light stealth so a default headless fingerprint doesn't get flagged:
@@ -348,7 +360,7 @@ def fetch_rendered(url: str, timeout_ms: int = 35000) -> str:
     launch_kwargs: dict = {
         "args": ["--disable-blink-features=AutomationControlled", "--no-sandbox"]
     }
-    proxy = playwright_proxy()
+    proxy = playwright_proxy() if use_proxy and crawl_proxy_mode() != "off" else None
     if proxy:
         launch_kwargs["proxy"] = proxy
 
@@ -414,15 +426,29 @@ def fetch_html(url: str, allow_headless: bool = True) -> str:
     """Fetch HTML, escalating static -> headless browser -> Wayback snapshot."""
     status, html = fetch_static(url)
     blocked = status in (0, 403, 429, 503) or len(html) < 2000
+    proxy_available = bool(httpx_proxy()) and crawl_proxy_mode() == "fallback"
+    if blocked and proxy_available:
+        proxy_status, proxy_html = fetch_static(url, force_proxy=True)
+        if proxy_status and proxy_html:
+            status, html = proxy_status, proxy_html
+            blocked = status in (0, 403, 429, 503) or len(html) < 2000
     if blocked and allow_headless:
         logger.info("escalating to headless browser for %s (static status=%s)", url, status)
         try:
-            rendered = fetch_rendered(url)
+            rendered = fetch_rendered(url, use_proxy=crawl_proxy_mode() == "always")
             if len(rendered) >= 2000:
                 return rendered
             html = rendered or html
         except Exception as exc:  # noqa: BLE001
             logger.warning("headless fetch failed for %s: %s", url, exc)
+        if proxy_available:
+            try:
+                rendered = fetch_rendered(url, use_proxy=True)
+                if len(rendered) >= 2000:
+                    return rendered
+                html = rendered or html
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("proxied headless fetch failed for %s: %s", url, exc)
     # Tier-2 unblocker API, if configured (handles rotation + rendering + CAPTCHA).
     if not html or len(html) < 2000:
         via_api = fetch_via_unblocker(url)

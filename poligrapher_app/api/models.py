@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime, timezone
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, JSON, String, Uuid
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, JSON, String, Table, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from poligrapher_app.api.database import Base
@@ -9,6 +9,14 @@ from poligrapher_app.api.database import Base
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+collection_members = Table(
+    "collection_members",
+    Base.metadata,
+    Column("collection_id", Uuid, ForeignKey("company_collections.id", ondelete="CASCADE"), primary_key=True),
+    Column("provider_id", Uuid, ForeignKey("providers.id", ondelete="CASCADE"), primary_key=True),
+)
 
 
 class Provider(Base):
@@ -21,6 +29,15 @@ class Provider(Base):
     domain: Mapped[str | None] = mapped_column(String(255))
     # Provider-level website policy source; drives scheduled comparison runs.
     source_url: Mapped[str | None] = mapped_column(String)
+    # Stable public-company metadata used by refreshable index collections.
+    ticker: Mapped[str | None] = mapped_column(String(32))
+    tickers: Mapped[list] = mapped_column(JSON, default=list)
+    cik: Mapped[str | None] = mapped_column(String(20), index=True)
+    # Last lightweight availability check of the configured policy source.
+    source_status: Mapped[str] = mapped_column(String(20), default="unchecked")
+    source_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    source_http_status: Mapped[int | None] = mapped_column(Integer)
+    source_final_url: Mapped[str | None] = mapped_column(String)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     policies: Mapped[list["Policy"]] = relationship(
@@ -28,6 +45,27 @@ class Provider(Base):
     )
     schedules: Mapped[list["Schedule"]] = relationship(
         "Schedule", back_populates="provider", cascade="all, delete-orphan"
+    )
+    collections: Mapped[list["CompanyCollection"]] = relationship(
+        "CompanyCollection", secondary=collection_members, back_populates="providers"
+    )
+
+
+class CompanyCollection(Base):
+    """A reusable provider cohort, either system-managed or researcher-created."""
+
+    __tablename__ = "company_collections"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    description: Mapped[str | None] = mapped_column(String)
+    kind: Mapped[str] = mapped_column(String(20), default="custom")
+    source_url: Mapped[str | None] = mapped_column(String)
+    snapshot_date: Mapped[date | None] = mapped_column(Date)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    providers: Mapped[list[Provider]] = relationship(
+        Provider, secondary=collection_members, back_populates="collections"
     )
 
 
@@ -113,3 +151,26 @@ class AnalysisResult(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     policy: Mapped["Policy"] = relationship("Policy", back_populates="analysis_results")
+
+
+class TaskRecord(Base):
+    """Durable queue/task state shared by the web service and analysis workers."""
+
+    __tablename__ = "tasks"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    status: Mapped[str] = mapped_column(String(20), default="running", index=True)
+    error: Mapped[str | None] = mapped_column(String)
+    label: Mapped[str | None] = mapped_column(String(255))
+    title: Mapped[str | None] = mapped_column(String(255))
+    kind: Mapped[str | None] = mapped_column(String(40), index=True)
+    total: Mapped[int] = mapped_column(Integer, default=0)
+    completed: Mapped[int] = mapped_column(Integer, default=0)
+    failed: Mapped[int] = mapped_column(Integer, default=0)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    policy_id: Mapped[str | None] = mapped_column(String(36))
+    provider_name: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

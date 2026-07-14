@@ -1,8 +1,8 @@
 # Architecture
 
 poligrapher-app is a **React SPA + FastAPI JSON API**. The React frontend owns all
-view concerns; the backend exposes JSON and holds the analysis logic. The heavy
-NLP/graph work (PoliGraph, policy-scorer) runs server-side.
+view concerns; the backend exposes JSON and publishes durable tasks. Heavy
+NLP/graph work runs in a separate event-driven worker image.
 
 ## Layers (backend)
 
@@ -15,7 +15,8 @@ services/   Business logic, decoupled from HTTP and view. Each module is
               scoring.py   — privacy (in-repo) + GDPR (policy-scorer) scoring
               graph.py     — graph artifacts → cytoscape JSON, stats, GDPR report
               importer.py  — policy_list CSV → Provider/Policy rows
-              tasks.py     — in-memory background task registry (thread pool)
+              tasks.py     — PostgreSQL task state + local/Azure Queue publisher
+              task_execution.py — analysis worker task dispatcher
 domain/     Entity classes (PolicyDocumentInfo, PolicyAnalysisResult,
             PolicyDocumentProvider) that encapsulate artifact paths and text
             extraction, hiding filesystem conventions from callers.
@@ -30,7 +31,8 @@ scoring/    In-repo heuristic PrivacyScorer + its TOML rules/criteria.
 1. **Add policy** (`POST /api/providers/{id}/policies`) — records a `Policy` row
    (URL or uploaded PDF) and computes its artifact directory
    `output/<Provider_Slug>/<date>_<source>/`.
-2. **Generate** (`POST /api/policies/{id}/generate`) — a background task runs
+2. **Generate** (`POST /api/policies/{id}/generate`) — the API writes a durable
+   task and queue message. An Azure Container Apps Job scales from zero and runs
    `services.pipeline.generate_graph`, which drives PoliGraph
    (crawl/parse → init → annotate → build graph) and writes
    `graph-original.full.yml`, `graph-original.yml`, and `graph-original.graphml`
@@ -43,15 +45,16 @@ scoring/    In-repo heuristic PrivacyScorer + its TOML rules/criteria.
    - `GET /api/policies/{id}/stats` → graph statistics
    - `GET /api/policies/{id}/assessments` → privacy + GDPR + readability
 
-Background tasks are tracked by `services.tasks.TaskRegistry` (on
-`app.state.tasks`) and polled via `GET /api/tasks/{task_id}`.
+Tasks are durable `TaskRecord` rows. Production publishes task IDs to Azure Queue
+Storage; local development executes the same dispatcher in a thread. Clients
+poll `GET /api/tasks/{task_id}`, so status survives web scale-to-zero restarts.
 
 ## Persistence
 
-SQLAlchemy 2.0 ORM over **SQLite by default** (dialect-agnostic `Uuid`/`JSON`
-columns, so Postgres works by changing `DATABASE_URL`). Three tables: `providers`,
-`policies`, `analysis_results`. Schema is created at startup via
-`Base.metadata.create_all`.
+SQLAlchemy 2.0 ORM over **SQLite by default** and PostgreSQL in production.
+Production schema changes are Alembic migrations; canonical graph/results and
+task state are stored in PostgreSQL, while source PDFs and artifact archives are
+private Blob objects.
 
 ## Frontend
 

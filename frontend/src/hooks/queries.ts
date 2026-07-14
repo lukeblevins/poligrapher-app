@@ -8,6 +8,10 @@ export function useProviders() {
   return useQuery({ queryKey: ["providers"], queryFn: api.listProviders });
 }
 
+export function useCollections() {
+  return useQuery({ queryKey: ["collections"], queryFn: api.listCollections });
+}
+
 export function usePolicies(providerId: string | null) {
   return useQuery({
     queryKey: ["policies", providerId],
@@ -48,8 +52,12 @@ export function useAssessments(policyId: string | null) {
 export function useCreateProvider() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ name, industry }: { name: string; industry: string | null }) =>
-      api.createProvider(name, industry),
+    mutationFn: (body: {
+      name: string;
+      industry: string | null;
+      domain?: string | null;
+      source_url?: string | null;
+    }) => api.createProvider(body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["providers"] }),
   });
 }

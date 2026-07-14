@@ -5,19 +5,22 @@ import { PolicyList } from "./components/PolicyList";
 import { ProviderSidebar } from "./components/ProviderSidebar";
 import { TopBar } from "./components/TopBar";
 import type { Provider } from "./api/types";
+import { useProviders } from "./hooks/queries";
 
 export default function App() {
-  const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null);
+  const { data: providers = [] } = useProviders();
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
   const [selectedPolicyId, setSelectedPolicyId] = useState<string | null>(null);
+  const selectedProvider = providers.find((provider) => provider.id === selectedProviderId) ?? null;
 
   function handleSelectProvider(provider: Provider) {
-    setSelectedProvider(provider);
+    setSelectedProviderId(provider.id);
     setSelectedPolicyId(null);
   }
 
   function handleProviderDeleted(id: string) {
-    if (id === selectedProvider?.id) {
-      setSelectedProvider(null);
+    if (id === selectedProviderId) {
+      setSelectedProviderId(null);
       setSelectedPolicyId(null);
     }
   }
@@ -27,11 +30,11 @@ export default function App() {
       <TopBar onProviderCreated={handleSelectProvider} />
       <div className="flex flex-1 overflow-hidden">
         <ProviderSidebar
-          selectedId={selectedProvider?.id ?? null}
+          selectedId={selectedProviderId}
           onSelect={handleSelectProvider}
           onDeleted={handleProviderDeleted}
         />
-        <main className="flex flex-1 overflow-hidden bg-zinc-50 dark:bg-zinc-950">
+        <main className="flex flex-1 overflow-hidden bg-slate-50 dark:bg-slate-950">
           <PolicyList
             provider={selectedProvider}
             selectedPolicyId={selectedPolicyId}

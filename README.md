@@ -9,7 +9,8 @@ GDPR and custom privacy compliance scores.
 
 | Package | Role |
 |---|---|
-| [`lukeblevins/PoliGraph`](https://github.com/lukeblevins/PoliGraph) | NLP pipeline: HTML/PDF crawling, annotation, knowledge-graph construction |
+| [`UCI-Networking-Group/PoliGraph`](https://github.com/UCI-Networking-Group/PoliGraph) | Original PoliGraph research code by Cui, Trimananda, Markopoulou, and Jordan (USENIX Security 2023) |
+| [`lukeblevins/PoliGraph`](https://github.com/lukeblevins/PoliGraph) | Enhanced fork used by this app for HTML/PDF crawling, annotation, and knowledge-graph construction |
 | [`lukeblevins/policy-scorer`](https://github.com/lukeblevins/policy-scorer) | GDPR compliance scoring (RQ1–RQ6, 80 violation codes) |
 
 ## Setup
@@ -17,7 +18,7 @@ GDPR and custom privacy compliance scores.
 ```sh
 git clone https://github.com/lukeblevins/poligrapher-app
 cd poligrapher-app
-./setup.sh                 # backend: .venv, deps, Playwright, poligrapher models
+./setup.sh                 # backend: web + analysis deps, Chromium, model data
 cd frontend && npm install # frontend deps
 ```
 
@@ -75,8 +76,9 @@ Open `http://localhost:8000`.
 
 ## Architecture
 
-The frontend is decoupled from all business logic — the API returns only JSON and
-the React app owns rendering (including the graph viewer).
+The frontend is decoupled from all business logic. In production the FastAPI web
+image is lightweight; analysis requests are durable PostgreSQL tasks published
+to Azure Queue Storage, which wakes a separate Chromium/ML worker from zero.
 
 ```
 poligrapher-app/
@@ -91,7 +93,8 @@ poligrapher-app/
 │   │   ├── scoring.py             #   privacy + GDPR scoring
 │   │   ├── graph.py               #   graph → cytoscape JSON, stats, GDPR report
 │   │   ├── importer.py            #   CSV → DB
-│   │   └── tasks.py               #   background task registry
+│   │   ├── tasks.py               #   durable task state + queue publisher
+│   │   └── task_execution.py      #   worker dispatcher
 │   ├── domain/policy_analysis.py  # entity classes (document/result/provider)
 │   ├── scoring/                   # in-repo heuristic PrivacyScorer + TOML config
 │   ├── migrate_csv.py             # CSV → DB seed command

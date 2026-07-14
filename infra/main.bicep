@@ -5,11 +5,26 @@ targetScope = 'resourceGroup'
 @maxLength(18)
 param namePrefix string
 param location string = resourceGroup().location
-param image string
+param webImage string
+param workerImage string
 @secure()
 param postgresPassword string
 @secure()
 param exportToken string
+@description('Optional external HTTP(S) residential/ISP proxy endpoint. Keep credentials separate when possible.')
+@secure()
+param crawlProxy string = ''
+@secure()
+param crawlProxyUsername string = ''
+@secure()
+param crawlProxyPassword string = ''
+@allowed([ 'fallback', 'always', 'off' ])
+param crawlProxyMode string = 'fallback'
+@description('Optional scraping/unblocker API URL template. Use {key} and {url} placeholders.')
+@secure()
+param scrapeApiUrl string = ''
+@secure()
+param scrapeApiKey string = ''
 param postgresAdmin string = 'poligrapheradmin'
 
 var tags = {
@@ -55,6 +70,17 @@ resource blobs 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-0
   parent: blobService
   name: 'poligrapher'
   properties: { publicAccess: 'None' }
+}
+
+resource queueService 'Microsoft.Storage/storageAccounts/queueServices@2023-05-01' = {
+  parent: storage
+  name: 'default'
+}
+
+resource analysisQueue 'Microsoft.Storage/storageAccounts/queueServices/queues@2023-05-01' = {
+  parent: queueService
+  name: 'analysis-tasks'
+  properties: {}
 }
 
 resource lifecycle 'Microsoft.Storage/storageAccounts/managementPolicies@2023-05-01' = {
@@ -128,6 +154,21 @@ resource containerEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
 
 var storageConnection = 'DefaultEndpointsProtocol=https;AccountName=${storage.name};AccountKey=${storage.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
 var databaseUrl = 'postgresql+psycopg://${postgresAdmin}:${uriComponent(postgresPassword)}@${postgres.properties.fullyQualifiedDomainName}:5432/poligrapher?sslmode=require'
+var proxySecrets = concat(
+  empty(crawlProxy) ? [] : [ { name: 'crawl-proxy', value: crawlProxy } ],
+  empty(crawlProxy) || empty(crawlProxyUsername) ? [] : [ { name: 'crawl-proxy-username', value: crawlProxyUsername } ],
+  empty(crawlProxy) || empty(crawlProxyPassword) ? [] : [ { name: 'crawl-proxy-password', value: crawlProxyPassword } ],
+  empty(scrapeApiUrl) ? [] : [ { name: 'scrape-api-url', value: scrapeApiUrl } ],
+  empty(scrapeApiUrl) || empty(scrapeApiKey) ? [] : [ { name: 'scrape-api-key', value: scrapeApiKey } ]
+)
+var proxyEnvironment = concat(
+  empty(crawlProxy) ? [] : [ { name: 'CRAWL_PROXY', secretRef: 'crawl-proxy' } ],
+  empty(crawlProxy) ? [] : [ { name: 'CRAWL_PROXY_MODE', value: crawlProxyMode } ],
+  empty(crawlProxy) || empty(crawlProxyUsername) ? [] : [ { name: 'CRAWL_PROXY_USERNAME', secretRef: 'crawl-proxy-username' } ],
+  empty(crawlProxy) || empty(crawlProxyPassword) ? [] : [ { name: 'CRAWL_PROXY_PASSWORD', secretRef: 'crawl-proxy-password' } ],
+  empty(scrapeApiUrl) ? [] : [ { name: 'SCRAPE_API_URL', secretRef: 'scrape-api-url' } ],
+  empty(scrapeApiUrl) || empty(scrapeApiKey) ? [] : [ { name: 'SCRAPE_API_KEY', secretRef: 'scrape-api-key' } ]
+)
 
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
   name: '${namePrefix}-app'
@@ -140,19 +181,19 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
       activeRevisionsMode: 'Single'
       ingress: { external: true, targetPort: 8080, transport: 'auto', allowInsecure: false }
       maxInactiveRevisions: 2
-      secrets: [
+      secrets: concat([
         { name: 'database-url', value: databaseUrl }
         { name: 'storage-connection', value: storageConnection }
         { name: 'export-token', value: exportToken }
-      ]
+      ], proxySecrets)
     }
     template: {
       containers: [
         {
           name: 'app'
-          image: image
-          resources: { cpu: json('4.0'), memory: '8Gi' }
-          env: [
+          image: webImage
+          resources: { cpu: json('0.5'), memory: '1Gi' }
+          env: concat([
             { name: 'APP_ENV', value: 'production' }
             { name: 'DATABASE_URL', secretRef: 'database-url' }
             { name: 'STORAGE_BACKEND', value: 'azure' }
@@ -161,7 +202,9 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'EXPORT_TOKEN', secretRef: 'export-token' }
             { name: 'ARTIFACT_RETENTION_DAYS', value: '90' }
             { name: 'SCHEDULER_ENABLED', value: 'false' }
-          ]
+            { name: 'TASK_BACKEND', value: 'azure_queue' }
+            { name: 'AZURE_STORAGE_QUEUE_NAME', value: analysisQueue.name }
+          ], proxyEnvironment)
         }
       ]
       scale: { minReplicas: 0, maxReplicas: 1, rules: [ { name: 'http', http: { metadata: { concurrentRequests: '1' } } } ] }
@@ -185,25 +228,88 @@ resource scheduledRuns 'Microsoft.App/jobs@2024-03-01' = {
         parallelism: 1
         replicaCompletionCount: 1
       }
-      secrets: [
+      secrets: concat([
         { name: 'database-url', value: databaseUrl }
         { name: 'storage-connection', value: storageConnection }
-      ]
+      ], proxySecrets)
     }
     template: {
       containers: [
         {
           name: 'scheduler'
-          image: image
+          image: webImage
           command: [ 'python', '-m', 'poligrapher_app.run_due_schedules' ]
-          resources: { cpu: json('4.0'), memory: '8Gi' }
-          env: [
+          resources: { cpu: json('0.5'), memory: '1Gi' }
+          env: concat([
             { name: 'APP_ENV', value: 'production' }
             { name: 'DATABASE_URL', secretRef: 'database-url' }
             { name: 'STORAGE_BACKEND', value: 'azure' }
             { name: 'AZURE_STORAGE_CONNECTION_STRING', secretRef: 'storage-connection' }
             { name: 'AZURE_STORAGE_CONTAINER', value: blobs.name }
+            { name: 'TASK_BACKEND', value: 'azure_queue' }
+            { name: 'AZURE_STORAGE_QUEUE_NAME', value: analysisQueue.name }
+          ], proxyEnvironment)
+        }
+      ]
+    }
+  }
+}
+
+resource analysisWorker 'Microsoft.App/jobs@2024-03-01' = {
+  name: '${namePrefix}-worker'
+  location: location
+  tags: tags
+  properties: {
+    environmentId: containerEnv.id
+    workloadProfileName: 'Consumption'
+    configuration: {
+      triggerType: 'Event'
+      replicaTimeout: 7200
+      replicaRetryLimit: 0
+      eventTriggerConfig: {
+        parallelism: 1
+        replicaCompletionCount: 1
+        scale: {
+          minExecutions: 0
+          maxExecutions: 1
+          pollingInterval: 30
+          rules: [
+            {
+              name: 'analysis-queue'
+              type: 'azure-queue'
+              metadata: {
+                accountName: storage.name
+                queueName: analysisQueue.name
+                queueLength: '1'
+              }
+              auth: [
+                { triggerParameter: 'connection', secretRef: 'storage-connection' }
+              ]
+            }
           ]
+        }
+      }
+      secrets: concat([
+        { name: 'database-url', value: databaseUrl }
+        { name: 'storage-connection', value: storageConnection }
+      ], proxySecrets)
+    }
+    template: {
+      containers: [
+        {
+          name: 'worker'
+          image: workerImage
+          command: [ 'python', '-m', 'poligrapher_app.worker' ]
+          resources: { cpu: json('4.0'), memory: '8Gi' }
+          env: concat([
+            { name: 'APP_ENV', value: 'production' }
+            { name: 'DATABASE_URL', secretRef: 'database-url' }
+            { name: 'STORAGE_BACKEND', value: 'azure' }
+            { name: 'AZURE_STORAGE_CONNECTION_STRING', secretRef: 'storage-connection' }
+            { name: 'AZURE_STORAGE_CONTAINER', value: blobs.name }
+            { name: 'AZURE_STORAGE_QUEUE_NAME', value: analysisQueue.name }
+            { name: 'TASK_BACKEND', value: 'azure_queue' }
+          ], proxyEnvironment)
         }
       ]
     }

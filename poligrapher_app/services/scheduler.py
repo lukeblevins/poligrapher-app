@@ -84,13 +84,14 @@ def unregister_job(schedule_id: str) -> None:
         _scheduler.remove_job(schedule_id)
 
 
-def trigger_now(schedule_id: str) -> None:
-    """Run a schedule immediately on the TaskRegistry thread pool."""
-    if _registry is not None:
-        task_id = _registry.create(
+def trigger_now(schedule_id: str, registry=None) -> None:
+    """Queue a schedule immediately using the durable task backend."""
+    registry = registry or _registry
+    if registry is not None:
+        task_id = registry.create(
             kind="schedule", title="Scheduled run", total=1, schedule_id=schedule_id
         )
-        _registry.submit(task_id, lambda: run_schedule_job(schedule_id, task_id))
+        registry.enqueue(task_id, {"kind": "schedule", "schedule_id": schedule_id})
 
 
 def _persist_next_run(schedule_id: str, when) -> None:
@@ -107,7 +108,7 @@ def _persist_next_run(schedule_id: str, when) -> None:
         db.close()
 
 
-def run_schedule_job(schedule_id: str, task_id: str | None = None) -> None:
+def run_schedule_job(schedule_id: str, task_id: str | None = None, registry=None) -> None:
     """Fired by the timer (or run-now): run the provider's comparison, gated by
     website change detection. Delegates the heavy work to services.runs."""
     import uuid as _uuid
@@ -131,27 +132,28 @@ def run_schedule_job(schedule_id: str, task_id: str | None = None) -> None:
         db.close()
 
     # Ensure the run shows up in the Status Center even when timer-fired.
-    own_task = task_id is None and _registry is not None
+    registry = registry or _registry
+    own_task = task_id is None and registry is not None
     if own_task:
-        task_id = _registry.create(kind="schedule", title=f"Scheduled · {provider_name}",
-                                   total=1, schedule_id=schedule_id)
+        task_id = registry.create(kind="schedule", title=f"Scheduled · {provider_name}",
+                                  total=1, schedule_id=schedule_id)
 
     try:
-        status = run_comparison(provider_id, scheduled=True, registry=_registry, task_id=task_id)
+        status = run_comparison(provider_id, scheduled=True, registry=registry, task_id=task_id)
     except Exception as exc:  # noqa: BLE001
         logger.exception("scheduled run failed for %s", schedule_id)
         status = "failed"
-        if task_id and _registry:
-            _registry.set_failed(task_id, str(exc))
+        if task_id and registry:
+            registry.set_failed(task_id, str(exc))
     else:
-        if task_id and _registry:
+        if task_id and registry:
             if status == "cancelled":
-                _registry.set_cancelled(task_id)
+                registry.set_cancelled(task_id)
             elif status == "needs_source":
-                _registry.set_failed(task_id, "Could not resolve a policy source")
+                registry.set_failed(task_id, "Could not resolve a policy source")
             else:
-                _registry.update(task_id, completed=1)
-                _registry.set_done(task_id)
+                registry.update(task_id, completed=1)
+                registry.set_done(task_id)
 
     db = SessionLocal()
     try:

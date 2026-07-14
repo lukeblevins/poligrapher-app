@@ -9,7 +9,6 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Resp
 from sqlalchemy.orm import Session
 
 from poligrapher_app.api.deps import get_db
-from poligrapher_app.api.mapping import sync_policy_from_doc
 from poligrapher_app.api.models import Policy, Provider
 from poligrapher_app.api.schemas import PolicyRead, TaskStatus
 
@@ -19,8 +18,8 @@ Db = Annotated[Session, Depends(get_db)]
 
 
 def _task_status(registry, task_id: str) -> TaskStatus:
-    task = registry.get(task_id) or {"status": "running"}
-    return TaskStatus(task_id=task_id, **task)
+    task = registry.get(task_id) or {"task_id": task_id, "status": "running"}
+    return TaskStatus(**task)
 
 
 # ── Provider-scoped policy routes ─────────────────────────────────────────────
@@ -134,39 +133,7 @@ def trigger_generate(policy_id: uuid.UUID, request: Request, db: Db):
         policy_id=str(policy_id),
         total=1,
     )
-    def _run():
-        from poligrapher_app.api.database import SessionLocal
-        from poligrapher_app.services.pipeline import PipelineCancelled, generate_graph
-        from poligrapher_app.services.persistence import persist_workspace, temporary_document
-
-        db2 = SessionLocal()
-        try:
-            try:
-                policy2 = db2.get(Policy, policy_id)
-                if policy2:
-                    with temporary_document(policy2) as (doc2, workspace):
-                        generate_graph(doc2, should_cancel=lambda: registry.is_cancelled(task_id))
-                        persist_workspace(policy2, doc2, workspace / "artifacts.zip")
-                        sync_policy_from_doc(policy2, doc2, db2)
-                registry.incr(task_id, "completed")
-                registry.set_done(task_id)
-            except PipelineCancelled:
-                # Staging is discarded by the pipeline; nothing to roll back here.
-                registry.set_cancelled(task_id)
-            except Exception as exc:
-                registry.set_failed(task_id, str(exc))
-                failed = db2.get(Policy, policy_id)
-                if failed:
-                    if not failed.graph_data:
-                        failed.pipeline_status = "failed"
-                    failed.pipeline_errors = list(failed.pipeline_errors or []) + [
-                        {"message": str(exc)}
-                    ]
-                    db2.commit()
-        finally:
-            db2.close()
-
-    registry.submit(task_id, _run)
+    registry.enqueue(task_id, {"kind": "generate", "policy_id": str(policy_id)})
     return _task_status(registry, task_id)
 
 
@@ -184,35 +151,7 @@ def trigger_score(policy_id: uuid.UUID, request: Request, db: Db):
         policy_id=str(policy_id),
         total=1,
     )
-    def _run():
-        from poligrapher_app.api.database import SessionLocal
-        from poligrapher_app.services.scoring import score_gdpr, score_privacy
-        from poligrapher_app.services.persistence import temporary_document
-
-        db2 = SessionLocal()
-        try:
-            if registry.is_cancelled(task_id):
-                registry.set_cancelled(task_id)
-                return
-            policy2 = db2.get(Policy, policy_id)
-            if not policy2:
-                registry.set_failed(task_id, "Policy no longer exists")
-                return
-            with temporary_document(policy2, restore_artifacts=True) as (doc, _):
-                score_privacy(doc)
-                score_gdpr(doc)
-            # Skip persistence if cancelled mid-scoring so results are all-or-nothing.
-            if registry.is_cancelled(task_id):
-                registry.set_cancelled(task_id)
-                return
-            if policy2:  # may have been deleted mid-run
-                sync_policy_from_doc(policy2, doc, db2)
-            registry.incr(task_id, "completed")
-            registry.set_done(task_id)
-        finally:
-            db2.close()
-
-    registry.submit(task_id, _run)
+    registry.enqueue(task_id, {"kind": "score", "policy_id": str(policy_id)})
     return _task_status(registry, task_id)
 
 
@@ -224,42 +163,9 @@ def refresh_all(request: Request, db: Db):
         label="Refresh pending", title="Refresh pending", kind="refresh", total=len(policy_ids)
     )
 
-    def _run():
-        from poligrapher_app.api.database import SessionLocal
-        from poligrapher_app.services.pipeline import PipelineCancelled, generate_graph
-        from poligrapher_app.services.persistence import persist_workspace, temporary_document
-
-        db2 = SessionLocal()
-        try:
-            for pid in policy_ids:
-                if registry.is_cancelled(task_id):
-                    registry.set_cancelled(task_id)
-                    return
-                p = db2.get(Policy, pid)
-                if not p:
-                    continue
-                try:
-                    with temporary_document(p) as (doc, workspace):
-                        generate_graph(doc, should_cancel=lambda: registry.is_cancelled(task_id))
-                        persist_workspace(p, doc, workspace / "artifacts.zip")
-                        sync_policy_from_doc(p, doc, db2)
-                except PipelineCancelled:
-                    registry.set_cancelled(task_id)
-                    return
-                except Exception:
-                    if not p.graph_data:
-                        p.pipeline_status = "failed"
-                    p.pipeline_errors = list(p.pipeline_errors or []) + [
-                        {"message": "Refresh failed"}
-                    ]
-                    db2.commit()
-                    registry.incr(task_id, "failed")
-                registry.incr(task_id, "completed")
-            registry.set_done(task_id)
-        finally:
-            db2.close()
-
-    registry.submit(task_id, _run)
+    registry.enqueue(task_id, {
+        "kind": "refresh", "policy_ids": [str(policy_id) for policy_id in policy_ids]
+    })
     return _task_status(registry, task_id)
 
 
@@ -274,31 +180,7 @@ def score_all(request: Request, db: Db):
         label="Score all", title="Score all", kind="score-all", total=len(policy_ids)
     )
 
-    def _run():
-        from poligrapher_app.api.database import SessionLocal
-        from poligrapher_app.services.scoring import score_gdpr, score_privacy
-        from poligrapher_app.services.persistence import temporary_document
-
-        db2 = SessionLocal()
-        try:
-            for pid in policy_ids:
-                if registry.is_cancelled(task_id):
-                    registry.set_cancelled(task_id)
-                    return
-                p = db2.get(Policy, pid)
-                if not p:
-                    continue
-                try:
-                    with temporary_document(p, restore_artifacts=True) as (doc, _):
-                        score_privacy(doc)
-                        score_gdpr(doc)
-                        sync_policy_from_doc(p, doc, db2)
-                except Exception:
-                    registry.incr(task_id, "failed")
-                registry.incr(task_id, "completed")
-            registry.set_done(task_id)
-        finally:
-            db2.close()
-
-    registry.submit(task_id, _run)
+    registry.enqueue(task_id, {
+        "kind": "score-all", "policy_ids": [str(policy_id) for policy_id in policy_ids]
+    })
     return _task_status(registry, task_id)

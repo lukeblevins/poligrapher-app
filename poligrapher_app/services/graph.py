@@ -5,11 +5,13 @@ directly (cytoscape elements, statistics, structured GDPR report). No styling or
 HTML lives here — the React ``GraphViewer`` owns all view concerns.
 """
 
+from __future__ import annotations
+
 import os
+from typing import TYPE_CHECKING
 
-import yaml
-
-from poligrapher_app.domain.policy_analysis import PolicyDocumentInfo
+if TYPE_CHECKING:
+    from poligrapher_app.domain.policy_analysis import PolicyDocumentInfo
 
 # Research questions, in display order, for grouping GDPR violations.
 _RQ_ORDER = ("RQ1", "RQ2", "RQ3", "RQ4", "RQ5", "RQ6")
@@ -25,6 +27,8 @@ def build_cytoscape_elements(policy: PolicyDocumentInfo) -> list[dict]:
     yml_file = os.path.join(policy.output_dir, "graph-original.full.yml")
     if not os.path.exists(yml_file):
         return []
+
+    import yaml
 
     with open(yml_file, "r", encoding="utf-8") as fh:
         data = yaml.safe_load(fh)

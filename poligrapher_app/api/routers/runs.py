@@ -17,7 +17,6 @@ from poligrapher_app.api.schemas import (
     ScheduleToggle,
     TaskStatus,
 )
-from poligrapher_app.services import runs as runs_service
 from poligrapher_app.services import scheduler as sched_engine
 
 router = APIRouter(tags=["runs"])
@@ -32,23 +31,7 @@ def _provider_or_404(provider_id: uuid.UUID, db: Session) -> Provider:
 
 
 def _task_of(registry, task_id: str) -> TaskStatus:
-    return TaskStatus(task_id=task_id, **(registry.get(task_id) or {"status": "running"}))
-
-
-def _submit(registry, task_id, fn) -> None:
-    """Run ``fn`` (returns a status string) and settle the task accordingly."""
-
-    def _wrapped():
-        result = fn()
-        if result == "cancelled":
-            registry.set_cancelled(task_id)
-        elif result in ("needs_source", "gone"):
-            registry.set_failed(task_id, f"Run did not complete: {result}")
-        else:
-            registry.update(task_id, completed=1)
-            registry.set_done(task_id)
-
-    registry.submit(task_id, _wrapped)
+    return TaskStatus(**(registry.get(task_id) or {"task_id": task_id, "status": "running"}))
 
 
 # ── Provider source ───────────────────────────────────────────────────────────
@@ -57,6 +40,10 @@ def _submit(registry, task_id, fn) -> None:
 def set_source(provider_id: uuid.UUID, body: ProviderSourceUpdate, db: Db):
     provider = _provider_or_404(provider_id, db)
     provider.source_url = body.source_url.strip() or None
+    provider.source_status = "unchecked" if provider.source_url else "missing"
+    provider.source_checked_at = None
+    provider.source_http_status = None
+    provider.source_final_url = None
     db.commit()
     db.refresh(provider)
     from poligrapher_app.api.routers.providers import _provider_read
@@ -81,10 +68,10 @@ def list_runs(provider_id: uuid.UUID, db: Db):
             ))
             continue
         if p.run_group is None:
-            # A website policy without a comparison group (legacy/imported): show it
-            # as its own standalone run — NOT an upload, and not merged with others.
+            # Imported records predate method/run-group metadata. Keep them
+            # standalone and do not infer how the source was processed.
             ordered.append(RunGroup(
-                run_group=None, kind="comparison", scheduled=p.scheduled,
+                run_group=None, kind="legacy", scheduled=p.scheduled,
                 capture_date=p.capture_date, created_at=p.created_at, runs=[p],
             ))
             continue
@@ -107,9 +94,9 @@ def run_now(provider_id: uuid.UUID, request: Request, db: Db):
     registry = request.app.state.tasks
     task_id = registry.create(kind="comparison", title=f"Compare · {provider.name}",
                               provider_name=provider.name, total=1)
-    pid = provider.id
-    _submit(registry, task_id, lambda: runs_service.run_comparison(
-        pid, scheduled=False, registry=registry, task_id=task_id))
+    registry.enqueue(task_id, {
+        "kind": "comparison", "provider_id": str(provider.id), "scheduled": False
+    })
     return _task_of(registry, task_id)
 
 
@@ -139,7 +126,8 @@ async def upload_pdf(provider_id: uuid.UUID, request: Request, db: Db,
             while chunk := await pdf_file.read(1024 * 1024):
                 upload.write(chunk)
             upload.flush()
-            policy.content_hash = runs_service.file_hash(upload.name)
+            from poligrapher_app.services.runs import file_hash
+            policy.content_hash = file_hash(upload.name)
             policy.source_blob_key = source_key(policy.id, filename)
             get_storage().upload_file(policy.source_blob_key, upload.name,
                                       content_type="application/pdf")
@@ -152,9 +140,7 @@ async def upload_pdf(provider_id: uuid.UUID, request: Request, db: Db,
     registry = request.app.state.tasks
     task_id = registry.create(kind="upload", title=f"Upload · {provider.name}",
                               provider_name=provider.name, policy_id=str(policy.id), total=1)
-    pid = policy.id
-    _submit(registry, task_id, lambda: runs_service.run_upload(
-        pid, registry=registry, task_id=task_id))
+    registry.enqueue(task_id, {"kind": "upload", "policy_id": str(policy.id)})
     return _task_of(registry, task_id)
 
 

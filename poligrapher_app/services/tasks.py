@@ -1,51 +1,53 @@
-"""Background task registry.
+"""Durable task registry and queue publisher.
 
-A tiny in-memory task tracker backed by a thread pool. Routers create a task,
-submit a callable, and later poll its status; the registry owns all the
-bookkeeping (status, error, bulk progress counters, and cancellation) so
-routers don't hand-roll task dicts.
-
-Cancellation is cooperative: each task carries a ``threading.Event`` that a
-worker checks between coarse-grained steps. A task that hasn't started yet is
-cancelled outright via its ``Future``.
+PostgreSQL is the source of truth for status and cancellation. Production sends
+small task-id messages to Azure Queue Storage; local development executes the
+same dispatcher in a background thread without requiring Azure resources.
 """
 
-import threading
-import time
+from __future__ import annotations
+
+import json
+import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
-from typing import Callable
+from datetime import datetime, timedelta, timezone
 
-# Public field names surfaced to API clients (kept in one place so routers and
-# schemas agree on the shape of a serialized task).
-PUBLIC_FIELDS = (
-    "status",
-    "error",
-    "label",
-    "title",
-    "kind",
-    "total",
-    "completed",
-    "failed",
-    "created_at",
-    "cancelable",
-    "policy_id",
-    "provider_name",
-)
+from sqlalchemy import or_
 
-# Settled tasks older than this (seconds) are pruned so ``list`` stays
-# "active + recent" rather than growing without bound.
-_PRUNE_AFTER_SECONDS = 15 * 60
+from poligrapher_app.api.database import SessionLocal
+from poligrapher_app.api.models import TaskRecord
 
 _TERMINAL = ("done", "failed", "cancelled")
+_RECENT = timedelta(minutes=15)
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _public(task: TaskRecord) -> dict:
+    return {
+        "task_id": str(task.id),
+        "status": task.status,
+        "error": task.error,
+        "label": task.label,
+        "title": task.title,
+        "kind": task.kind,
+        "total": task.total or 0,
+        "completed": task.completed or 0,
+        "failed": task.failed or 0,
+        "created_at": task.created_at.isoformat() if task.created_at else None,
+        "cancelable": task.status == "running",
+        "policy_id": task.policy_id,
+        "provider_name": task.provider_name,
+    }
 
 
 class TaskRegistry:
     def __init__(self, max_workers: int = 4):
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
-        self._tasks: dict[str, dict] = {}
-        self._lock = threading.Lock()
+        self.backend = os.getenv("TASK_BACKEND", "local").lower()
 
     def create(
         self,
@@ -56,97 +58,142 @@ class TaskRegistry:
         total: int = 0,
         **extra,
     ) -> str:
-        """Register a new task (status='running') and return its id."""
-        task_id = str(uuid.uuid4())
-        with self._lock:
-            self._tasks[task_id] = {
-                "status": "running",
-                "error": None,
-                "label": label,
-                "title": title or label,
-                "kind": kind,
-                "total": total,
-                "completed": 0,
-                "failed": 0,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "cancel_event": threading.Event(),
-                "future": None,
-                "settled_at": None,
-                **extra,
-            }
-        return task_id
+        task = TaskRecord(
+            label=label,
+            title=title or label,
+            kind=kind,
+            total=total,
+            policy_id=str(extra.get("policy_id")) if extra.get("policy_id") else None,
+            provider_name=extra.get("provider_name"),
+        )
+        with SessionLocal() as db:
+            db.add(task)
+            db.commit()
+            db.refresh(task)
+            return str(task.id)
 
-    def submit(self, task_id: str, fn: Callable[[], None]) -> None:
-        """Run ``fn`` on the thread pool. Uncaught errors mark the task failed."""
+    def enqueue(self, task_id: str, payload: dict) -> None:
+        with SessionLocal() as db:
+            task = db.get(TaskRecord, uuid.UUID(task_id))
+            if task is None:
+                raise KeyError(task_id)
+            task.payload = payload
+            db.commit()
+        try:
+            if self.backend == "azure_queue":
+                self._queue_client().send_message(json.dumps({"task_id": task_id}))
+            elif self.backend == "local":
+                self._executor.submit(self._execute_local, task_id)
+            else:
+                raise RuntimeError(f"Unsupported TASK_BACKEND: {self.backend}")
+        except Exception as exc:
+            self.set_failed(task_id, f"Could not enqueue task: {exc}")
+            raise
 
-        def _wrapped():
-            try:
-                fn()
-            except Exception as exc:  # noqa: BLE001 — surface any failure to the client
-                self.set_failed(task_id, str(exc))
+    def _execute_local(self, task_id: str) -> None:
+        from poligrapher_app.services.task_execution import execute_task
 
-        future = self._executor.submit(_wrapped)
-        with self._lock:
-            task = self._tasks.get(task_id)
-            if task is not None:
-                task["future"] = future
+        execute_task(task_id, self)
+
+    @staticmethod
+    def _queue_client():
+        from azure.storage.queue import QueueClient
+
+        connection = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+        if not connection:
+            raise RuntimeError("AZURE_STORAGE_CONNECTION_STRING is required for queued tasks")
+        name = os.getenv("AZURE_STORAGE_QUEUE_NAME", "analysis-tasks")
+        return QueueClient.from_connection_string(connection, name)
 
     def get(self, task_id: str) -> dict | None:
-        with self._lock:
-            task = self._tasks.get(task_id)
-            return self._public(task) if task is not None else None
+        try:
+            task_uuid = uuid.UUID(task_id)
+        except ValueError:
+            return None
+        with SessionLocal() as db:
+            task = db.get(TaskRecord, task_uuid)
+            return _public(task) if task else None
 
     def list(self) -> list[dict]:
-        """Return all (non-pruned) tasks, newest first."""
-        self._prune()
-        with self._lock:
-            tasks = [self._public(t) | {"task_id": tid} for tid, t in self._tasks.items()]
-        tasks.sort(key=lambda t: t.get("created_at") or "", reverse=True)
-        return tasks
+        cutoff = _now() - _RECENT
+        with SessionLocal() as db:
+            tasks = (
+                db.query(TaskRecord)
+                .filter(or_(TaskRecord.settled_at.is_(None), TaskRecord.settled_at >= cutoff))
+                .order_by(TaskRecord.created_at.desc())
+                .all()
+            )
+            return [_public(task) for task in tasks]
 
     def update(self, task_id: str, **fields) -> None:
-        with self._lock:
-            task = self._tasks.get(task_id)
-            if task is not None:
-                task.update(fields)
+        with SessionLocal() as db:
+            task = db.get(TaskRecord, uuid.UUID(task_id))
+            if task:
+                for key, value in fields.items():
+                    if hasattr(task, key):
+                        setattr(task, key, value)
+                db.commit()
 
     def incr(self, task_id: str, field: str, by: int = 1) -> None:
-        with self._lock:
-            task = self._tasks.get(task_id)
-            if task is not None:
-                task[field] = task.get(field, 0) + by
+        with SessionLocal() as db:
+            task = db.get(TaskRecord, uuid.UUID(task_id))
+            if task and field in ("completed", "failed"):
+                setattr(task, field, (getattr(task, field) or 0) + by)
+                db.commit()
 
-    def cancel_event(self, task_id: str) -> threading.Event | None:
-        with self._lock:
-            task = self._tasks.get(task_id)
-            return task["cancel_event"] if task is not None else None
+    def claim(self, task_id: str) -> dict | None:
+        """Atomically claim an unstarted task; duplicate queue deliveries no-op."""
+        with SessionLocal() as db:
+            task = (
+                db.query(TaskRecord)
+                .filter(TaskRecord.id == uuid.UUID(task_id))
+                .with_for_update()
+                .first()
+            )
+            if not task or task.status in _TERMINAL:
+                return None
+            if task.started_at is not None:
+                started_at = task.started_at
+                if started_at.tzinfo is None:
+                    started_at = started_at.replace(tzinfo=timezone.utc)
+                # A visible queue message after the worker's two-hour lease is
+                # a crash recovery, not a concurrent duplicate delivery.
+                if _now() - started_at < timedelta(hours=2):
+                    return None
+            if task.cancel_requested:
+                task.status = "cancelled"
+                task.settled_at = _now()
+                db.commit()
+                return None
+            task.started_at = _now()
+            task.status = "running"
+            db.commit()
+            return dict(task.payload or {})
 
     def is_cancelled(self, task_id: str) -> bool:
-        event = self.cancel_event(task_id)
-        return bool(event and event.is_set())
+        with SessionLocal() as db:
+            task = db.get(TaskRecord, uuid.UUID(task_id))
+            return bool(task and (task.cancel_requested or task.status == "cancelled"))
 
     def cancel(self, task_id: str) -> bool:
-        """Request cancellation. Returns False if the task is unknown.
-
-        If the worker hasn't started yet the ``Future`` is cancelled and the
-        task settles immediately; otherwise the cancel event is set and the
-        task moves to 'cancelling' until the worker finalizes it.
-        """
-        with self._lock:
-            task = self._tasks.get(task_id)
+        try:
+            task_uuid = uuid.UUID(task_id)
+        except ValueError:
+            return False
+        with SessionLocal() as db:
+            task = db.get(TaskRecord, task_uuid)
             if task is None:
                 return False
-            if task["status"] in _TERMINAL:
+            if task.status in _TERMINAL:
                 return True
-            future = task.get("future")
-            if future is not None and future.cancel():
-                task["status"] = "cancelled"
-                task["settled_at"] = time.monotonic()
+            task.cancel_requested = True
+            if task.started_at is None:
+                task.status = "cancelled"
+                task.settled_at = _now()
             else:
-                task["cancel_event"].set()
-                if task["status"] == "running":
-                    task["status"] = "cancelling"
-        return True
+                task.status = "cancelling"
+            db.commit()
+            return True
 
     def set_done(self, task_id: str) -> None:
         self._settle(task_id, "done")
@@ -157,30 +204,12 @@ class TaskRegistry:
     def set_cancelled(self, task_id: str) -> None:
         self._settle(task_id, "cancelled")
 
-    # ── internal ──────────────────────────────────────────────────────────────
-
     def _settle(self, task_id: str, status: str, **fields) -> None:
-        with self._lock:
-            task = self._tasks.get(task_id)
-            if task is not None:
-                task.update(status=status, settled_at=time.monotonic(), **fields)
-
-    @staticmethod
-    def _public(task: dict) -> dict:
-        """Project a task down to client-visible fields (drops Event/Future)."""
-        out = {k: task[k] for k in PUBLIC_FIELDS if k in task}
-        out["cancelable"] = task["status"] == "running"
-        return out
-
-    def _prune(self) -> None:
-        now = time.monotonic()
-        with self._lock:
-            stale = [
-                tid
-                for tid, t in self._tasks.items()
-                if t["status"] in _TERMINAL
-                and t.get("settled_at") is not None
-                and now - t["settled_at"] > _PRUNE_AFTER_SECONDS
-            ]
-            for tid in stale:
-                del self._tasks[tid]
+        with SessionLocal() as db:
+            task = db.get(TaskRecord, uuid.UUID(task_id))
+            if task:
+                task.status = status
+                task.settled_at = _now()
+                for key, value in fields.items():
+                    setattr(task, key, value)
+                db.commit()

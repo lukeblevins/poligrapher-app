@@ -129,7 +129,7 @@ def get_task_status(task_id: str, request: Request):
     task = request.app.state.tasks.get(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    return TaskStatus(task_id=task_id, **task)
+    return TaskStatus(**task)
 
 
 @router.post("/api/tasks/{task_id}/cancel", response_model=TaskStatus)
@@ -137,4 +137,4 @@ def cancel_task(task_id: str, request: Request):
     registry = request.app.state.tasks
     if not registry.cancel(task_id):
         raise HTTPException(status_code=404, detail="Task not found")
-    return TaskStatus(task_id=task_id, **registry.get(task_id))
+    return TaskStatus(**registry.get(task_id))

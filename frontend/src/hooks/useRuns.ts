@@ -31,6 +31,13 @@ export function useRunActions(providerId: string) {
       mutationFn: (url: string) => api.setSource(providerId, url),
       onSuccess: invalidate,
     }),
+    verifySource: useMutation({
+      mutationFn: () => api.verifyProviderSource(providerId),
+      onSuccess: invalidate,
+    }),
+    previewSource: useMutation({
+      mutationFn: () => api.sourcePreview(providerId),
+    }),
     runNow: useMutation({
       mutationFn: () => api.runNow(providerId),
       onSuccess: invalidate,

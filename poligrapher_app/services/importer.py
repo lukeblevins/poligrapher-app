@@ -5,10 +5,11 @@ seed command so both use one code path for turning a policy-list CSV into
 Provider/Policy rows.
 """
 
+import csv
 import io
 import logging
+from collections import defaultdict
 
-import pandas as pd
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
@@ -17,27 +18,36 @@ from poligrapher_app.api.models import Policy, Provider
 from poligrapher_app.api.utils import best_website_url, parse_date, parse_pipeline_errors
 
 
-def read_policy_csv(content: bytes) -> pd.DataFrame:
-    """Parse policy-list CSV bytes into a stripped-header DataFrame."""
-    df = pd.read_csv(io.BytesIO(content), dtype=str, keep_default_na=False)
-    df.columns = [c.strip() for c in df.columns]
-    return df
+def read_policy_csv(content: bytes) -> list[dict[str, str]]:
+    """Parse policy-list CSV bytes without pulling pandas into the web image."""
+    text = content.decode("utf-8-sig")
+    reader = csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames:
+        raise ValueError("CSV has no header")
+    return [
+        {(key or "").strip(): (value or "").strip() for key, value in row.items()}
+        for row in reader
+    ]
 
 
-def import_policies(df: pd.DataFrame, db: Session) -> dict:
+def import_policies(rows: list[dict[str, str]], db: Session) -> dict:
     """Upsert providers + policies from a DataFrame. Returns import counts."""
     created = skipped = errors = 0
 
-    for provider_name, group in df.groupby("Provider"):
+    groups: dict[str, list[dict[str, str]]] = defaultdict(list)
+    for row in rows:
+        groups[row.get("Provider", "")].append(row)
+
+    for provider_name, group in groups.items():
         try:
             provider = db.query(Provider).filter_by(name=provider_name).first()
             if provider is None:
-                industry = group["Industry"].iloc[0] or None
+                industry = group[0].get("Industry") or None
                 provider = Provider(name=provider_name, industry=industry)
                 db.add(provider)
                 db.flush()
 
-            for _, row in group.iterrows():
+            for row in group:
                 url = row.get("Policy URL", "").strip()
                 source = row.get("Source", "webpage").strip().lower()
                 capture_date = parse_date(row.get("Date", ""))
