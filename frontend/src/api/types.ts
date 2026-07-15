@@ -132,6 +132,14 @@ export interface TaskStatus {
   cancelable?: boolean;
   policy_id?: string | null;
   provider_name?: string | null;
+  has_output?: boolean;
+}
+
+export interface TaskOutput {
+  task_id: string;
+  status: TaskState;
+  output: string;
+  truncated: boolean;
 }
 
 export const TASK_ACTIVE_STATES: TaskState[] = ["running", "cancelling"];

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from poligrapher_app.api.deps import get_db
 from poligrapher_app.api.models import AnalysisResult, Policy
-from poligrapher_app.api.schemas import Assessments, GraphElements, GraphStats, TaskStatus
+from poligrapher_app.api.schemas import Assessments, GraphElements, GraphStats, TaskOutput, TaskStatus
 from poligrapher_app.services.graph import gdpr_report, readability_from_gdpr
 
 router = APIRouter(tags=["analysis"])
@@ -130,6 +130,14 @@ def get_task_status(task_id: str, request: Request):
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
     return TaskStatus(**task)
+
+
+@router.get("/api/tasks/{task_id}/output", response_model=TaskOutput)
+def get_task_output(task_id: str, request: Request):
+    output = request.app.state.tasks.get_output(task_id)
+    if output is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return TaskOutput(**output)
 
 
 @router.post("/api/tasks/{task_id}/cancel", response_model=TaskStatus)

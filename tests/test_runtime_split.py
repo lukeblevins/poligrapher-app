@@ -1,4 +1,6 @@
 import json
+import logging
+import sys
 import tomllib
 
 from sqlalchemy import create_engine
@@ -6,6 +8,8 @@ from sqlalchemy.orm import sessionmaker
 
 from poligrapher_app.api.database import Base
 from poligrapher_app.services import tasks as task_module
+from poligrapher_app.services.task_execution import execute_task
+from poligrapher_app.services.task_output import capture_task_output
 
 
 class FakeQueue:
@@ -39,6 +43,65 @@ def test_durable_task_lifecycle_and_queue_publish(tmp_path, monkeypatch):
     assert registry.is_cancelled(task_id)
     registry.set_cancelled(task_id)
     assert registry.get(task_id)["status"] == "cancelled"
+
+
+def test_task_output_is_persisted(tmp_path, monkeypatch):
+    engine = create_engine(f"sqlite:///{tmp_path / 'output.db'}")
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine, expire_on_commit=False)
+    monkeypatch.setattr(task_module, "SessionLocal", session)
+
+    registry = task_module.TaskRegistry()
+    task_id = registry.create(kind="comparison", title="Compare", total=1)
+    registry.append_output(task_id, "first line\n")
+    registry.append_output(task_id, "second line\n")
+
+    assert registry.get(task_id)["has_output"] is True
+    assert registry.get_output(task_id) == {
+        "task_id": task_id,
+        "status": "running",
+        "output": "first line\nsecond line\n",
+        "truncated": False,
+    }
+
+
+def test_task_output_captures_streams_and_logging(tmp_path, monkeypatch):
+    engine = create_engine(f"sqlite:///{tmp_path / 'streams.db'}")
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine, expire_on_commit=False)
+    monkeypatch.setattr(task_module, "SessionLocal", session)
+
+    registry = task_module.TaskRegistry()
+    task_id = registry.create(kind="comparison", title="Stream capture")
+    with capture_task_output(task_id, registry):
+        print("standard output")
+        print("standard error", file=sys.stderr)
+        logging.getLogger("poligrapher.capture-test").warning("logging output")
+
+    output = registry.get_output(task_id)["output"]
+    assert "standard output" in output
+    assert "standard error" in output
+    assert "logging output" in output
+
+
+def test_failed_task_captures_traceback(tmp_path, monkeypatch):
+    engine = create_engine(f"sqlite:///{tmp_path / 'failure.db'}")
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine, expire_on_commit=False)
+    monkeypatch.setattr(task_module, "SessionLocal", session)
+
+    registry = task_module.TaskRegistry()
+    task_id = registry.create(kind="unknown", title="Broken task")
+    registry.update(task_id, payload={"kind": "unknown"})
+
+    execute_task(task_id, registry)
+
+    task = registry.get(task_id)
+    output = registry.get_output(task_id)["output"]
+    assert task["status"] == "failed"
+    assert task["error"] == "Unknown task kind: unknown"
+    assert "Traceback" in output
+    assert "Unknown task kind: unknown" in output
 
 
 def test_web_dependencies_exclude_analysis_stack():

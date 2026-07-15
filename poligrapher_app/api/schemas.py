@@ -149,6 +149,14 @@ class TaskStatus(BaseModel):
     cancelable: bool = False
     policy_id: str | None = None
     provider_name: str | None = None
+    has_output: bool = False
+
+
+class TaskOutput(BaseModel):
+    task_id: str
+    status: str
+    output: str
+    truncated: bool = False
 
 
 class ImportSummary(BaseModel):

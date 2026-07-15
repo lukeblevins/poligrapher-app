@@ -2,37 +2,46 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
+
+from poligrapher_app.services.task_output import capture_task_output
+
+logger = logging.getLogger(__name__)
 
 
 def execute_task(task_id: str, registry) -> None:
     payload = registry.claim(task_id)
     if payload is None:
         return
-    try:
-        kind = payload.get("kind")
-        if kind == "comparison":
-            _comparison(task_id, payload, registry)
-        elif kind == "upload":
-            _upload(task_id, payload, registry)
-        elif kind == "generate":
-            _generate(task_id, payload, registry)
-        elif kind == "score":
-            _score(task_id, payload, registry)
-        elif kind == "refresh":
-            _refresh(task_id, payload, registry)
-        elif kind == "score-all":
-            _score_all(task_id, payload, registry)
-        elif kind == "source-verification":
-            _verify_sources(task_id, payload, registry)
-        elif kind == "collection-analysis":
-            _analyze_collection(task_id, payload, registry)
-        elif kind == "schedule":
-            _schedule(task_id, payload, registry)
-        else:
-            raise ValueError(f"Unknown task kind: {kind}")
-    except Exception as exc:  # noqa: BLE001
-        registry.set_failed(task_id, str(exc))
+    with capture_task_output(task_id, registry):
+        try:
+            kind = payload.get("kind")
+            logger.info("Task %s started (kind=%s)", task_id, kind)
+            if kind == "comparison":
+                _comparison(task_id, payload, registry)
+            elif kind == "upload":
+                _upload(task_id, payload, registry)
+            elif kind == "generate":
+                _generate(task_id, payload, registry)
+            elif kind == "score":
+                _score(task_id, payload, registry)
+            elif kind == "refresh":
+                _refresh(task_id, payload, registry)
+            elif kind == "score-all":
+                _score_all(task_id, payload, registry)
+            elif kind == "source-verification":
+                _verify_sources(task_id, payload, registry)
+            elif kind == "collection-analysis":
+                _analyze_collection(task_id, payload, registry)
+            elif kind == "schedule":
+                _schedule(task_id, payload, registry)
+            else:
+                raise ValueError(f"Unknown task kind: {kind}")
+            logger.info("Task %s finished with status %s", task_id, registry.get(task_id)["status"])
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Task %s failed", task_id)
+            registry.set_failed(task_id, str(exc))
 
 
 def _settle_result(task_id: str, result: str, registry) -> None:
@@ -149,6 +158,7 @@ def _refresh(task_id: str, payload: dict, registry) -> None:
                 registry.set_cancelled(task_id)
                 return
             except Exception:
+                logger.exception("Refresh failed for policy %s", policy.id)
                 if not policy.graph_data:
                     policy.pipeline_status = "failed"
                 policy.pipeline_errors = list(policy.pipeline_errors or []) + [{"message": "Refresh failed"}]
@@ -179,6 +189,7 @@ def _score_all(task_id: str, payload: dict, registry) -> None:
                     score_gdpr(doc)
                     sync_policy_from_doc(policy, doc, db)
             except Exception:
+                logger.exception("Scoring failed for policy %s", policy.id)
                 registry.incr(task_id, "failed")
             registry.incr(task_id, "completed")
         registry.set_done(task_id)
@@ -213,6 +224,7 @@ def _analyze_collection(task_id: str, payload: dict, registry) -> None:
             if result not in ("ok", "unchanged"):
                 registry.incr(task_id, "failed")
         except Exception:
+            logger.exception("Collection analysis failed for provider %s", raw_id)
             registry.incr(task_id, "failed")
         registry.incr(task_id, "completed")
     registry.set_done(task_id)

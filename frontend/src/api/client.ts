@@ -12,6 +12,7 @@ import type {
   Schedule,
   SourcePreview,
   TaskStatus,
+  TaskOutput,
 } from "./types";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -144,6 +145,7 @@ export const api = {
   // Analysis
   listTasks: () => request<TaskStatus[]>("/api/tasks"),
   getTask: (taskId: string) => request<TaskStatus>(`/api/tasks/${taskId}`),
+  getTaskOutput: (taskId: string) => request<TaskOutput>(`/api/tasks/${taskId}/output`),
   cancelTask: (taskId: string) =>
     request<TaskStatus>(`/api/tasks/${taskId}/cancel`, { method: "POST" }),
   getGraph: (id: string) => request<GraphElements>(`/api/policies/${id}/graph`),
