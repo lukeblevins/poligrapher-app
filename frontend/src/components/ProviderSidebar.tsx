@@ -45,11 +45,27 @@ function getIndustryOptions(providers: Provider[]): IndustryOption[] {
     .sort((left, right) => left.label.localeCompare(right.label));
 }
 
-function statusColor(p: Provider): string {
-  if (p.policy_count === 0) return "bg-zinc-300 dark:bg-zinc-600";
-  if (p.succeeded_count > 0) return "bg-green-500";
-  if (p.failed_count === p.policy_count) return "bg-red-500";
-  return "bg-amber-400";
+function companyHealth(p: Provider): { color: string; label: string; detail: string } {
+  const allFailed = p.policy_count > 0 && p.failed_count === p.policy_count;
+  const mixedResults = p.failed_count > 0 && p.succeeded_count > 0;
+  const sourceLabel = p.source_status === "available" ? `Available${p.source_http_status ? ` (HTTP ${p.source_http_status})` : ""}`
+    : p.source_status === "restricted" ? "Restricted"
+      : p.source_status === "broken" ? "Not found"
+        : p.source_status === "error" ? "Check failed"
+          : p.source_status === "missing" ? "Not configured"
+            : "Not checked";
+  const analysisLabel = p.policy_count === 0 ? "No analyses"
+    : `${p.succeeded_count} succeeded, ${p.failed_count} failed`;
+  if (["broken", "error"].includes(p.source_status) || allFailed) {
+    return { color: "bg-red-500", label: "Needs attention", detail: `Source: ${sourceLabel}. Analyses: ${analysisLabel}.` };
+  }
+  if (p.source_status === "restricted" || mixedResults || p.failed_count > 0) {
+    return { color: "bg-amber-400", label: "Attention recommended", detail: `Source: ${sourceLabel}. Analyses: ${analysisLabel}.` };
+  }
+  if (p.source_status === "available") {
+    return { color: "bg-teal-500", label: "Ready", detail: `Source: ${sourceLabel}. Analyses: ${analysisLabel}.` };
+  }
+  return { color: "bg-slate-300 dark:bg-slate-600", label: "Not ready", detail: `Source: ${sourceLabel}. Analyses: ${analysisLabel}.` };
 }
 
 function logoDomain(p: Provider): string | null {
@@ -203,40 +219,47 @@ export function ProviderSidebar({ selectedId, onSelect, onDeleted }: Props) {
         {!isLoading && filtered.length === 0 && (
           <p className="p-4 text-sm text-slate-400">No companies.</p>
         )}
-        {filtered.map((p) => (
+        {filtered.map((p) => {
+          const health = companyHealth(p);
+          const tooltipId = `company-health-${p.id}`;
+          return (
           <div
             key={p.id}
-            onClick={() => onSelect(p)}
-            className={`group flex cursor-pointer items-center gap-3 border-l-2 px-4 py-3 text-sm transition-colors ${
+            className={`group relative flex items-center border-l-2 pr-2 text-sm transition-colors ${
               selectedId === p.id
                 ? "border-teal-600 bg-teal-50/70 font-semibold text-slate-950 dark:border-teal-400 dark:bg-teal-950/30 dark:text-white"
                 : "border-transparent hover:bg-slate-50 dark:hover:bg-slate-900"
             }`}
           >
-            <span className="relative flex-shrink-0">
-              <CompanyLogo name={p.name} domain={logoDomain(p)} />
-              <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white dark:border-slate-950 ${statusColor(p)}`} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="truncate">{p.name}</div>
-              <div className="mt-0.5 truncate text-xs text-slate-400 dark:text-slate-500">
-                {p.ticker ? `${p.ticker} · ` : ""}{p.industry ? industryLabels.get(normalizeIndustry(p.industry)) ?? p.industry : "Uncategorized"} · {p.policy_count} results
-              </div>
-            </div>
-            {p.source_status !== "available" && p.source_status !== "unchecked" && (
-              <span
-                className={`h-2 w-2 flex-none rounded-full ${p.source_status === "broken" || p.source_status === "error" ? "bg-red-500" : p.source_status === "restricted" ? "bg-amber-400" : "bg-slate-300 dark:bg-slate-600"}`}
-                title={`Policy source: ${p.source_status}`}
-              />
-            )}
             <button
-              className="hidden rounded-md px-1.5 py-1 text-xs text-slate-400 hover:bg-red-50 hover:text-red-600 group-hover:block dark:hover:bg-red-950"
-              onClick={(e) => {
-                e.stopPropagation();
+              type="button"
+              className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500"
+              onClick={() => onSelect(p)}
+              aria-current={selectedId === p.id ? "true" : undefined}
+              aria-describedby={tooltipId}
+            >
+              <span className="relative flex-shrink-0">
+                <CompanyLogo name={p.name} domain={logoDomain(p)} />
+                <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white dark:border-slate-950 ${health.color}`} aria-hidden="true" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">{p.name}</span>
+                <span className="mt-0.5 block truncate text-xs font-normal text-slate-400 dark:text-slate-500">
+                  {p.ticker ? `${p.ticker} · ` : ""}{p.industry ? industryLabels.get(normalizeIndustry(p.industry)) ?? p.industry : "Uncategorized"} · {p.policy_count} results
+                </span>
+                <span className="sr-only">{health.label}. {health.detail}</span>
+              </span>
+            </button>
+            <div id={tooltipId} role="tooltip" className="pointer-events-none absolute right-2 top-[calc(100%-0.25rem)] z-30 hidden w-60 rounded-md bg-slate-950 px-3 py-2 text-[11px] font-normal leading-4 text-slate-100 shadow-lg group-hover:block group-focus-within:block">
+              <div className="font-semibold">{health.label}</div>
+              <div className="mt-1 text-slate-300">{health.detail}</div>
+            </div>
+            <button
+              type="button"
+              className="hidden rounded-md px-1.5 py-1 text-xs text-slate-400 hover:bg-red-50 hover:text-red-600 group-hover:block group-focus-within:block dark:hover:bg-red-950"
+              onClick={() => {
                 if (confirm(`Delete provider "${p.name}" and all its policies?`)) {
-                  deleteProvider.mutate(p.id, {
-                    onSuccess: () => onDeleted?.(p.id),
-                  });
+                  deleteProvider.mutate(p.id, { onSuccess: () => onDeleted?.(p.id) });
                 }
               }}
               aria-label={`Delete ${p.name}`}
@@ -244,7 +267,7 @@ export function ProviderSidebar({ selectedId, onSelect, onDeleted }: Props) {
               ✕
             </button>
           </div>
-        ))}
+        );})}
       </div>
     </aside>
   );
