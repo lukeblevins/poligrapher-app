@@ -290,6 +290,7 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, history
   const [sourceUrl, setSourceUrl] = useState("");
   const [savedSourceUrl, setSavedSourceUrl] = useState("");
   const [sourceLookupMessage, setSourceLookupMessage] = useState("");
+  const [editingSource, setEditingSource] = useState(false);
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<RunGroup | null>(null);
   const [rerunFallback, setRerunFallback] = useState<RunGroup | null>(null);
@@ -304,6 +305,7 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, history
     setSourceUrl(nextSourceUrl);
     setSavedSourceUrl(nextSourceUrl);
     setSourceLookupMessage("");
+    setEditingSource(false);
   }, [provider?.id, provider?.source_url]);
 
   useEffect(() => {
@@ -342,6 +344,7 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, history
   const busy = actions.runNow.isPending || actions.upload.isPending;
   const normalizedSourceUrl = sourceUrl.trim();
   const sourceHasUnsavedChanges = normalizedSourceUrl !== savedSourceUrl;
+  const showSourceEditor = !savedSourceUrl || editingSource;
   const providerTasks = tasks.filter((task) => task.provider_id === provider.id && isRunTask(task));
   const linkedTaskIds = new Set(runs.flatMap((group) => {
     const task = group.task ?? providerTasks.find((candidate) => candidate.run_id === group.run_id);
@@ -388,58 +391,76 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, history
               The public privacy-policy page used for website analyses and automatic monitoring.
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            {schedule?.needs_attention && (
-              <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-700 dark:bg-amber-950 dark:text-amber-300">Needs confirmation</span>
-            )}
-            <span className={`rounded px-2 py-1 text-[11px] font-semibold ${SOURCE_STATUS_STYLE[provider.source_status] ?? SOURCE_STATUS_STYLE.unchecked}`}>
-              {SOURCE_STATUS_LABEL[provider.source_status] ?? "Not checked"}
-              {provider.source_http_status ? ` · ${provider.source_http_status}` : ""}
-            </span>
-            {savedSourceUrl && (
-              <button
-                className="text-xs font-semibold text-teal-700 hover:underline disabled:opacity-50 dark:text-teal-400"
-                disabled={actions.verifySource.isPending}
-                onClick={() => actions.verifySource.mutate()}
-              >
-                {actions.verifySource.isPending ? "Checking…" : "Check source"}
-              </button>
-            )}
+          {schedule?.needs_attention && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-700 dark:bg-amber-950 dark:text-amber-300">Needs confirmation</span>}
+        </div>
+        {savedSourceUrl && !editingSource && (
+          <div className="mt-4 flex flex-wrap items-center gap-3 rounded-md border border-slate-200 bg-slate-50/70 px-3 py-3 dark:border-slate-800 dark:bg-slate-950/40">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`rounded px-2 py-1 text-[11px] font-semibold ${SOURCE_STATUS_STYLE[provider.source_status] ?? SOURCE_STATUS_STYLE.unchecked}`}>
+                  {SOURCE_STATUS_LABEL[provider.source_status] ?? "Not checked"}
+                  {provider.source_http_status ? ` · HTTP ${provider.source_http_status}` : ""}
+                </span>
+                <span className="max-w-full truncate text-xs font-medium text-slate-700 dark:text-slate-200" title={savedSourceUrl}>{savedSourceUrl}</span>
+              </div>
+              {provider.source_checked_at && (
+                <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+                  Checked {new Date(provider.source_checked_at).toLocaleString()}
+                  {provider.source_final_url && provider.source_final_url !== provider.source_url ? " · Redirect detected" : ""}
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              className="text-xs font-semibold text-teal-700 hover:underline disabled:opacity-50 dark:text-teal-400"
+              disabled={actions.verifySource.isPending}
+              onClick={() => actions.verifySource.mutate()}
+            >
+              {actions.verifySource.isPending ? "Checking…" : "Check"}
+            </button>
+            <button type="button" className="btn-secondary min-h-8 px-2.5 py-1 text-xs" onClick={() => setEditingSource(true)}>Edit</button>
           </div>
-        </div>
-        <label className="form-label mt-4" htmlFor="policy-source-url">Privacy policy URL</label>
-        <div className="flex items-start gap-2">
-          <input
-            id="policy-source-url"
-            className="form-input flex-1"
-            value={sourceUrl}
-            onChange={(e) => setSourceUrl(e.target.value)}
-            placeholder="https://example.com/privacy"
-          />
-          <button
-            className="btn-secondary"
-            disabled={actions.setSource.isPending || !normalizedSourceUrl || !sourceHasUnsavedChanges}
-            onClick={() => actions.setSource.mutate(normalizedSourceUrl, {
-              onSuccess: (updatedProvider) => {
-                const updatedSourceUrl = updatedProvider.source_url ?? "";
-                setSavedSourceUrl(updatedSourceUrl);
-                setSourceUrl(updatedSourceUrl);
-              },
-            })}
-          >
-            {actions.setSource.isPending ? "Saving…" : "Save source"}
-          </button>
-        </div>
-        {sourceHasUnsavedChanges && (
-          <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
-            Save this URL before starting a website analysis.
-          </p>
         )}
-        {provider.source_checked_at && (
-          <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
-            Last checked {new Date(provider.source_checked_at).toLocaleString()}
-            {provider.source_final_url && provider.source_final_url !== provider.source_url ? " · Redirect detected" : ""}
-          </p>
+        {showSourceEditor && (
+          <div className="mt-4">
+            <label className="form-label" htmlFor="policy-source-url">Privacy policy URL</label>
+            <div className="flex items-start gap-2">
+              <input
+                id="policy-source-url"
+                className="form-input flex-1"
+                value={sourceUrl}
+                onChange={(e) => setSourceUrl(e.target.value)}
+                placeholder="https://example.com/privacy"
+              />
+              <button
+                className="btn-secondary"
+                disabled={actions.setSource.isPending || !normalizedSourceUrl || !sourceHasUnsavedChanges}
+                onClick={() => actions.setSource.mutate(normalizedSourceUrl, {
+                  onSuccess: (updatedProvider) => {
+                    const updatedSourceUrl = updatedProvider.source_url ?? "";
+                    setSavedSourceUrl(updatedSourceUrl);
+                    setSourceUrl(updatedSourceUrl);
+                    setEditingSource(false);
+                  },
+                })}
+              >
+                {actions.setSource.isPending ? "Saving…" : "Save"}
+              </button>
+              {savedSourceUrl && (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    setSourceUrl(savedSourceUrl);
+                    setEditingSource(false);
+                  }}
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+            {sourceHasUnsavedChanges && <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">Save this URL before starting a website analysis.</p>}
+          </div>
         )}
         {!savedSourceUrl && !sourceHasUnsavedChanges && (
           <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3 dark:border-slate-800">
