@@ -170,6 +170,8 @@ class TaskRecord(Base):
     cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
     policy_id: Mapped[str | None] = mapped_column(String(36))
+    provider_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    run_id: Mapped[str | None] = mapped_column(String(36), index=True)
     provider_name: Mapped[str | None] = mapped_column(String(255))
     output: Mapped[str] = mapped_column(Text, default="", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

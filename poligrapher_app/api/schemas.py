@@ -113,26 +113,6 @@ class PolicyRead(BaseModel):
     created_at: datetime
 
 
-class RunGroup(BaseModel):
-    """A grouped analysis, uploaded PDF, or standalone legacy result."""
-
-    run_group: str | None
-    kind: str  # 'comparison' | 'upload' | 'legacy'
-    scheduled: bool
-    capture_date: date | None
-    created_at: datetime
-    runs: list[PolicyRead]
-
-
-class ProviderSourceUpdate(BaseModel):
-    source_url: str
-
-
-class ScheduleToggle(BaseModel):
-    enabled: bool
-    cadence: str | None = None
-
-
 class TaskStatus(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -146,10 +126,35 @@ class TaskStatus(BaseModel):
     completed: int = 0
     failed: int = 0
     created_at: str | None = None
+    started_at: str | None = None
     cancelable: bool = False
     policy_id: str | None = None
+    provider_id: str | None = None
+    run_id: str | None = None
     provider_name: str | None = None
     has_output: bool = False
+
+
+class RunGroup(BaseModel):
+    """A grouped analysis, uploaded PDF, or standalone legacy result."""
+
+    run_id: str
+    run_group: str | None
+    kind: str  # 'comparison' | 'upload' | 'legacy'
+    scheduled: bool
+    capture_date: date | None
+    created_at: datetime
+    runs: list[PolicyRead]
+    task: TaskStatus | None = None
+
+
+class ProviderSourceUpdate(BaseModel):
+    source_url: str
+
+
+class ScheduleToggle(BaseModel):
+    enabled: bool
+    cadence: str | None = None
 
 
 class TaskOutput(BaseModel):

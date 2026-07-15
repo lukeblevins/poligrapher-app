@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from sqlalchemy.orm import Session
 
 from poligrapher_app.api.deps import get_db
-from poligrapher_app.api.models import Policy, Provider, Schedule
+from poligrapher_app.api.models import Policy, Provider, Schedule, TaskRecord
 from poligrapher_app.api.schemas import (
     ProviderRead,
     ProviderSourceUpdate,
@@ -18,6 +18,7 @@ from poligrapher_app.api.schemas import (
     TaskStatus,
 )
 from poligrapher_app.services import scheduler as sched_engine
+from poligrapher_app.services.tasks import task_public
 
 router = APIRouter(tags=["runs"])
 
@@ -57,29 +58,41 @@ def set_source(provider_id: uuid.UUID, body: ProviderSourceUpdate, db: Db):
 def list_runs(provider_id: uuid.UUID, db: Db):
     provider = _provider_or_404(provider_id, db)
     policies = sorted(provider.policies, key=lambda p: p.created_at, reverse=True)
+    linked_tasks: dict[str, TaskStatus] = {}
+    tasks = (
+        db.query(TaskRecord)
+        .filter(TaskRecord.provider_id == str(provider_id), TaskRecord.run_id.isnot(None))
+        .order_by(TaskRecord.created_at.desc())
+        .all()
+    )
+    for task in tasks:
+        linked_tasks.setdefault(task.run_id, TaskStatus(**task_public(task)))
 
     groups: dict[str, RunGroup] = {}
     ordered: list[RunGroup] = []
     for p in policies:
         if p.method == "pdf_upload":
             ordered.append(RunGroup(
-                run_group=None, kind="upload", scheduled=p.scheduled,
+                run_id=str(p.id), run_group=None, kind="upload", scheduled=p.scheduled,
                 capture_date=p.capture_date, created_at=p.created_at, runs=[p],
+                task=linked_tasks.get(str(p.id)),
             ))
             continue
         if p.run_group is None:
             # Imported records predate method/run-group metadata. Keep them
             # standalone and do not infer how the source was processed.
             ordered.append(RunGroup(
-                run_group=None, kind="legacy", scheduled=p.scheduled,
+                run_id=str(p.id), run_group=None, kind="legacy", scheduled=p.scheduled,
                 capture_date=p.capture_date, created_at=p.created_at, runs=[p],
+                task=linked_tasks.get(str(p.id)),
             ))
             continue
         key = str(p.run_group)
         if key not in groups:
             groups[key] = RunGroup(
-                run_group=key, kind="comparison", scheduled=p.scheduled,
+                run_id=key, run_group=key, kind="comparison", scheduled=p.scheduled,
                 capture_date=p.capture_date, created_at=p.created_at, runs=[],
+                task=linked_tasks.get(key),
             )
             ordered.append(groups[key])
         groups[key].runs.append(p)
@@ -93,7 +106,7 @@ def run_now(provider_id: uuid.UUID, request: Request, db: Db):
     provider = _provider_or_404(provider_id, db)
     registry = request.app.state.tasks
     task_id = registry.create(kind="comparison", title=f"Compare · {provider.name}",
-                              provider_name=provider.name, total=1)
+                              provider_id=provider.id, provider_name=provider.name, total=1)
     registry.enqueue(task_id, {
         "kind": "comparison", "provider_id": str(provider.id), "scheduled": False
     })
@@ -139,7 +152,8 @@ async def upload_pdf(provider_id: uuid.UUID, request: Request, db: Db,
 
     registry = request.app.state.tasks
     task_id = registry.create(kind="upload", title=f"Upload · {provider.name}",
-                              provider_name=provider.name, policy_id=str(policy.id), total=1)
+                              provider_id=provider.id, provider_name=provider.name,
+                              policy_id=str(policy.id), run_id=policy.id, total=1)
     registry.enqueue(task_id, {"kind": "upload", "policy_id": str(policy.id)})
     return _task_of(registry, task_id)
 

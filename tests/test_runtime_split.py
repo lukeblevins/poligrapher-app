@@ -31,11 +31,17 @@ def test_durable_task_lifecycle_and_queue_publish(tmp_path, monkeypatch):
     registry.backend = "azure_queue"
     monkeypatch.setattr(registry, "_queue_client", lambda: queue)
 
-    task_id = registry.create(kind="comparison", title="Compare", total=1)
+    task_id = registry.create(
+        kind="comparison", title="Compare", provider_id="provider",
+        run_id="run", total=1,
+    )
     registry.enqueue(task_id, {"kind": "comparison", "provider_id": "provider"})
     assert queue.messages == [{"task_id": task_id}]
     assert registry.get(task_id)["status"] == "running"
+    assert registry.get(task_id)["provider_id"] == "provider"
+    assert registry.get(task_id)["run_id"] == "run"
     assert registry.claim(task_id) == {"kind": "comparison", "provider_id": "provider"}
+    assert registry.get(task_id)["started_at"] is not None
     assert registry.claim(task_id) is None
 
     assert registry.cancel(task_id)

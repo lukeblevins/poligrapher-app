@@ -29,7 +29,7 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _public(task: TaskRecord) -> dict:
+def task_public(task: TaskRecord) -> dict:
     return {
         "task_id": str(task.id),
         "status": task.status,
@@ -41,8 +41,11 @@ def _public(task: TaskRecord) -> dict:
         "completed": task.completed or 0,
         "failed": task.failed or 0,
         "created_at": task.created_at.isoformat() if task.created_at else None,
+        "started_at": task.started_at.isoformat() if task.started_at else None,
         "cancelable": task.status == "running",
         "policy_id": task.policy_id,
+        "provider_id": task.provider_id,
+        "run_id": task.run_id,
         "provider_name": task.provider_name,
         "has_output": bool(task.output),
     }
@@ -68,6 +71,8 @@ class TaskRegistry:
             kind=kind,
             total=total,
             policy_id=str(extra.get("policy_id")) if extra.get("policy_id") else None,
+            provider_id=str(extra.get("provider_id")) if extra.get("provider_id") else None,
+            run_id=str(extra.get("run_id")) if extra.get("run_id") else None,
             provider_name=extra.get("provider_name"),
         )
         with SessionLocal() as db:
@@ -118,7 +123,7 @@ class TaskRegistry:
             return None
         with SessionLocal() as db:
             task = db.get(TaskRecord, task_uuid)
-            return _public(task) if task else None
+            return task_public(task) if task else None
 
     def list(self) -> list[dict]:
         cutoff = _now() - _RECENT
@@ -137,7 +142,7 @@ class TaskRegistry:
                 .order_by(TaskRecord.created_at.desc())
                 .all()
             )
-            return [_public(task) for task in tasks]
+            return [task_public(task) for task in tasks]
 
     def append_output(self, task_id: str, chunk: str) -> None:
         if not chunk:

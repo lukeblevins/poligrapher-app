@@ -63,7 +63,9 @@ def _mark_failed(policies, db, message: str) -> None:
     db.commit()
 
 
-def run_comparison(provider_id, *, scheduled: bool, registry=None, task_id=None) -> str:
+def run_comparison(
+    provider_id, *, scheduled: bool, registry=None, task_id=None, link_task: bool = True
+) -> str:
     """Fetch the provider's website source once and build both method graphs.
 
     Returns a short status string ('ok', 'unchanged', 'needs_source', 'cancelled').
@@ -119,6 +121,8 @@ def run_comparison(provider_id, *, scheduled: bool, registry=None, task_id=None)
         db.commit()
         db.refresh(website)
         db.refresh(pdf)
+        if registry and task_id and link_task:
+            registry.update(task_id, run_id=str(grp))
 
         temp_root = os.getenv("TEMP_WORKSPACE_ROOT") or None
         with tempfile.TemporaryDirectory(prefix="poligrapher-", dir=temp_root) as workspace:
