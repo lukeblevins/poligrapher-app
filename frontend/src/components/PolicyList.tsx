@@ -1,19 +1,32 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
-import type { Policy, Provider, RunGroup } from "../api/types";
+import { api } from "../api/client";
+import type { Policy, Provider, RunGroup, TaskStatus } from "../api/types";
+import { isRunTask } from "../api/types";
 import { useSchedules } from "../hooks/useSchedules";
 import { useRunActions, useRuns } from "../hooks/useRuns";
+import { useTasks } from "../hooks/useTasks";
+import { TaskOutputPanel } from "./TaskOutputPanel";
+import { OverflowMenu } from "./OverflowMenu";
+import { Modal } from "./Modal";
 
 interface Props {
   provider: Provider | null;
   selectedPolicyId: string | null;
-  onSelectPolicy: (id: string) => void;
+  onSelectPolicy: (id: string | null) => void;
+  historyTargetTaskId?: string | null;
+  historyTargetNonce?: number;
 }
 
 const CADENCES = ["daily", "weekly", "monthly"];
 
 const STATUS_STYLES: Record<string, string> = {
   succeeded: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400",
+  done: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400",
+  running: "bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300",
+  cancelling: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+  cancelled: "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300",
   failed: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400",
   pending: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400",
 };
@@ -113,79 +126,104 @@ function RunMethodRow({
     <button
       onClick={onSelect}
       aria-current={selected ? "true" : undefined}
-      className={`group grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2 border-l-2 px-4 py-3 text-left text-sm transition-colors ${
+      aria-label={`${methodLabel}. Privacy score ${score(run.privacy_score)}. GDPR score ${score(run.gdpr_score)}. ${titleCase(run.pipeline_status)}. ${methodDescription}`}
+      className={`group grid w-full grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-3 border-l-2 px-4 py-2.5 text-left text-sm transition-colors ${
         selected
           ? "border-teal-700 bg-teal-50/80 dark:border-teal-400 dark:bg-teal-950/35"
           : "border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/50"
       }`}
     >
-      <span className="min-w-0 flex-1">
-        <span className={`block font-semibold ${selected ? "text-teal-900 dark:text-teal-100" : ""}`}>
-          {methodLabel}
-        </span>
-        <span className="mt-0.5 block text-xs font-normal leading-4 text-slate-500 dark:text-slate-400">
-          {methodDescription}
-        </span>
+      <span className={`min-w-0 truncate font-semibold ${selected ? "text-teal-900 dark:text-teal-100" : ""}`} title={methodDescription}>
+        {methodLabel}
       </span>
-      <span className={`self-start rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLES[run.pipeline_status] ?? ""}`}>
+      <span className="data-value text-xs text-slate-500 dark:text-slate-300" aria-hidden="true">P {score(run.privacy_score)}</span>
+      <span className="data-value text-xs text-slate-500 dark:text-slate-300" aria-hidden="true">G {score(run.gdpr_score)}</span>
+      <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLES[run.pipeline_status] ?? ""}`}>
         {titleCase(run.pipeline_status)}
-      </span>
-      <span className="col-span-2 flex gap-5 border-t border-slate-200/80 pt-2 text-[11px] font-medium text-slate-500 dark:border-slate-800 dark:text-slate-400">
-        <span>Privacy score <b className="data-value ml-1 text-xs text-slate-800 dark:text-slate-200">{score(run.privacy_score)}</b></span>
-        <span>GDPR score <b className="data-value ml-1 text-xs text-slate-800 dark:text-slate-200">{score(run.gdpr_score)}</b></span>
       </span>
     </button>
   );
 }
 
+function groupStatus(group: RunGroup, task: TaskStatus | null): string {
+  if (task && ["running", "cancelling", "cancelled", "failed"].includes(task.status)) return task.status;
+  if (group.runs.some((run) => run.pipeline_status === "pending")) return "pending";
+  if (group.runs.some((run) => run.pipeline_status === "failed")) return "failed";
+  return "succeeded";
+}
+
 function RunCard({
   group,
+  task,
+  outputExpanded,
+  onToggleOutput,
+  onRerun,
+  onDelete,
+  actionsBusy,
   selectedPolicyId,
   onSelectPolicy,
 }: {
   group: RunGroup;
+  task: TaskStatus | null;
+  outputExpanded: boolean;
+  onToggleOutput: () => void;
+  onRerun: () => void;
+  onDelete: () => void;
+  actionsBusy: boolean;
   selectedPolicyId: string | null;
   onSelectPolicy: (id: string) => void;
 }) {
-  const date = group.capture_date
-    ? new Date(`${group.capture_date}T00:00:00`)
-    : new Date(group.created_at);
+  const date = new Date(group.created_at);
   const title = group.kind === "legacy"
-    ? "Legacy result"
+    ? "Legacy analysis"
     : group.kind === "upload"
-      ? "Uploaded policy analysis"
-      : "Policy analysis";
-  const methodCount = group.runs.length;
-  const metadata = group.kind === "legacy"
-    ? "Original capture details unavailable"
-    : `${group.scheduled ? "Automatic" : "Manual"} run · ${methodCount} ${methodCount === 1 ? "method" : "methods"}`;
+      ? "Uploaded PDF"
+      : "Website comparison";
+  const status = groupStatus(group, task);
+  const tooltipId = `run-details-${group.run_id}`;
+  const rerun = group.runs.some((run) => run.rerun_of_policy_id);
+  const captureText = group.capture_date
+    ? new Date(`${group.capture_date}T00:00:00`).toLocaleDateString()
+    : "Unknown";
+  const canShowOutput = !!task && (task.has_output || ["running", "cancelling", "failed"].includes(task.status));
 
   return (
-    <article className="overflow-hidden">
-      <header className="flex items-start gap-4 bg-slate-50/70 px-4 py-3.5 dark:bg-slate-900/45">
-        <time className="w-12 flex-none pt-0.5 text-center" dateTime={date.toISOString()}>
-          <span className="block text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-            {date.toLocaleDateString(undefined, { month: "short" })}
-          </span>
-          <span className="data-value mt-0.5 block text-xl font-semibold leading-none text-slate-900 dark:text-slate-100">
-            {date.toLocaleDateString(undefined, { day: "numeric" })}
-          </span>
-          <span className="data-value mt-1 block text-[10px] text-slate-400 dark:text-slate-500">
-            {date.toLocaleDateString(undefined, { year: "numeric" })}
-          </span>
-        </time>
-        <div className="min-w-0 flex-1 border-l border-slate-200 pl-4 dark:border-slate-700">
-          <div className="flex items-center gap-2">
+    <article className="group/run relative overflow-hidden" data-task-id={task?.task_id} aria-describedby={tooltipId} tabIndex={0}>
+      <header className="flex items-center gap-3 bg-slate-50/70 px-4 py-3 dark:bg-slate-900/45">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{title}</h3>
-            {group.kind === "legacy" && (
-              <span className="rounded border border-slate-300 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                Legacy data
-              </span>
-            )}
+            {rerun && <span className="rounded border border-slate-300 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 dark:border-slate-700 dark:text-slate-400">Re-run</span>}
+            <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLES[status] ?? ""}`}>{titleCase(status)}</span>
           </div>
-          <p className="mt-1 text-xs leading-4 text-slate-500 dark:text-slate-400">{metadata}</p>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+            {group.scheduled ? "Automatic" : "Manual"} · <time dateTime={date.toISOString()}>{date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</time>
+            {task && task.total > 0 && ["running", "cancelling"].includes(task.status) ? ` · ${task.completed}/${task.total}` : ""}
+          </p>
         </div>
+        {canShowOutput && (
+          <button
+            type="button"
+            className="btn-secondary min-h-8 shrink-0 px-2.5 py-1 text-xs"
+            aria-expanded={outputExpanded}
+            onClick={onToggleOutput}
+          >
+            {outputExpanded ? "Hide output" : "Output"}
+          </button>
+        )}
+        <OverflowMenu
+          label={`Actions for ${title} from ${date.toLocaleDateString()}`}
+          items={[
+            { label: "Run again", onSelect: onRerun, disabled: actionsBusy },
+            { label: "Delete", onSelect: onDelete, disabled: actionsBusy, danger: true },
+          ]}
+        />
       </header>
+      <div id={tooltipId} role="tooltip" className="pointer-events-none absolute right-3 top-12 z-20 hidden max-w-72 rounded-md bg-slate-950 px-3 py-2 text-[11px] leading-4 text-slate-100 shadow-lg group-hover/run:block group-focus-within/run:block">
+        <div>{group.scheduled ? "Automatic" : "Manual"} {title.toLowerCase()} · {group.runs.length} {group.runs.length === 1 ? "method" : "methods"}</div>
+        <div className="mt-1 text-slate-300">Started {date.toLocaleString()} · Source captured {captureText}</div>
+        <div className="mt-1 font-mono text-slate-400">Run {group.run_id.slice(0, 8)}</div>
+      </div>
       <div className="divide-y divide-slate-200/80 border-t border-slate-200/80 dark:divide-slate-800 dark:border-slate-800">
         {group.runs.map((run) => (
           <RunMethodRow
@@ -197,14 +235,54 @@ function RunCard({
           />
         ))}
       </div>
+      {task && outputExpanded && <TaskOutputPanel task={task} context={title} />}
+    </article>
+  );
+}
+
+function PendingRunCard({
+  task,
+  expanded,
+  onToggleOutput,
+}: {
+  task: TaskStatus;
+  expanded: boolean;
+  onToggleOutput: () => void;
+}) {
+  const progress = task.total > 0 ? `${task.completed}/${task.total}` : "Starting";
+  return (
+    <article className="overflow-hidden" data-task-id={task.task_id}>
+      <div className="flex items-center gap-3 border-l-2 border-teal-500 bg-teal-50/50 px-4 py-3 dark:bg-teal-950/20">
+        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${task.status === "failed" ? "bg-red-500" : task.status === "cancelled" ? "bg-slate-400" : "bg-teal-500"}`} aria-hidden="true" />
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate text-sm font-semibold">{task.title ?? "Analysis run"}</h3>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+            {titleCase(task.status)} · {progress}
+          </p>
+          {task.error && <p className="mt-1 line-clamp-2 text-xs text-red-600 dark:text-red-400">{task.error}</p>}
+        </div>
+        {(task.has_output || task.status === "running" || task.status === "cancelling" || task.status === "failed") && (
+          <button type="button" className="btn-secondary min-h-8 shrink-0 px-2.5 py-1 text-xs" aria-expanded={expanded} onClick={onToggleOutput}>
+            {expanded ? "Hide output" : "Output"}
+          </button>
+        )}
+      </div>
+      {expanded && <TaskOutputPanel task={task} context={task.provider_name ?? task.title ?? "Analysis run"} />}
     </article>
   );
 }
 
 // ── Provider page ─────────────────────────────────────────────────────────────
 
-export function PolicyList({ provider, selectedPolicyId, onSelectPolicy }: Props) {
-  const { data: runs = [], isLoading } = useRuns(provider?.id ?? null);
+export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, historyTargetTaskId, historyTargetNonce }: Props) {
+  const qc = useQueryClient();
+  const { tasks } = useTasks();
+  const taskCanAffectSelectedProvider = tasks.some((task) =>
+    task.status === "running" || task.status === "cancelling"
+      ? task.provider_id === provider?.id || ["collection-analysis", "refresh", "score-all"].includes(task.kind ?? "")
+      : false,
+  );
+  const { data: runs = [], isLoading } = useRuns(provider?.id ?? null, taskCanAffectSelectedProvider);
   const { data: schedules = [] } = useSchedules(provider?.id ?? null);
   const actions = useRunActions(provider?.id ?? "");
   const schedule = schedules[0] ?? null;
@@ -212,7 +290,13 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy }: Props
   const [sourceUrl, setSourceUrl] = useState("");
   const [savedSourceUrl, setSavedSourceUrl] = useState("");
   const [sourceLookupMessage, setSourceLookupMessage] = useState("");
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<RunGroup | null>(null);
+  const [rerunFallback, setRerunFallback] = useState<RunGroup | null>(null);
+  const [checkingRunId, setCheckingRunId] = useState<string | null>(null);
+  const [historyActionError, setHistoryActionError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  const newAnalysisRef = useRef<HTMLDivElement>(null);
 
   // Keep the source input in sync when switching providers.
   useEffect(() => {
@@ -221,6 +305,27 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy }: Props
     setSavedSourceUrl(nextSourceUrl);
     setSourceLookupMessage("");
   }, [provider?.id, provider?.source_url]);
+
+  useEffect(() => {
+    if (!historyTargetTaskId || !provider) return;
+    setExpandedTaskId(historyTargetTaskId);
+    requestAnimationFrame(() => {
+      const target = document.querySelector<HTMLElement>(`[data-task-id="${historyTargetTaskId}"]`);
+      target?.scrollIntoView({ behavior: "smooth", block: "center" });
+      target?.querySelector<HTMLElement>("button[aria-expanded]")?.focus();
+    });
+  }, [historyTargetTaskId, historyTargetNonce, provider]);
+
+  const taskLifecycleSignature = useMemo(
+    () => tasks.map((task) => `${task.task_id}:${task.status}:${task.completed}:${task.failed}`).join("|"),
+    [tasks],
+  );
+
+  useEffect(() => {
+    if (!provider) return;
+    qc.invalidateQueries({ queryKey: ["runs", provider.id] });
+    qc.invalidateQueries({ queryKey: ["providers"] });
+  }, [provider?.id, taskLifecycleSignature, qc]);
 
   if (!provider) {
     return (
@@ -237,6 +342,31 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy }: Props
   const busy = actions.runNow.isPending || actions.upload.isPending;
   const normalizedSourceUrl = sourceUrl.trim();
   const sourceHasUnsavedChanges = normalizedSourceUrl !== savedSourceUrl;
+  const providerTasks = tasks.filter((task) => task.provider_id === provider.id && isRunTask(task));
+  const linkedTaskIds = new Set(runs.flatMap((group) => {
+    const task = group.task ?? providerTasks.find((candidate) => candidate.run_id === group.run_id);
+    return task ? [task.task_id] : [];
+  }));
+  const provisionalTasks = providerTasks.filter((task) => !linkedTaskIds.has(task.task_id));
+
+  const handleRerun = async (group: RunGroup) => {
+    setCheckingRunId(group.run_id);
+    setHistoryActionError("");
+    try {
+      const availability = await api.getRerunAvailability(provider.id, group.run_id);
+      if (!availability.available) {
+        setRerunFallback(group);
+        return;
+      }
+      actions.rerun.mutate(group.run_id, {
+        onError: (error) => setHistoryActionError(error instanceof Error ? error.message : "Could not start the re-run."),
+      });
+    } catch (error) {
+      setHistoryActionError(error instanceof Error ? error.message : "Could not check the saved source.");
+    } finally {
+      setCheckingRunId(null);
+    }
+  };
 
   return (
     <div className="min-w-0 flex-1 overflow-auto px-6 py-8 lg:px-8">
@@ -341,7 +471,7 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy }: Props
         </div>
 
       {/* Explicit analysis actions */}
-      <div className="border-t border-slate-300 p-5 dark:border-slate-800">
+      <div ref={newAnalysisRef} tabIndex={-1} className="border-t border-slate-300 p-5 focus-visible:outline-none dark:border-slate-800">
         <div>
           <h2 className="text-sm font-semibold">Start a new analysis</h2>
           <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
@@ -432,21 +562,39 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy }: Props
         <div className="mb-3">
           <h2 className="text-sm font-semibold">Analysis history</h2>
           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            Select a result to explore its graph, statistics, and assessments.
+            Select a method to inspect its results.
           </p>
+          {historyActionError && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{historyActionError}</p>}
         </div>
         {isLoading ? (
           <p className="text-sm text-slate-400">Loading…</p>
-        ) : runs.length === 0 ? (
+        ) : runs.length === 0 && provisionalTasks.length === 0 ? (
           <p className="text-sm text-slate-400">
             No analyses yet. Analyze the saved website or upload a PDF to get started.
           </p>
         ) : (
           <div className="surface-card divide-y divide-slate-300 overflow-hidden dark:divide-slate-700">
+            {provisionalTasks.map((task) => (
+              <PendingRunCard
+                key={task.task_id}
+                task={task}
+                expanded={expandedTaskId === task.task_id}
+                onToggleOutput={() => setExpandedTaskId((current) => current === task.task_id ? null : task.task_id)}
+              />
+            ))}
             {runs.map((group) => (
               <RunCard
                 key={group.run_group ?? group.runs[0].id}
                 group={group}
+                task={group.task ?? providerTasks.find((task) => task.run_id === group.run_id) ?? null}
+                outputExpanded={expandedTaskId === (group.task ?? providerTasks.find((task) => task.run_id === group.run_id))?.task_id}
+                onToggleOutput={() => {
+                  const task = group.task ?? providerTasks.find((candidate) => candidate.run_id === group.run_id);
+                  if (task) setExpandedTaskId((current) => current === task.task_id ? null : task.task_id);
+                }}
+                onRerun={() => handleRerun(group)}
+                onDelete={() => setDeleteTarget(group)}
+                actionsBusy={checkingRunId === group.run_id || actions.rerun.isPending || actions.deleteRun.isPending}
                 selectedPolicyId={selectedPolicyId}
                 onSelectPolicy={onSelectPolicy}
               />
@@ -454,6 +602,55 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy }: Props
           </div>
         )}
       </section>
+
+      {deleteTarget && (
+        <Modal title="Delete analysis run" onClose={() => setDeleteTarget(null)}>
+          <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+            Delete this analysis run? Its results and saved output will be permanently removed.
+          </p>
+          <div className="mt-5 flex justify-end gap-2">
+            <button type="button" className="btn-secondary" onClick={() => setDeleteTarget(null)}>Cancel</button>
+            <button
+              type="button"
+              className="rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+              disabled={actions.deleteRun.isPending}
+              onClick={() => actions.deleteRun.mutate(deleteTarget.run_id, {
+                onSuccess: () => {
+                  if (deleteTarget.runs.some((run) => run.id === selectedPolicyId)) onSelectPolicy(null);
+                  setDeleteTarget(null);
+                },
+                onError: (error) => setHistoryActionError(error instanceof Error ? error.message : "Could not delete the run."),
+              })}
+            >
+              {actions.deleteRun.isPending ? "Deleting…" : "Delete"}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {rerunFallback && (
+        <Modal title="Saved source unavailable" onClose={() => setRerunFallback(null)}>
+          <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+            The saved copy for this run isn’t available. Start a new analysis for {provider.name} instead?
+          </p>
+          <div className="mt-5 flex justify-end gap-2">
+            <button type="button" className="btn-secondary" onClick={() => setRerunFallback(null)}>Cancel</button>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => {
+                setRerunFallback(null);
+                requestAnimationFrame(() => {
+                  newAnalysisRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                  newAnalysisRef.current?.focus();
+                });
+              }}
+            >
+              Start new analysis
+            </button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
