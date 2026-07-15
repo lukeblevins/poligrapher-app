@@ -82,6 +82,9 @@ class Policy(Base):
     # are the two halves of a single comparison run (grouped by run_group).
     method: Mapped[str] = mapped_column(String(20), default="website")
     run_group: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    rerun_of_policy_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("policies.id", ondelete="SET NULL")
+    )
     # True for source/scheduled runs; False for one-off uploaded-PDF runs.
     scheduled: Mapped[bool] = mapped_column(Boolean, default=False)
     # Website extracted-text hash or uploaded-PDF file hash, for change detection.

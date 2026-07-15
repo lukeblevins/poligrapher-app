@@ -99,6 +99,7 @@ class PolicyRead(BaseModel):
     source: str
     method: str = "website"
     run_group: uuid.UUID | None = None
+    rerun_of_policy_id: uuid.UUID | None = None
     scheduled: bool = False
     content_hash: str | None = None
     capture_date: date | None
@@ -150,6 +151,11 @@ class RunGroup(BaseModel):
 
 class ProviderSourceUpdate(BaseModel):
     source_url: str
+
+
+class RerunAvailability(BaseModel):
+    available: bool
+    reason: str | None = None
 
 
 class ScheduleToggle(BaseModel):

@@ -9,6 +9,7 @@ import type {
   CompanyCollection,
   IndexSyncSummary,
   RunGroup,
+  RerunAvailability,
   Schedule,
   SourcePreview,
   TaskStatus,
@@ -102,6 +103,12 @@ export const api = {
   verifyProviderSource: (providerId: string) =>
     request<Provider>(`/api/providers/${providerId}/verify-source`, { method: "POST" }),
   listRuns: (providerId: string) => request<RunGroup[]>(`/api/providers/${providerId}/runs`),
+  getRerunAvailability: (providerId: string, runId: string) =>
+    request<RerunAvailability>(`/api/providers/${providerId}/runs/${runId}/rerun-availability`),
+  rerun: (providerId: string, runId: string) =>
+    request<TaskStatus>(`/api/providers/${providerId}/runs/${runId}/rerun`, { method: "POST" }),
+  deleteRun: (providerId: string, runId: string) =>
+    request<void>(`/api/providers/${providerId}/runs/${runId}`, { method: "DELETE" }),
   runNow: (providerId: string) =>
     request<TaskStatus>(`/api/providers/${providerId}/runs`, { method: "POST" }),
   uploadPdf: (providerId: string, file: File) => {

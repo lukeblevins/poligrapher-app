@@ -1,10 +1,12 @@
 import uuid
+import io
 import os
 import tempfile
+import zipfile
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from poligrapher_app.api.deps import get_db
@@ -12,6 +14,7 @@ from poligrapher_app.api.models import Policy, Provider, Schedule, TaskRecord
 from poligrapher_app.api.schemas import (
     ProviderRead,
     ProviderSourceUpdate,
+    RerunAvailability,
     RunGroup,
     ScheduleRead,
     ScheduleToggle,
@@ -33,6 +36,48 @@ def _provider_or_404(provider_id: uuid.UUID, db: Session) -> Provider:
 
 def _task_of(registry, task_id: str) -> TaskStatus:
     return TaskStatus(**(registry.get(task_id) or {"task_id": task_id, "status": "running"}))
+
+
+def _policies_for_run(provider_id: uuid.UUID, run_id: uuid.UUID, db: Session) -> list[Policy]:
+    grouped = (
+        db.query(Policy)
+        .filter(Policy.provider_id == provider_id, Policy.run_group == run_id)
+        .order_by(Policy.created_at)
+        .all()
+    )
+    if grouped:
+        return grouped
+    policy = db.get(Policy, run_id)
+    return [policy] if policy and policy.provider_id == provider_id else []
+
+
+def _rerun_availability(policies: list[Policy]) -> RerunAvailability:
+    if not policies:
+        return RerunAvailability(available=False, reason="Run not found")
+    from poligrapher_app.services.storage import get_storage
+
+    storage = get_storage()
+    upload = next((policy for policy in policies if policy.method == "pdf_upload"), None)
+    if upload:
+        available = bool(upload.source_blob_key and storage.exists(upload.source_blob_key))
+        return RerunAvailability(
+            available=available,
+            reason=None if available else "The original PDF is not available",
+        )
+
+    website = next((policy for policy in policies if policy.method == "website"), None)
+    if not website or not website.artifact_blob_key or not storage.exists(website.artifact_blob_key):
+        return RerunAvailability(available=False, reason="The saved website copy is not available")
+    try:
+        with zipfile.ZipFile(io.BytesIO(storage.open_bytes(website.artifact_blob_key))) as archive:
+            names = {os.path.basename(name) for name in archive.namelist()}
+    except (OSError, zipfile.BadZipFile):
+        return RerunAvailability(available=False, reason="The saved website copy cannot be read")
+    available = bool(names.intersection({"output.html", "cleaned.html"}) and "output.pdf" in names)
+    return RerunAvailability(
+        available=available,
+        reason=None if available else "The saved website copy is incomplete",
+    )
 
 
 # ── Provider source ───────────────────────────────────────────────────────────
@@ -97,6 +142,132 @@ def list_runs(provider_id: uuid.UUID, db: Db):
             ordered.append(groups[key])
         groups[key].runs.append(p)
     return ordered
+
+
+@router.get(
+    "/api/providers/{provider_id}/runs/{run_id}/rerun-availability",
+    response_model=RerunAvailability,
+)
+def rerun_availability(provider_id: uuid.UUID, run_id: uuid.UUID, db: Db):
+    _provider_or_404(provider_id, db)
+    return _rerun_availability(_policies_for_run(provider_id, run_id, db))
+
+
+@router.post(
+    "/api/providers/{provider_id}/runs/{run_id}/rerun",
+    response_model=TaskStatus,
+)
+def rerun(provider_id: uuid.UUID, run_id: uuid.UUID, request: Request, db: Db):
+    provider = _provider_or_404(provider_id, db)
+    originals = _policies_for_run(provider_id, run_id, db)
+    availability = _rerun_availability(originals)
+    if not availability.available:
+        raise HTTPException(status_code=409, detail=availability.reason)
+
+    registry = request.app.state.tasks
+    upload = next((policy for policy in originals if policy.method == "pdf_upload"), None)
+    if upload:
+        policy = Policy(
+            provider_id=provider.id,
+            url=upload.url,
+            source="pdf",
+            method="pdf_upload",
+            scheduled=False,
+            capture_date=upload.capture_date,
+            source_filename=upload.source_filename,
+            rerun_of_policy_id=upload.id,
+        )
+        db.add(policy)
+        db.commit()
+        db.refresh(policy)
+        task_id = registry.create(
+            kind="rerun-upload",
+            title=f"Re-run PDF · {provider.name}",
+            provider_id=provider.id,
+            provider_name=provider.name,
+            policy_id=policy.id,
+            run_id=policy.id,
+            total=1,
+        )
+        registry.enqueue(task_id, {
+            "kind": "rerun-upload",
+            "original_policy_id": str(upload.id),
+            "policy_id": str(policy.id),
+        })
+        return _task_of(registry, task_id)
+
+    website = next(policy for policy in originals if policy.method == "website")
+    original_pdf = next((policy for policy in originals if policy.method == "pdf_from_page"), None)
+    group_id = uuid.uuid4()
+    new_website = Policy(
+        provider_id=provider.id,
+        url=website.url,
+        source="webpage",
+        method="website",
+        run_group=group_id,
+        scheduled=False,
+        capture_date=website.capture_date,
+        rerun_of_policy_id=website.id,
+    )
+    new_pdf = Policy(
+        provider_id=provider.id,
+        url=website.url,
+        source="pdf",
+        method="pdf_from_page",
+        run_group=group_id,
+        scheduled=False,
+        capture_date=website.capture_date,
+        rerun_of_policy_id=original_pdf.id if original_pdf else website.id,
+    )
+    db.add_all([new_website, new_pdf])
+    db.commit()
+    db.refresh(new_website)
+    db.refresh(new_pdf)
+    task_id = registry.create(
+        kind="rerun-comparison",
+        title=f"Re-run comparison · {provider.name}",
+        provider_id=provider.id,
+        provider_name=provider.name,
+        run_id=group_id,
+        total=1,
+    )
+    registry.enqueue(task_id, {
+        "kind": "rerun-comparison",
+        "original_policy_id": str(website.id),
+        "website_policy_id": str(new_website.id),
+        "pdf_policy_id": str(new_pdf.id),
+    })
+    return _task_of(registry, task_id)
+
+
+@router.delete(
+    "/api/providers/{provider_id}/runs/{run_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_run(provider_id: uuid.UUID, run_id: uuid.UUID, db: Db):
+    _provider_or_404(provider_id, db)
+    policies = _policies_for_run(provider_id, run_id, db)
+    if not policies:
+        raise HTTPException(status_code=404, detail="Run not found")
+    blob_keys = {
+        key
+        for policy in policies
+        for key in (policy.source_blob_key, policy.artifact_blob_key)
+        if key
+    }
+    for policy in policies:
+        db.delete(policy)
+    db.commit()
+
+    from poligrapher_app.services.storage import get_storage
+
+    storage = get_storage()
+    for key in blob_keys:
+        try:
+            storage.delete(key)
+        except Exception:
+            pass
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # ── Trigger a comparison run now ──────────────────────────────────────────────

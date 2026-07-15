@@ -106,6 +106,7 @@ export interface Policy {
   source: "webpage" | "pdf";
   method: "website" | "pdf_from_page" | "pdf_upload";
   run_group: string | null;
+  rerun_of_policy_id: string | null;
   scheduled: boolean;
   content_hash: string | null;
   capture_date: string | null;
@@ -145,6 +146,11 @@ export interface TaskOutput {
   status: TaskState;
   output: string;
   truncated: boolean;
+}
+
+export interface RerunAvailability {
+  available: boolean;
+  reason: string | null;
 }
 
 export const TASK_ACTIVE_STATES: TaskState[] = ["running", "cancelling"];
