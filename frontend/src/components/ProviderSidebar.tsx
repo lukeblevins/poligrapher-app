@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import type { Provider } from "../api/types";
 import { useCollections, useDeleteProvider, useProviders } from "../hooks/queries";
 import { CompanyLogo } from "./CompanyLogo";
+import { Modal } from "./Modal";
+import { OverflowMenu } from "./OverflowMenu";
 
 interface Props {
   selectedId: string | null;
@@ -86,6 +88,7 @@ export function ProviderSidebar({ selectedId, onSelect, onDeleted }: Props) {
   const [collectionId, setCollectionId] = useState("all");
   const [selectedIndustries, setSelectedIndustries] = useState<string[]>([]);
   const [industryMenuOpen, setIndustryMenuOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Provider | null>(null);
   const industryMenuRef = useRef<HTMLDivElement>(null);
   const industryButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -254,21 +257,37 @@ export function ProviderSidebar({ selectedId, onSelect, onDeleted }: Props) {
               <div className="font-semibold">{health.label}</div>
               <div className="mt-1 text-slate-300">{health.detail}</div>
             </div>
-            <button
-              type="button"
-              className="hidden rounded-md px-1.5 py-1 text-xs text-slate-400 hover:bg-red-50 hover:text-red-600 group-hover:block group-focus-within:block dark:hover:bg-red-950"
-              onClick={() => {
-                if (confirm(`Delete provider "${p.name}" and all its policies?`)) {
-                  deleteProvider.mutate(p.id, { onSuccess: () => onDeleted?.(p.id) });
-                }
-              }}
-              aria-label={`Delete ${p.name}`}
-            >
-              ✕
-            </button>
+            <OverflowMenu
+              label={`Actions for ${p.name}`}
+              revealOnGroupHover
+              items={[{ label: "Delete company", danger: true, onSelect: () => setDeleteTarget(p) }]}
+            />
           </div>
         );})}
       </div>
+      {deleteTarget && (
+        <Modal title="Delete company" onClose={() => setDeleteTarget(null)}>
+          <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+            Delete {deleteTarget.name} and all of its policy analyses? This can’t be undone.
+          </p>
+          <div className="mt-5 flex justify-end gap-2">
+            <button type="button" className="btn-secondary" onClick={() => setDeleteTarget(null)}>Cancel</button>
+            <button
+              type="button"
+              className="rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+              disabled={deleteProvider.isPending}
+              onClick={() => deleteProvider.mutate(deleteTarget.id, {
+                onSuccess: () => {
+                  onDeleted?.(deleteTarget.id);
+                  setDeleteTarget(null);
+                },
+              })}
+            >
+              {deleteProvider.isPending ? "Deleting…" : "Delete"}
+            </button>
+          </div>
+        </Modal>
+      )}
     </aside>
   );
 }
