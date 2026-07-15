@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { Provider } from "../api/types";
 import { useCollections, useDeleteProvider, useProviders } from "../hooks/queries";
@@ -8,6 +8,41 @@ interface Props {
   selectedId: string | null;
   onSelect: (provider: Provider) => void;
   onDeleted?: (id: string) => void;
+}
+
+interface IndustryOption {
+  key: string;
+  label: string;
+}
+
+function normalizeIndustry(value: string): string {
+  return value.trim().toLocaleLowerCase("en-US").replace(/[^a-z0-9]+/g, "");
+}
+
+function getIndustryOptions(providers: Provider[]): IndustryOption[] {
+  const groupedLabels = new Map<string, Map<string, number>>();
+
+  for (const provider of providers) {
+    const label = provider.industry?.trim();
+    if (!label) continue;
+
+    const key = normalizeIndustry(label);
+    if (!key) continue;
+
+    const labels = groupedLabels.get(key) ?? new Map<string, number>();
+    labels.set(label, (labels.get(label) ?? 0) + 1);
+    groupedLabels.set(key, labels);
+  }
+
+  return [...groupedLabels.entries()]
+    .map(([key, labels]) => ({
+      key,
+      label: [...labels.entries()]
+        .sort(([leftLabel, leftCount], [rightLabel, rightCount]) =>
+          rightCount - leftCount || leftLabel.localeCompare(rightLabel),
+        )[0][0],
+    }))
+    .sort((left, right) => left.label.localeCompare(right.label));
 }
 
 function statusColor(p: Provider): string {
@@ -33,24 +68,70 @@ export function ProviderSidebar({ selectedId, onSelect, onDeleted }: Props) {
   const deleteProvider = useDeleteProvider();
   const [query, setQuery] = useState("");
   const [collectionId, setCollectionId] = useState("all");
-  const [industry, setIndustry] = useState("all");
+  const [selectedIndustries, setSelectedIndustries] = useState<string[]>([]);
+  const [industryMenuOpen, setIndustryMenuOpen] = useState(false);
+  const industryMenuRef = useRef<HTMLDivElement>(null);
+  const industryButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!industryMenuOpen) return;
+
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (!industryMenuRef.current?.contains(event.target as Node)) {
+        setIndustryMenuOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIndustryMenuOpen(false);
+        industryButtonRef.current?.focus();
+      }
+    };
+
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [industryMenuOpen]);
 
   const selectedCollection = collections.find((collection) => collection.id === collectionId);
   const collectionMembers = selectedCollection ? new Set(selectedCollection.provider_ids) : null;
-  const industries = [...new Set(providers.map((provider) => provider.industry).filter((value): value is string => !!value))].sort();
+  const industries = getIndustryOptions(providers);
+  const industryLabels = new Map(industries.map((industry) => [industry.key, industry.label]));
+  const selectedIndustrySet = new Set(selectedIndustries);
+  const industryLabel = selectedIndustries.length === 0
+    ? "All industries"
+    : selectedIndustries.length === 1
+      ? industries.find((industry) => industry.key === selectedIndustries[0])?.label ?? selectedIndustries[0]
+      : `${selectedIndustries.length} industries`;
   const needle = query.toLowerCase();
   const filtered = providers.filter((provider) =>
     (!collectionMembers || collectionMembers.has(provider.id))
-    && (industry === "all" || provider.industry === industry)
+    && (selectedIndustries.length === 0 || (!!provider.industry && selectedIndustrySet.has(normalizeIndustry(provider.industry))))
     && (provider.name.toLowerCase().includes(needle) || provider.tickers.some((ticker) => ticker.toLowerCase().includes(needle))),
   );
+
+  const toggleIndustry = (industry: string) => {
+    setSelectedIndustries((current) => current.includes(industry)
+      ? current.filter((value) => value !== industry)
+      : [...current, industry]);
+  };
 
   return (
     <aside className="flex w-72 flex-shrink-0 flex-col border-r border-slate-200/80 bg-white dark:border-slate-800 dark:bg-slate-950">
       <div className="border-b border-slate-100 px-4 py-4 dark:border-slate-800">
         <div className="mb-2.5 flex items-center justify-between px-0.5">
           <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Companies</span>
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400">{filtered.length}</span>
+          <span
+            className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+            aria-live="polite"
+            aria-atomic="true"
+            aria-label={`${filtered.length} companies shown`}
+          >
+            {filtered.length}
+          </span>
         </div>
         <input
           type="search"
@@ -67,13 +148,54 @@ export function ProviderSidebar({ selectedId, onSelect, onDeleted }: Props) {
               {collections.map((collection) => <option key={collection.id} value={collection.id}>{collection.name}</option>)}
             </select>
           </label>
-          <label>
-            <span className="sr-only">Industry</span>
-            <select className="form-input py-1.5 text-xs" value={industry} onChange={(event) => setIndustry(event.target.value)}>
-              <option value="all">All industries</option>
-              {industries.map((value) => <option key={value} value={value}>{value}</option>)}
-            </select>
-          </label>
+          <div className="relative" ref={industryMenuRef}>
+            <button
+              ref={industryButtonRef}
+              type="button"
+              className="form-input flex items-center justify-between gap-2 py-1.5 text-left text-xs"
+              aria-label={`Filter by industries, ${industryLabel}`}
+              aria-expanded={industryMenuOpen}
+              aria-controls="industry-filter-menu"
+              onClick={() => setIndustryMenuOpen((open) => !open)}
+            >
+              <span className="truncate">{industryLabel}</span>
+              <svg className={`h-3.5 w-3.5 flex-none text-slate-400 transition-transform ${industryMenuOpen ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fillRule="evenodd" d="M5.22 7.22a.75.75 0 0 1 1.06 0L10 10.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 8.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+              </svg>
+            </button>
+            {industryMenuOpen && (
+              <div
+                id="industry-filter-menu"
+                className="absolute right-0 z-30 mt-1 w-64 overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900"
+              >
+                <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2 dark:border-slate-800">
+                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">Industries</span>
+                  <button
+                    type="button"
+                    className="text-[11px] font-semibold text-teal-700 hover:text-teal-900 disabled:cursor-default disabled:text-slate-300 dark:text-teal-300 dark:hover:text-teal-100 dark:disabled:text-slate-600"
+                    disabled={selectedIndustries.length === 0}
+                    onClick={() => setSelectedIndustries([])}
+                  >
+                    Clear
+                  </button>
+                </div>
+                <fieldset className="max-h-64 overflow-y-auto p-1.5">
+                  <legend className="sr-only">Industries to show</legend>
+                  {industries.map((industry) => (
+                    <label key={industry.key} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800">
+                      <input
+                        type="checkbox"
+                        className="h-3.5 w-3.5 rounded border-slate-300 accent-teal-600 dark:border-slate-600"
+                        checked={selectedIndustrySet.has(industry.key)}
+                        onChange={() => toggleIndustry(industry.key)}
+                      />
+                      <span>{industry.label}</span>
+                    </label>
+                  ))}
+                </fieldset>
+              </div>
+            )}
+          </div>
         </div>
       </div>
       <div className="flex-1 overflow-y-auto">
@@ -98,7 +220,7 @@ export function ProviderSidebar({ selectedId, onSelect, onDeleted }: Props) {
             <div className="min-w-0 flex-1">
               <div className="truncate">{p.name}</div>
               <div className="mt-0.5 truncate text-xs text-slate-400 dark:text-slate-500">
-                {p.ticker ? `${p.ticker} · ` : ""}{p.industry ?? "Uncategorized"} · {p.policy_count} results
+                {p.ticker ? `${p.ticker} · ` : ""}{p.industry ? industryLabels.get(normalizeIndustry(p.industry)) ?? p.industry : "Uncategorized"} · {p.policy_count} results
               </div>
             </div>
             {p.source_status !== "available" && p.source_status !== "unchecked" && (
