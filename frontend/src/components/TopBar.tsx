@@ -10,7 +10,13 @@ import { AddProviderModal } from "./modals/AddProviderModal";
 import { CollectionsModal } from "./modals/CollectionsModal";
 import { ImportCsvModal } from "./modals/ImportCsvModal";
 
-export function TopBar({ onProviderCreated }: { onProviderCreated?: (p: Provider) => void }) {
+export function TopBar({
+  onProviderCreated,
+  onViewRun,
+}: {
+  onProviderCreated?: (p: Provider) => void;
+  onViewRun?: (task: TaskStatus) => void;
+}) {
   const qc = useQueryClient();
   const [showAddProvider, setShowAddProvider] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -77,7 +83,7 @@ export function TopBar({ onProviderCreated }: { onProviderCreated?: (p: Provider
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <StatusCenter />
+          <StatusCenter onViewRun={onViewRun} />
           <span className="mx-1 h-6 w-px bg-slate-200 dark:bg-slate-800" />
           <button className="btn-primary" onClick={() => setShowAddProvider(true)}>
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="mr-1.5 h-4 w-4" aria-hidden="true">
