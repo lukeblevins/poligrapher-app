@@ -54,7 +54,7 @@ const SOURCE_STATUS_LABEL: Record<string, string> = {
 
 const SOURCE_STATUS_STYLE: Record<string, string> = {
   unchecked: "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400",
-  available: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400",
+  available: "bg-teal-50 text-teal-700 ring-1 ring-inset ring-teal-200 dark:bg-teal-950/50 dark:text-teal-300 dark:ring-teal-800",
   restricted: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400",
   broken: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400",
   error: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400",
