@@ -5,6 +5,7 @@ import { useCollections, useDeleteProvider, useProviders } from "../hooks/querie
 import { CompanyLogo } from "./CompanyLogo";
 import { Modal } from "./Modal";
 import { OverflowMenu } from "./OverflowMenu";
+import { Tooltip } from "./Tooltip";
 
 interface Props {
   selectedId: string | null;
@@ -224,7 +225,6 @@ export function ProviderSidebar({ selectedId, onSelect, onDeleted }: Props) {
         )}
         {filtered.map((p) => {
           const health = companyHealth(p);
-          const tooltipId = `company-health-${p.id}`;
           return (
           <div
             key={p.id}
@@ -234,12 +234,21 @@ export function ProviderSidebar({ selectedId, onSelect, onDeleted }: Props) {
                 : "border-transparent hover:bg-slate-50 dark:hover:bg-slate-900"
             }`}
           >
+            <Tooltip
+              side="right"
+              align="center"
+              content={(
+                <>
+                  <div className="font-semibold text-white">{health.label}</div>
+                  <div className="mt-1 text-slate-200">{health.detail}</div>
+                </>
+              )}
+            >
             <button
               type="button"
               className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500"
               onClick={() => onSelect(p)}
               aria-current={selectedId === p.id ? "true" : undefined}
-              aria-describedby={tooltipId}
             >
               <span className="relative flex-shrink-0">
                 <CompanyLogo name={p.name} domain={logoDomain(p)} />
@@ -250,13 +259,9 @@ export function ProviderSidebar({ selectedId, onSelect, onDeleted }: Props) {
                 <span className="mt-0.5 block truncate text-xs font-normal text-slate-400 dark:text-slate-500">
                   {p.ticker ? `${p.ticker} · ` : ""}{p.industry ? industryLabels.get(normalizeIndustry(p.industry)) ?? p.industry : "Uncategorized"} · {p.policy_count} results
                 </span>
-                <span className="sr-only">{health.label}. {health.detail}</span>
               </span>
             </button>
-            <div id={tooltipId} role="tooltip" className="pointer-events-none absolute right-2 top-[calc(100%-0.25rem)] z-30 hidden w-60 rounded-md bg-slate-950 px-3 py-2 text-[11px] font-normal leading-4 text-slate-100 shadow-lg group-hover:block group-focus-within:block">
-              <div className="font-semibold">{health.label}</div>
-              <div className="mt-1 text-slate-300">{health.detail}</div>
-            </div>
+            </Tooltip>
             <OverflowMenu
               label={`Actions for ${p.name}`}
               revealOnGroupHover

@@ -4,6 +4,7 @@ import { DetailPane } from "./components/DetailPane";
 import { PolicyList } from "./components/PolicyList";
 import { ProviderSidebar } from "./components/ProviderSidebar";
 import { TopBar } from "./components/TopBar";
+import { TooltipProvider } from "./components/Tooltip";
 import type { Provider, TaskStatus } from "./api/types";
 import { useProviders } from "./hooks/queries";
 
@@ -34,6 +35,7 @@ export default function App() {
   }
 
   return (
+    <TooltipProvider>
     <div className="flex h-full flex-col">
       <TopBar onProviderCreated={handleSelectProvider} onViewRun={handleViewRun} />
       <div className="flex flex-1 overflow-hidden">
@@ -59,5 +61,6 @@ export default function App() {
         </main>
       </div>
     </div>
+    </TooltipProvider>
   );
 }

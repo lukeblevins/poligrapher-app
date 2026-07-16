@@ -10,6 +10,7 @@ import { useTasks } from "../hooks/useTasks";
 import { TaskOutputPanel } from "./TaskOutputPanel";
 import { OverflowMenu } from "./OverflowMenu";
 import { Modal } from "./Modal";
+import { Tooltip } from "./Tooltip";
 
 interface Props {
   provider: Provider | null;
@@ -133,7 +134,7 @@ function RunMethodRow({
           : "border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/50"
       }`}
     >
-      <span className={`min-w-0 truncate font-semibold ${selected ? "text-teal-900 dark:text-teal-100" : ""}`} title={methodDescription}>
+      <span className={`min-w-0 truncate font-semibold ${selected ? "text-teal-900 dark:text-teal-100" : ""}`}>
         {methodLabel}
       </span>
       <span className="data-value text-xs text-slate-500 dark:text-slate-300" aria-hidden="true">P {score(run.privacy_score)}</span>
@@ -180,15 +181,29 @@ function RunCard({
       ? "Uploaded PDF"
       : "Website comparison";
   const status = groupStatus(group, task);
-  const tooltipId = `run-details-${group.run_id}`;
   const rerun = group.runs.some((run) => run.rerun_of_policy_id);
   const captureText = group.capture_date
     ? new Date(`${group.capture_date}T00:00:00`).toLocaleDateString()
     : "Unknown";
   const canShowOutput = !!task && (task.has_output || ["running", "cancelling", "failed"].includes(task.status));
+  const tooltipContent = (
+    <>
+      <div className="font-semibold text-white">{group.scheduled ? "Automatic" : "Manual"} {title.toLowerCase()}</div>
+      <div className="mt-1 text-slate-200">{group.runs.length} {group.runs.length === 1 ? "method" : "methods"} · Started {date.toLocaleString()}</div>
+      <div className="text-slate-200">Source captured {captureText}</div>
+      <div className="mt-1 font-mono text-slate-300">Run {group.run_id.slice(0, 8)}</div>
+    </>
+  );
 
   return (
-    <article className="group/run relative overflow-hidden" data-task-id={task?.task_id} aria-describedby={tooltipId} tabIndex={0}>
+    <Tooltip content={tooltipContent} side="bottom" align="end">
+    <article
+      className="group/run relative overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500"
+      data-task-id={task?.task_id}
+      role="group"
+      aria-label={`${title} from ${date.toLocaleDateString()}`}
+      tabIndex={0}
+    >
       <header className="flex items-center gap-3 bg-slate-50/70 px-4 py-3 dark:bg-slate-900/45">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -219,11 +234,6 @@ function RunCard({
           ]}
         />
       </header>
-      <div id={tooltipId} role="tooltip" className="pointer-events-none absolute right-3 top-12 z-20 hidden max-w-72 rounded-md bg-slate-950 px-3 py-2 text-[11px] leading-4 text-slate-100 shadow-lg group-hover/run:block group-focus-within/run:block">
-        <div>{group.scheduled ? "Automatic" : "Manual"} {title.toLowerCase()} · {group.runs.length} {group.runs.length === 1 ? "method" : "methods"}</div>
-        <div className="mt-1 text-slate-300">Started {date.toLocaleString()} · Source captured {captureText}</div>
-        <div className="mt-1 font-mono text-slate-400">Run {group.run_id.slice(0, 8)}</div>
-      </div>
       <div className="divide-y divide-slate-200/80 border-t border-slate-200/80 dark:divide-slate-800 dark:border-slate-800">
         {group.runs.map((run) => (
           <RunMethodRow
@@ -237,6 +247,7 @@ function RunCard({
       </div>
       {task && outputExpanded && <TaskOutputPanel task={task} context={title} />}
     </article>
+    </Tooltip>
   );
 }
 
@@ -401,7 +412,7 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, history
                   {SOURCE_STATUS_LABEL[provider.source_status] ?? "Not checked"}
                   {provider.source_http_status ? ` · HTTP ${provider.source_http_status}` : ""}
                 </span>
-                <span className="max-w-full truncate text-xs font-medium text-slate-700 dark:text-slate-200" title={savedSourceUrl}>{savedSourceUrl}</span>
+                <span className="max-w-full truncate text-xs font-medium text-slate-700 dark:text-slate-200">{savedSourceUrl}</span>
               </div>
               {provider.source_checked_at && (
                 <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">

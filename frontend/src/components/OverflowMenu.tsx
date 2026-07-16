@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { Tooltip } from "./Tooltip";
 
 export interface OverflowMenuItem {
   label: string;
@@ -59,6 +60,7 @@ export function OverflowMenu({
 
   return (
     <div ref={rootRef} className="relative shrink-0">
+      <Tooltip content={label} side="bottom" align="end" disabled={open}>
       <button
         ref={triggerRef}
         type="button"
@@ -73,6 +75,7 @@ export function OverflowMenu({
           <circle cx="4" cy="10" r="1.5" /><circle cx="10" cy="10" r="1.5" /><circle cx="16" cy="10" r="1.5" />
         </svg>
       </button>
+      </Tooltip>
       {open && (
         <div
           ref={menuRef}

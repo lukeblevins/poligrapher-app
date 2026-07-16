@@ -4,6 +4,7 @@ import type { TaskState, TaskStatus } from "../api/types";
 import { isRunTask, isTaskActive } from "../api/types";
 import { useCancelTask, useTasks } from "../hooks/useTasks";
 import { TaskOutputPanel } from "./TaskOutputPanel";
+import { Tooltip } from "./Tooltip";
 
 const STATUS_PILL: Record<TaskState, string> = {
   running: "bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300",
@@ -58,7 +59,7 @@ function TaskRow({
             {progressText(task) && <span className="data-value text-xs text-slate-400">{progressText(task)}</span>}
             {task.failed > 0 && <span className="text-xs text-red-500">{task.failed} failed</span>}
           </div>
-          {task.error && <div className="mt-1 line-clamp-2 text-xs leading-4 text-red-500" title={task.error}>{task.error}</div>}
+          {task.error && <div className="mt-1 line-clamp-2 text-xs leading-4 text-red-500">{task.error}</div>}
         </div>
         <div className="flex flex-col items-stretch gap-1.5">
           {linksToHistory ? (
@@ -113,6 +114,7 @@ export function StatusCenter({ onViewRun }: { onViewRun?: (task: TaskStatus) => 
 
   return (
     <div className="relative">
+      <Tooltip content="Task status" side="bottom" align="end" disabled={open}>
       <button
         ref={triggerRef}
         className="relative flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
@@ -123,13 +125,13 @@ export function StatusCenter({ onViewRun }: { onViewRun?: (task: TaskStatus) => 
         aria-label="Task status center"
         aria-expanded={open}
         aria-controls="task-status-panel"
-        title="Task status"
       >
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5" aria-hidden="true">
           <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
         </svg>
         {activeCount > 0 && <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-[10px] font-bold leading-none text-white">{activeCount}</span>}
       </button>
+      </Tooltip>
 
       {open && (
         <>
