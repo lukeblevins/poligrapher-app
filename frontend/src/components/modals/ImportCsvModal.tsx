@@ -22,24 +22,29 @@ export function ImportCsvModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal title="Import companies from CSV" onClose={onClose}>
       <form onSubmit={submit} className="space-y-3">
-        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+        <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
           CSV columns: Provider, Policy URL, Industry, Source, Date, Status, Score, GDPR Score,
           Graph Kind, Pipeline Status, Pipeline Errors.
         </p>
+        <label className="form-label" htmlFor="company-csv-file">CSV file</label>
         <input
+          id="company-csv-file"
           className="form-input"
           type="file"
           accept=".csv"
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          onChange={(e) => {
+            setFile(e.target.files?.[0] ?? null);
+            setSummary(null);
+          }}
           required
         />
         {summary && (
-          <p className="rounded bg-green-50 px-3 py-2 text-xs text-green-700 dark:bg-green-950 dark:text-green-400">
+          <p role="status" className="status-success">
             {summary.created} created, {summary.skipped} skipped, {summary.errors} errors.
           </p>
         )}
         {importCsv.isError && (
-          <p className="text-xs text-red-600 dark:text-red-400">
+          <p role="alert" className="status-error">
             {(importCsv.error as Error).message}
           </p>
         )}
@@ -47,8 +52,8 @@ export function ImportCsvModal({ onClose }: { onClose: () => void }) {
           <button type="button" className="btn-secondary" onClick={onClose}>
             {summary ? "Done" : "Cancel"}
           </button>
-          <button type="submit" className="btn-primary" disabled={importCsv.isPending || !file}>
-            {importCsv.isPending ? "Importing…" : "Import"}
+          <button type="submit" className="btn-primary" disabled={importCsv.isPending || !file || Boolean(summary)}>
+            {importCsv.isPending ? "Importing…" : summary ? "Imported" : "Import companies"}
           </button>
         </div>
       </form>

@@ -99,6 +99,7 @@ class PolicyRead(BaseModel):
     source: str
     method: str = "website"
     run_group: uuid.UUID | None = None
+    rerun_of_policy_id: uuid.UUID | None = None
     scheduled: bool = False
     content_hash: str | None = None
     capture_date: date | None
@@ -111,26 +112,6 @@ class PolicyRead(BaseModel):
     gdpr_score: float | None
     graph_kind: str
     created_at: datetime
-
-
-class RunGroup(BaseModel):
-    """A grouped analysis, uploaded PDF, or standalone legacy result."""
-
-    run_group: str | None
-    kind: str  # 'comparison' | 'upload' | 'legacy'
-    scheduled: bool
-    capture_date: date | None
-    created_at: datetime
-    runs: list[PolicyRead]
-
-
-class ProviderSourceUpdate(BaseModel):
-    source_url: str
-
-
-class ScheduleToggle(BaseModel):
-    enabled: bool
-    cadence: str | None = None
 
 
 class TaskStatus(BaseModel):
@@ -146,9 +127,47 @@ class TaskStatus(BaseModel):
     completed: int = 0
     failed: int = 0
     created_at: str | None = None
+    started_at: str | None = None
     cancelable: bool = False
     policy_id: str | None = None
+    provider_id: str | None = None
+    run_id: str | None = None
     provider_name: str | None = None
+    has_output: bool = False
+
+
+class RunGroup(BaseModel):
+    """A grouped analysis, uploaded PDF, or standalone legacy result."""
+
+    run_id: str
+    run_group: str | None
+    kind: str  # 'comparison' | 'upload' | 'legacy'
+    scheduled: bool
+    capture_date: date | None
+    created_at: datetime
+    runs: list[PolicyRead]
+    task: TaskStatus | None = None
+
+
+class ProviderSourceUpdate(BaseModel):
+    source_url: str
+
+
+class RerunAvailability(BaseModel):
+    available: bool
+    reason: str | None = None
+
+
+class ScheduleToggle(BaseModel):
+    enabled: bool
+    cadence: str | None = None
+
+
+class TaskOutput(BaseModel):
+    task_id: str
+    status: str
+    output: str
+    truncated: bool = False
 
 
 class ImportSummary(BaseModel):

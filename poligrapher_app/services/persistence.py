@@ -20,6 +20,8 @@ ARCHIVE_NAMES = {
     "graph.yml",
     "graph.graphml",
     "cleaned.html",
+    "output.html",
+    "readability.json",
     "accessibility_tree.json",
     "output.pdf",
 }

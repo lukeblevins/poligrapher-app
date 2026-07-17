@@ -10,7 +10,13 @@ import { AddProviderModal } from "./modals/AddProviderModal";
 import { CollectionsModal } from "./modals/CollectionsModal";
 import { ImportCsvModal } from "./modals/ImportCsvModal";
 
-export function TopBar({ onProviderCreated }: { onProviderCreated?: (p: Provider) => void }) {
+export function TopBar({
+  onProviderCreated,
+  onViewRun,
+}: {
+  onProviderCreated?: (p: Provider) => void;
+  onViewRun?: (task: TaskStatus) => void;
+}) {
   const qc = useQueryClient();
   const [showAddProvider, setShowAddProvider] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -57,17 +63,20 @@ export function TopBar({ onProviderCreated }: { onProviderCreated?: (p: Provider
 
   return (
     <>
-      <header className="relative z-40 flex min-h-16 flex-shrink-0 items-center justify-between border-b border-slate-300 bg-white px-5 dark:border-slate-800 dark:bg-slate-950">
-        <div className="flex items-center gap-3">
-          <svg viewBox="0 0 32 32" fill="none" className="h-8 w-8 text-teal-700 dark:text-teal-400" aria-hidden="true">
+      <header className="relative z-40 flex min-h-16 flex-shrink-0 items-center justify-between gap-2 border-b border-slate-300 bg-white px-3 py-2 sm:px-5 dark:border-slate-800 dark:bg-slate-950">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+          <svg viewBox="0 0 32 32" fill="none" className="h-7 w-7 flex-none text-teal-700 sm:h-8 sm:w-8 dark:text-teal-400" aria-hidden="true">
             <circle cx="7" cy="16" r="3" fill="currentColor" />
             <circle cx="24" cy="8" r="3" fill="currentColor" />
             <circle cx="24" cy="24" r="3" fill="currentColor" />
             <path d="m10 15 11-5M10 17l11 5" stroke="currentColor" strokeWidth="1.5" />
           </svg>
-          <div>
-            <div className="font-display text-base font-bold tracking-tight text-slate-950 dark:text-white">Privacy Policy Analyzer</div>
-            <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400 dark:text-slate-500">
+          <div className="min-w-0">
+            <div className="truncate font-display text-sm font-bold tracking-tight text-slate-950 sm:text-base dark:text-white">
+              <span className="sm:hidden">Policy Analyzer</span>
+              <span className="hidden sm:inline">Privacy Policy Analyzer</span>
+            </div>
+            <div className="hidden items-center gap-1.5 text-[11px] font-medium text-slate-500 sm:flex dark:text-slate-400">
               <span>Privacy policy research</span>
               <span aria-hidden="true">·</span>
               <button className="transition-colors hover:text-teal-700 hover:underline dark:hover:text-teal-400" onClick={() => setShowAttribution(true)}>
@@ -76,25 +85,30 @@ export function TopBar({ onProviderCreated }: { onProviderCreated?: (p: Provider
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <StatusCenter />
-          <span className="mx-1 h-6 w-px bg-slate-200 dark:bg-slate-800" />
-          <button className="btn-primary" onClick={() => setShowAddProvider(true)}>
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="mr-1.5 h-4 w-4" aria-hidden="true">
+        <div className="flex flex-none items-center gap-1 sm:gap-2">
+          <StatusCenter onViewRun={onViewRun} />
+          <span className="mx-0.5 hidden h-6 w-px bg-slate-200 sm:block dark:bg-slate-800" aria-hidden="true" />
+          <button className="btn-primary px-2.5 sm:px-3.5" onClick={() => setShowAddProvider(true)} aria-label="Add company">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4 sm:mr-1.5" aria-hidden="true">
               <path d="M10 4v12M4 10h12" strokeLinecap="round" />
             </svg>
-            Add company
+            <span className="hidden sm:inline">Add company</span>
           </button>
           <div ref={actionsDisclosureRef} className="relative">
             <button
               ref={actionsTriggerRef}
-              className="btn-secondary"
+              className="btn-secondary px-2.5 sm:px-3.5"
+              aria-label="Workspace actions"
+              aria-haspopup="true"
               aria-expanded={showActions}
               aria-controls="workspace-actions-panel"
               onClick={() => setShowActions((open) => !open)}
             >
-              Workspace actions
-              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className={`ml-2 h-4 w-4 transition-transform ${showActions ? "rotate-180" : ""}`} aria-hidden="true">
+              <span className="hidden lg:inline">Workspace actions</span>
+              <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 lg:hidden" aria-hidden="true">
+                <circle cx="4" cy="10" r="1.5" /><circle cx="10" cy="10" r="1.5" /><circle cx="16" cy="10" r="1.5" />
+              </svg>
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className={`ml-2 hidden h-4 w-4 transition-transform lg:block ${showActions ? "rotate-180" : ""}`} aria-hidden="true">
                 <path d="m6 8 4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </button>
@@ -103,7 +117,7 @@ export function TopBar({ onProviderCreated }: { onProviderCreated?: (p: Provider
                 id="workspace-actions-panel"
                 role="group"
                 aria-labelledby="workspace-actions-title"
-                className="isolate absolute right-0 z-20 mt-2 w-80 overflow-hidden rounded-md border border-slate-300 bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-950"
+                className="isolate fixed inset-x-3 top-[4.25rem] z-50 max-h-[calc(100dvh-5rem)] w-auto overflow-y-auto rounded-md border border-slate-300 bg-white p-1 shadow-lg sm:absolute sm:inset-x-auto sm:right-0 sm:top-auto sm:z-20 sm:mt-2 sm:max-h-[calc(100dvh-5.5rem)] sm:w-[min(20rem,calc(100vw-1.5rem))] dark:border-slate-700 dark:bg-slate-950"
               >
                 <div className="px-3 pb-2.5 pt-1.5">
                   <div id="workspace-actions-title" className="section-kicker">Workspace actions</div>
@@ -145,6 +159,16 @@ export function TopBar({ onProviderCreated }: { onProviderCreated?: (p: Provider
                   >
                     <span className="block text-sm font-semibold">Score unscored analyses</span>
                     <span className="mt-0.5 block text-xs leading-5 text-slate-500 dark:text-slate-400">Generate missing privacy and GDPR assessments.</span>
+                  </button>
+                  <button
+                    className="w-full rounded-b px-3 py-3 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-900"
+                    onClick={() => {
+                      setShowActions(false);
+                      setShowAttribution(true);
+                    }}
+                  >
+                    <span className="block text-sm font-semibold">Sources and attribution</span>
+                    <span className="mt-0.5 block text-xs leading-5 text-slate-500 dark:text-slate-400">Review the research tools and public datasets used by this workspace.</span>
                   </button>
                 </div>
               </div>

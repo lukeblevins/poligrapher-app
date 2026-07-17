@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime, timezone
 
-from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, JSON, String, Table, Uuid
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, JSON, String, Table, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from poligrapher_app.api.database import Base
@@ -82,6 +82,9 @@ class Policy(Base):
     # are the two halves of a single comparison run (grouped by run_group).
     method: Mapped[str] = mapped_column(String(20), default="website")
     run_group: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    rerun_of_policy_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("policies.id", ondelete="SET NULL")
+    )
     # True for source/scheduled runs; False for one-off uploaded-PDF runs.
     scheduled: Mapped[bool] = mapped_column(Boolean, default=False)
     # Website extracted-text hash or uploaded-PDF file hash, for change detection.
@@ -170,7 +173,10 @@ class TaskRecord(Base):
     cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
     policy_id: Mapped[str | None] = mapped_column(String(36))
+    provider_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    run_id: Mapped[str | None] = mapped_column(String(36), index=True)
     provider_name: Mapped[str | None] = mapped_column(String(255))
+    output: Mapped[str] = mapped_column(Text, default="", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

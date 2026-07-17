@@ -36,6 +36,7 @@ export function AddProviderModal({
   const [policyUrl, setPolicyUrl] = useState("");
   const [industry, setIndustry] = useState("");
   const createProvider = useCreateProvider();
+  const websiteInvalid = Boolean(website) && !domainFromWebsite(website);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 300);
@@ -90,14 +91,18 @@ export function AddProviderModal({
 
   return (
     <Modal title="Add company" onClose={onClose} wide>
-      <div className="mb-5 flex border-b border-slate-300 dark:border-slate-700">
+      <div role="group" aria-label="Company source" className="mb-5 flex overflow-x-auto border-b border-slate-300 dark:border-slate-700">
         <button
+          type="button"
+          aria-pressed={mode === "search"}
           className={`border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors ${mode === "search" ? "border-teal-700 text-teal-800 dark:border-teal-400 dark:text-teal-300" : "border-transparent text-slate-500 dark:text-slate-400"}`}
           onClick={() => setMode("search")}
         >
           Search tracked companies
         </button>
         <button
+          type="button"
+          aria-pressed={mode === "manual"}
           className={`border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors ${mode === "manual" ? "border-teal-700 text-teal-800 dark:border-teal-400 dark:text-teal-300" : "border-transparent text-slate-500 dark:text-slate-400"}`}
           onClick={() => setMode("manual")}
         >
@@ -131,7 +136,7 @@ export function AddProviderModal({
               <label className="form-label" htmlFor="catalog-industry">Industry (optional)</label>
               <input id="catalog-industry" className="form-input" value={industry} onChange={(event) => setIndustry(event.target.value)} placeholder="e.g. Healthcare" />
             </div>
-            {createProvider.isError && <p className="text-xs text-red-600 dark:text-red-400">{(createProvider.error as Error).message}</p>}
+            {createProvider.isError && <p role="alert" className="status-error">{(createProvider.error as Error).message}</p>}
             <div className="flex justify-end gap-2 pt-1">
               <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
               <button type="submit" className="btn-primary" disabled={createProvider.isPending}>{createProvider.isPending ? "Adding…" : "Add company"}</button>
@@ -145,7 +150,10 @@ export function AddProviderModal({
             <label className="form-label" htmlFor="company-catalog-search">Company or service name</label>
             <input id="company-catalog-search" className="form-input" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search GitHub, Microsoft, YouTube…" autoFocus />
             <div className="mt-3 min-h-28">
-              {catalog.isFetching && <p className="quiet-state py-6">Searching Open Terms Archive…</p>}
+              {catalog.isFetching && <p role="status" className="quiet-state py-6">Searching Open Terms Archive…</p>}
+              {catalog.isError && !catalog.isFetching && (
+                <p role="alert" className="status-error">Company search is unavailable. Try again or use the company website option.</p>
+              )}
               {catalog.data && !catalog.data.source_available && (
                 <p className="quiet-state py-6">The public catalog is temporarily unavailable. You can still add this company manually.</p>
               )}
@@ -166,7 +174,7 @@ export function AddProviderModal({
                 </div>
               )}
             </div>
-            <p className="mt-4 border-t border-slate-100 pt-4 text-xs leading-5 text-slate-400 dark:border-slate-800">
+            <p className="mt-4 border-t border-slate-100 pt-4 text-xs leading-5 text-slate-500 dark:border-slate-800 dark:text-slate-400">
               Not every company is represented in the open catalog. Choose “Use company website” for an organization that is not listed.
             </p>
           </div>
@@ -182,15 +190,24 @@ export function AddProviderModal({
           </div>
           <div>
             <label className="form-label" htmlFor="manual-company-website">Company website</label>
-            <input id="manual-company-website" className="form-input" value={website} onChange={(event) => setWebsite(event.target.value)} placeholder="example.com" required />
-            {website && !domainFromWebsite(website) && <p className="mt-1.5 text-xs text-red-500">Enter a valid website or domain.</p>}
+            <input
+              id="manual-company-website"
+              className="form-input"
+              value={website}
+              onChange={(event) => setWebsite(event.target.value)}
+              placeholder="example.com"
+              aria-invalid={websiteInvalid || undefined}
+              aria-describedby="manual-company-website-error"
+              required
+            />
+            {websiteInvalid && <p id="manual-company-website-error" className="mt-1.5 text-xs text-red-600 dark:text-red-400">Enter a valid website or domain.</p>}
           </div>
           <details className="rounded-md border border-slate-300 px-3 py-2 dark:border-slate-700">
             <summary className="cursor-pointer text-xs font-semibold">Optional details</summary>
             <div className="mt-3 space-y-3">
               <div>
                 <label className="form-label" htmlFor="manual-policy-url">Known privacy-policy URL</label>
-                <input id="manual-policy-url" className="form-input" value={policyUrl} onChange={(event) => setPolicyUrl(event.target.value)} placeholder="https://example.com/privacy" />
+                <input id="manual-policy-url" className="form-input" type="url" value={policyUrl} onChange={(event) => setPolicyUrl(event.target.value)} placeholder="https://example.com/privacy" />
               </div>
               <div>
                 <label className="form-label" htmlFor="manual-industry">Industry</label>
@@ -198,7 +215,7 @@ export function AddProviderModal({
               </div>
             </div>
           </details>
-          {createProvider.isError && <p className="text-xs text-red-600 dark:text-red-400">{(createProvider.error as Error).message}</p>}
+          {createProvider.isError && <p role="alert" className="status-error">{(createProvider.error as Error).message}</p>}
           <div className="flex justify-end gap-2 pt-1">
             <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
             <button type="submit" className="btn-primary" disabled={createProvider.isPending || !name.trim() || !domainFromWebsite(website)}>{createProvider.isPending ? "Adding…" : "Add company"}</button>

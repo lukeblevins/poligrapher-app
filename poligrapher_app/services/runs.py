@@ -14,6 +14,7 @@ import logging
 import os
 import tempfile
 import uuid
+import zipfile
 from datetime import date
 from pathlib import Path
 
@@ -63,7 +64,9 @@ def _mark_failed(policies, db, message: str) -> None:
     db.commit()
 
 
-def run_comparison(provider_id, *, scheduled: bool, registry=None, task_id=None) -> str:
+def run_comparison(
+    provider_id, *, scheduled: bool, registry=None, task_id=None, link_task: bool = True
+) -> str:
     """Fetch the provider's website source once and build both method graphs.
 
     Returns a short status string ('ok', 'unchanged', 'needs_source', 'cancelled').
@@ -119,6 +122,8 @@ def run_comparison(provider_id, *, scheduled: bool, registry=None, task_id=None)
         db.commit()
         db.refresh(website)
         db.refresh(pdf)
+        if registry and task_id and link_task:
+            registry.update(task_id, run_id=str(grp))
 
         temp_root = os.getenv("TEMP_WORKSPACE_ROOT") or None
         with tempfile.TemporaryDirectory(prefix="poligrapher-", dir=temp_root) as workspace:
@@ -192,3 +197,79 @@ def run_upload(policy_id, *, registry=None, task_id=None) -> str:
                 raise
     finally:
         db.close()
+
+
+def run_archived_comparison(
+    original_policy_id, website_policy_id, pdf_policy_id, *, registry=None, task_id=None
+) -> str:
+    """Build a new comparison from a previously archived website capture."""
+    from poligrapher_app.api.database import SessionLocal
+    from poligrapher_app.api.models import Policy
+    from poligrapher_app.domain.policy_analysis import DocumentCaptureSource, PolicyDocumentInfo
+    from poligrapher_app.services.persistence import persist_workspace
+    from poligrapher_app.services.pipeline import PipelineCancelled, generate_graph_from_html
+    from poligrapher_app.services.storage import get_storage
+
+    should_cancel = (lambda: registry.is_cancelled(task_id)) if (task_id and registry) else None
+    with SessionLocal() as db:
+        original = db.get(Policy, original_policy_id)
+        website = db.get(Policy, website_policy_id)
+        pdf = db.get(Policy, pdf_policy_id)
+        if not original or not website or not pdf or not original.artifact_blob_key:
+            if website or pdf:
+                _mark_failed([policy for policy in (website, pdf) if policy], db, "Saved source is unavailable")
+            return "gone"
+
+        temp_root = os.getenv("TEMP_WORKSPACE_ROOT") or None
+        with tempfile.TemporaryDirectory(prefix="poligrapher-rerun-", dir=temp_root) as workspace:
+            root = Path(workspace)
+            archive_path = root / "source.zip"
+            get_storage().download_file(original.artifact_blob_key, archive_path)
+            try:
+                with zipfile.ZipFile(archive_path) as archive:
+                    members = {
+                        Path(member.filename).name: member
+                        for member in archive.infolist()
+                        if not member.is_dir()
+                    }
+                    html_member = members.get("output.html") or members.get("cleaned.html")
+                    pdf_member = members.get("output.pdf")
+                    if not html_member or not pdf_member:
+                        _mark_failed([website, pdf], db, "Saved website copy is incomplete")
+                        return "gone"
+                    html_path = root / Path(html_member.filename).name
+                    pdf_path = root / "output.pdf"
+                    html_path.write_bytes(archive.read(html_member))
+                    pdf_path.write_bytes(archive.read(pdf_member))
+
+                web_dir = root / "website"
+                pdf_dir = root / "pdf"
+                generate_graph_from_html(
+                    str(html_path), str(web_dir), capture_pdf=False, should_cancel=should_cancel
+                )
+                generate_graph_from_html(
+                    str(pdf_path), str(pdf_dir), capture_pdf=True, should_cancel=should_cancel
+                )
+                web_doc = PolicyDocumentInfo(
+                    str(html_path), str(web_dir), DocumentCaptureSource.WEBPAGE,
+                    website.capture_date or date.today(), False,
+                )
+                pdf_doc = PolicyDocumentInfo(
+                    str(pdf_path), str(pdf_dir), DocumentCaptureSource.PDF,
+                    pdf.capture_date or date.today(), False,
+                )
+                _score(website, db, web_doc)
+                _score(pdf, db, pdf_doc)
+                persist_workspace(website, web_doc, root / "website.zip")
+                persist_workspace(pdf, pdf_doc, root / "pdf.zip")
+                website.content_hash = _website_text_hash(website, db, web_doc)
+                db.commit()
+                return "ok"
+            except PipelineCancelled:
+                db.rollback()
+                _mark_failed([website, pdf], db, "Run cancelled")
+                return "cancelled"
+            except Exception as exc:  # noqa: BLE001
+                db.rollback()
+                _mark_failed([website, pdf], db, f"Archived comparison failed: {exc}")
+                raise

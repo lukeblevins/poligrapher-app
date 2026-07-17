@@ -57,12 +57,14 @@ export interface CompanyCatalogSearch {
 }
 
 export interface RunGroup {
+  run_id: string;
   run_group: string | null;
   kind: "comparison" | "upload" | "legacy";
   scheduled: boolean;
   capture_date: string | null;
   created_at: string;
   runs: Policy[];
+  task: TaskStatus | null;
 }
 
 export interface Schedule {
@@ -104,6 +106,7 @@ export interface Policy {
   source: "webpage" | "pdf";
   method: "website" | "pdf_from_page" | "pdf_upload";
   run_group: string | null;
+  rerun_of_policy_id: string | null;
   scheduled: boolean;
   content_hash: string | null;
   capture_date: string | null;
@@ -129,15 +132,45 @@ export interface TaskStatus {
   completed: number;
   failed: number;
   created_at?: string | null;
+  started_at?: string | null;
   cancelable?: boolean;
   policy_id?: string | null;
+  provider_id?: string | null;
+  run_id?: string | null;
   provider_name?: string | null;
+  has_output?: boolean;
+}
+
+export interface TaskOutput {
+  task_id: string;
+  status: TaskState;
+  output: string;
+  truncated: boolean;
+}
+
+export interface RerunAvailability {
+  available: boolean;
+  reason: string | null;
 }
 
 export const TASK_ACTIVE_STATES: TaskState[] = ["running", "cancelling"];
 
 export function isTaskActive(status: TaskState): boolean {
   return status === "running" || status === "cancelling";
+}
+
+const RUN_TASK_KINDS = new Set([
+  "comparison",
+  "upload",
+  "rerun-upload",
+  "rerun-comparison",
+  "generate",
+  "score",
+  "schedule",
+]);
+
+export function isRunTask(task: TaskStatus): boolean {
+  return !!task.run_id || (!!task.kind && RUN_TASK_KINDS.has(task.kind));
 }
 
 export function isTaskSettled(status: TaskState): boolean {

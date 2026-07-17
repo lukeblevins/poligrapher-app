@@ -57,10 +57,10 @@ function buildStyle(t: Theme): StylesheetJson {
         "background-color": t.nodeBg,
         color: t.nodeText,
         "text-wrap": "wrap",
-        "text-max-width": "100px",
-        width: "label",
-        height: "label",
-        padding: "8px",
+        "text-max-width": "82px",
+        width: "90px",
+        height: "36px",
+        padding: "6px",
         shape: "rectangle",
       },
     },
@@ -106,9 +106,9 @@ function buildStyle(t: Theme): StylesheetJson {
 }
 
 const LEGEND = [
-  { label: "DATA", light: "#6b9690", dark: "#2f6f69" },
-  { label: "ACTOR", light: "#b5775f", dark: "#8c5145" },
-  { label: "we", light: "#8d8a55", dark: "#66744a" },
+  { label: "Data", light: "#6b9690", dark: "#2f6f69", shape: "rounded-sm" },
+  { label: "Actor", light: "#b5775f", dark: "#8c5145", shape: "rounded-full" },
+  { label: "Organization", light: "#8d8a55", dark: "#66744a", shape: "rotate-45 rounded-[2px]" },
 ];
 
 export function GraphViewer({ policyId }: { policyId: string }) {
@@ -147,30 +147,38 @@ export function GraphViewer({ policyId }: { policyId: string }) {
   }, [data]);
 
   if (isLoading) {
-    return <Centered>Loading graph…</Centered>;
+    return <Centered status>Loading knowledge graph…</Centered>;
   }
   if (isError || !data) {
-    return <Centered>No graph generated yet. Use the Generate button on the policy row.</Centered>;
+    return <Centered>The knowledge graph is unavailable for this analysis. Choose another completed method or run a new analysis.</Centered>;
+  }
+  if (data.elements.length === 0) {
+    return <Centered>This analysis did not produce any graph nodes or relationships.</Centered>;
   }
 
   return (
     <div className="relative h-full w-full">
-      <div className="absolute left-3 top-3 z-10 flex gap-3 rounded border border-slate-300 bg-white px-2.5 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-900">
+      <div className="absolute left-3 top-3 z-10 flex flex-wrap gap-3 rounded border border-slate-300 bg-white px-2.5 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-900" aria-label="Graph legend">
         {LEGEND.map((item) => (
           <LegendDot key={item.label} {...item} />
         ))}
       </div>
-      <div ref={containerRef} className="h-full w-full bg-slate-50 dark:bg-slate-900" />
+      <div
+        ref={containerRef}
+        role="img"
+        aria-label="Interactive privacy-policy knowledge graph. Data nodes are rectangles, actors are circles, and the analyzed organization is a diamond. Statistics and assessments are available in adjacent tabs."
+        className="h-full w-full bg-slate-50 dark:bg-slate-900"
+      />
     </div>
   );
 }
 
-function LegendDot({ label, light, dark }: { label: string; light: string; dark: string }) {
+function LegendDot({ label, light, dark, shape }: { label: string; light: string; dark: string; shape: string }) {
   const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
   return (
     <span className="flex items-center gap-1">
       <span
-        className="inline-block h-2.5 w-2.5 rounded-full"
+        className={`inline-block h-2.5 w-2.5 ${shape}`}
         style={{ backgroundColor: isDark ? dark : light }}
       />
       {label}
@@ -178,9 +186,9 @@ function LegendDot({ label, light, dark }: { label: string; light: string; dark:
   );
 }
 
-function Centered({ children }: { children: React.ReactNode }) {
+function Centered({ children, status = false }: { children: React.ReactNode; status?: boolean }) {
   return (
-    <div className="flex h-full items-center justify-center p-4 text-center text-sm text-slate-400 dark:text-slate-500">
+    <div role={status ? "status" : undefined} className="flex h-full items-center justify-center p-4 text-center text-sm text-slate-500 dark:text-slate-400">
       {children}
     </div>
   );

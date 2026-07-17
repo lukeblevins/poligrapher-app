@@ -13,20 +13,23 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import or_
+from sqlalchemy import and_, or_
 
 from poligrapher_app.api.database import SessionLocal
 from poligrapher_app.api.models import TaskRecord
 
 _TERMINAL = ("done", "failed", "cancelled")
 _RECENT = timedelta(minutes=15)
+_FAILED_RECENT = timedelta(days=7)
+_MAX_OUTPUT_CHARS = 250_000
+_TRUNCATION_NOTICE = "[Earlier terminal output was truncated.]\n"
 
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _public(task: TaskRecord) -> dict:
+def task_public(task: TaskRecord) -> dict:
     return {
         "task_id": str(task.id),
         "status": task.status,
@@ -38,9 +41,13 @@ def _public(task: TaskRecord) -> dict:
         "completed": task.completed or 0,
         "failed": task.failed or 0,
         "created_at": task.created_at.isoformat() if task.created_at else None,
+        "started_at": task.started_at.isoformat() if task.started_at else None,
         "cancelable": task.status == "running",
         "policy_id": task.policy_id,
+        "provider_id": task.provider_id,
+        "run_id": task.run_id,
         "provider_name": task.provider_name,
+        "has_output": bool(task.output),
     }
 
 
@@ -64,6 +71,8 @@ class TaskRegistry:
             kind=kind,
             total=total,
             policy_id=str(extra.get("policy_id")) if extra.get("policy_id") else None,
+            provider_id=str(extra.get("provider_id")) if extra.get("provider_id") else None,
+            run_id=str(extra.get("run_id")) if extra.get("run_id") else None,
             provider_name=extra.get("provider_name"),
         )
         with SessionLocal() as db:
@@ -87,7 +96,9 @@ class TaskRegistry:
             else:
                 raise RuntimeError(f"Unsupported TASK_BACKEND: {self.backend}")
         except Exception as exc:
-            self.set_failed(task_id, f"Could not enqueue task: {exc}")
+            message = f"Could not enqueue task: {exc}"
+            self.append_output(task_id, f"ERROR: {message}\n")
+            self.set_failed(task_id, message)
             raise
 
     def _execute_local(self, task_id: str) -> None:
@@ -112,18 +123,57 @@ class TaskRegistry:
             return None
         with SessionLocal() as db:
             task = db.get(TaskRecord, task_uuid)
-            return _public(task) if task else None
+            return task_public(task) if task else None
 
     def list(self) -> list[dict]:
         cutoff = _now() - _RECENT
+        failed_cutoff = _now() - _FAILED_RECENT
         with SessionLocal() as db:
             tasks = (
                 db.query(TaskRecord)
-                .filter(or_(TaskRecord.settled_at.is_(None), TaskRecord.settled_at >= cutoff))
+                .filter(or_(
+                    TaskRecord.settled_at.is_(None),
+                    TaskRecord.settled_at >= cutoff,
+                    and_(
+                        TaskRecord.settled_at >= failed_cutoff,
+                        or_(TaskRecord.status == "failed", TaskRecord.failed > 0),
+                    ),
+                ))
                 .order_by(TaskRecord.created_at.desc())
                 .all()
             )
-            return [_public(task) for task in tasks]
+            return [task_public(task) for task in tasks]
+
+    def append_output(self, task_id: str, chunk: str) -> None:
+        if not chunk:
+            return
+        with SessionLocal() as db:
+            task = db.get(TaskRecord, uuid.UUID(task_id))
+            if task is None:
+                return
+            output = (task.output or "") + chunk.replace("\x00", "")
+            if len(output) > _MAX_OUTPUT_CHARS:
+                keep = _MAX_OUTPUT_CHARS - len(_TRUNCATION_NOTICE)
+                output = _TRUNCATION_NOTICE + output[-keep:]
+            task.output = output
+            db.commit()
+
+    def get_output(self, task_id: str) -> dict | None:
+        try:
+            task_uuid = uuid.UUID(task_id)
+        except ValueError:
+            return None
+        with SessionLocal() as db:
+            task = db.get(TaskRecord, task_uuid)
+            if task is None:
+                return None
+            output = task.output or ""
+            return {
+                "task_id": str(task.id),
+                "status": task.status,
+                "output": output,
+                "truncated": output.startswith(_TRUNCATION_NOTICE),
+            }
 
     def update(self, task_id: str, **fields) -> None:
         with SessionLocal() as db:

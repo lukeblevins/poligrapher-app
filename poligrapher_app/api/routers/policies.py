@@ -129,8 +129,10 @@ def trigger_generate(policy_id: uuid.UUID, request: Request, db: Db):
     task_id = registry.create(
         kind="generate",
         title=f"Generate · {policy.provider.name}",
+        provider_id=policy.provider_id,
         provider_name=policy.provider.name,
         policy_id=str(policy_id),
+        run_id=policy.run_group or policy.id,
         total=1,
     )
     registry.enqueue(task_id, {"kind": "generate", "policy_id": str(policy_id)})
@@ -147,8 +149,10 @@ def trigger_score(policy_id: uuid.UUID, request: Request, db: Db):
     task_id = registry.create(
         kind="score",
         title=f"Score · {policy.provider.name}",
+        provider_id=policy.provider_id,
         provider_name=policy.provider.name,
         policy_id=str(policy_id),
+        run_id=policy.run_group or policy.id,
         total=1,
     )
     registry.enqueue(task_id, {"kind": "score", "policy_id": str(policy_id)})
