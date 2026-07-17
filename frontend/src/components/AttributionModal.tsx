@@ -82,7 +82,7 @@ export function AttributionModal({ onClose }: { onClose: () => void }) {
           </div>
         ))}
       </div>
-      <p className="mt-4 text-xs leading-5 text-slate-400">
+      <p className="mt-4 text-xs leading-5 text-slate-500 dark:text-slate-400">
         Source availability and licensing remain governed by each upstream project or collection.
         When publishing results produced with PoliGraph, cite the original authors and USENIX Security 2023 paper.
         Company marks are requested from each company’s public website favicon and fall back to initials when unavailable.

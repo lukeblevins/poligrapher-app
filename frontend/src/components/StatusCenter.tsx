@@ -56,20 +56,21 @@ function TaskRow({
             <span className={`rounded px-1.5 py-0.5 text-xs ${STATUS_PILL[task.status]}`}>
               {STATUS_LABEL[task.status]}
             </span>
-            {progressText(task) && <span className="data-value text-xs text-slate-400">{progressText(task)}</span>}
-            {task.failed > 0 && <span className="text-xs text-red-500">{task.failed} failed</span>}
+            {progressText(task) && <span className="data-value text-xs text-slate-500 dark:text-slate-400">{progressText(task)}</span>}
+            {task.failed > 0 && <span className="text-xs text-red-700 dark:text-red-400">{task.failed} failed</span>}
           </div>
-          {task.error && <div className="mt-1 line-clamp-2 text-xs leading-4 text-red-500">{task.error}</div>}
+          {task.error && <div className="mt-1 line-clamp-2 text-xs leading-4 text-red-700 dark:text-red-400">{task.error}</div>}
+          {cancel.isError && <div role="alert" className="mt-1 text-xs leading-4 text-red-600 dark:text-red-400">{cancel.error instanceof Error ? cancel.error.message : "Could not cancel this task."}</div>}
         </div>
         <div className="flex flex-col items-stretch gap-1.5">
           {linksToHistory ? (
-            <button type="button" className="btn-secondary min-h-7 px-2 py-1 text-xs" onClick={() => onViewRun?.(task)}>
+            <button type="button" className="btn-secondary min-h-9 px-2 py-1 text-xs" onClick={() => onViewRun?.(task)}>
               View in history
             </button>
           ) : canViewOutput ? (
             <button
               type="button"
-              className="btn-secondary min-h-7 px-2 py-1 text-xs"
+              className="btn-secondary min-h-9 px-2 py-1 text-xs"
               aria-expanded={expanded}
               onClick={onToggleOutput}
             >
@@ -77,7 +78,7 @@ function TaskRow({
             </button>
           ) : null}
           {task.cancelable && (
-            <button type="button" className="btn-secondary min-h-7 px-2 py-1 text-xs" disabled={cancel.isPending} onClick={() => cancel.mutate(task.task_id)}>
+            <button type="button" className="btn-secondary min-h-9 px-2 py-1 text-xs" disabled={cancel.isPending} onClick={() => cancel.mutate(task.task_id)}>
               Cancel
             </button>
           )}
@@ -117,7 +118,7 @@ export function StatusCenter({ onViewRun }: { onViewRun?: (task: TaskStatus) => 
       <Tooltip content="Task status" side="bottom" align="end" disabled={open}>
       <button
         ref={triggerRef}
-        className="relative flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+        className="icon-button relative"
         onClick={() => {
           setOpen((value) => !value);
           if (open) setExpandedTaskId(null);
@@ -129,9 +130,12 @@ export function StatusCenter({ onViewRun }: { onViewRun?: (task: TaskStatus) => 
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5" aria-hidden="true">
           <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
         </svg>
-        {activeCount > 0 && <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-[10px] font-bold leading-none text-white">{activeCount}</span>}
+        {activeCount > 0 && <span aria-hidden="true" className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-[10px] font-bold leading-none text-white">{activeCount}</span>}
       </button>
       </Tooltip>
+      <span className="sr-only" aria-live="polite" aria-atomic="true">
+        {activeCount === 0 ? "No active tasks" : `${activeCount} active ${activeCount === 1 ? "task" : "tasks"}`}
+      </span>
 
       {open && (
         <>
@@ -140,15 +144,15 @@ export function StatusCenter({ onViewRun }: { onViewRun?: (task: TaskStatus) => 
             id="task-status-panel"
             role="region"
             aria-label="Task status center"
-            className={`absolute right-0 z-20 mt-2 overflow-hidden rounded-md border border-slate-300 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900 ${expandedTaskId ? "w-[min(32rem,calc(100vw-2rem))]" : "w-80"}`}
+            className={`fixed inset-x-3 top-[4.25rem] z-50 max-h-[calc(100dvh-5rem)] w-auto overflow-hidden rounded-md border border-slate-300 bg-white shadow-lg sm:absolute sm:inset-x-auto sm:right-0 sm:top-auto sm:z-20 sm:mt-2 sm:max-h-none sm:w-[min(20rem,calc(100vw-1.5rem))] dark:border-slate-700 dark:bg-slate-900 ${expandedTaskId ? "sm:w-[min(32rem,calc(100vw-2rem))]" : ""}`}
           >
             <div className="border-b border-slate-100 px-4 py-3 text-sm font-semibold dark:border-slate-800">
-              Tasks {activeCount > 0 && <span className="font-normal text-slate-400">· {activeCount} active</span>}
+              Tasks {activeCount > 0 && <span className="font-normal text-slate-500 dark:text-slate-400">· {activeCount} active</span>}
             </div>
             {tasks.length === 0 ? (
-              <p className="px-4 py-8 text-center text-sm text-slate-400">No recent tasks.</p>
+              <p className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">No recent tasks.</p>
             ) : (
-              <ul className="max-h-[min(36rem,calc(100vh-6rem))] overflow-y-auto">
+              <ul className="max-h-[calc(100dvh-8.5rem)] overflow-y-auto sm:max-h-[min(36rem,calc(100dvh-6rem))]">
                 {tasks.map((task) => (
                   <TaskRow
                     key={task.task_id}

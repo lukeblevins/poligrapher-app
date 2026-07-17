@@ -34,8 +34,10 @@ export function Tooltip({
           side={side}
           align={align}
           sideOffset={7}
+          avoidCollisions
           collisionPadding={12}
-          className="z-50 w-max max-w-[min(20rem,calc(100vw-2rem))] select-none rounded-lg border border-slate-500 bg-slate-950 px-3 py-2.5 text-left text-xs font-normal leading-5 tracking-normal text-slate-100 shadow-xl"
+          sticky="always"
+          className="z-50 max-h-[min(20rem,calc(100dvh-2rem))] w-max max-w-[min(20rem,calc(100vw-2rem))] select-none overflow-y-auto rounded-lg border border-slate-500 bg-slate-950 px-3 py-2.5 text-left text-xs font-normal leading-5 tracking-normal text-slate-100 shadow-xl"
         >
           {content}
           <TooltipPrimitive.Arrow className="fill-slate-950" width={10} height={5} />

@@ -64,7 +64,7 @@ export function OverflowMenu({
       <button
         ref={triggerRef}
         type="button"
-        className={`grid h-8 w-8 place-items-center rounded-md text-slate-400 transition hover:bg-slate-200/70 hover:text-slate-700 focus:opacity-100 dark:hover:bg-slate-700 dark:hover:text-slate-100 ${revealOnGroupHover && !open ? "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100" : ""}`}
+        className={`icon-button h-10 w-10 ${revealOnGroupHover && !open ? "opacity-60 hover:opacity-100 focus:opacity-100" : ""}`}
         aria-label={label}
         aria-haspopup="menu"
         aria-expanded={open}

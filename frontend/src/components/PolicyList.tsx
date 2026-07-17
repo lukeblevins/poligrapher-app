@@ -10,12 +10,14 @@ import { useTasks } from "../hooks/useTasks";
 import { TaskOutputPanel } from "./TaskOutputPanel";
 import { OverflowMenu } from "./OverflowMenu";
 import { Modal } from "./Modal";
+import { SelectMenu } from "./SelectMenu";
 import { Tooltip } from "./Tooltip";
 
 interface Props {
   provider: Provider | null;
   selectedPolicyId: string | null;
   onSelectPolicy: (id: string | null) => void;
+  onBack?: () => void;
   historyTargetTaskId?: string | null;
   historyTargetNonce?: number;
 }
@@ -70,34 +72,35 @@ function score(n: number | null): string {
   return n === null || n === undefined ? "—" : n.toFixed(1);
 }
 
-function Toggle({ on, onChange, disabled }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
+function isValidWebUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function Toggle({ label, on, onChange, disabled }: { label: string; on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
     <button
+      type="button"
       role="switch"
       aria-checked={on}
+      aria-label={label}
       disabled={disabled}
       onClick={() => onChange(!on)}
-      className={`relative inline-flex h-7 w-12 flex-shrink-0 items-center rounded-full border shadow-inner transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-45 ${
-        on
-          ? "border-teal-600 bg-teal-700"
-          : "border-slate-300 bg-slate-200 dark:border-slate-600 dark:bg-slate-700"
-      }`}
+      className="inline-grid h-11 w-11 flex-shrink-0 place-items-center rounded-full disabled:cursor-not-allowed disabled:opacity-45"
     >
       <span
-        className={`grid h-5 w-5 transform place-items-center rounded-full bg-white text-teal-700 shadow ring-1 ring-black/5 transition-transform duration-200 ${
-          on ? "translate-x-6" : "translate-x-1"
+        aria-hidden="true"
+        className={`relative inline-flex h-6 w-11 items-center rounded-full border shadow-inner transition-colors duration-150 ${
+          on
+            ? "border-teal-600 bg-teal-700"
+            : "border-slate-300 bg-slate-200 dark:border-slate-600 dark:bg-slate-700"
         }`}
       >
-        <svg
-          viewBox="0 0 16 16"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          className={`h-3 w-3 transition-opacity ${on ? "opacity-100" : "opacity-0"}`}
-          aria-hidden="true"
-        >
-          <path d="m4 8 2.5 2.5L12 5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+        <span className={`h-5 w-5 rounded-full bg-white shadow ring-1 ring-black/5 transition-transform duration-200 ${on ? "translate-x-[21px]" : "translate-x-0.5"}`} />
       </span>
     </button>
   );
@@ -128,7 +131,7 @@ function RunMethodRow({
       onClick={onSelect}
       aria-current={selected ? "true" : undefined}
       aria-label={`${methodLabel}. Privacy score ${score(run.privacy_score)}. GDPR score ${score(run.gdpr_score)}. ${titleCase(run.pipeline_status)}. ${methodDescription}`}
-      className={`group grid w-full grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-3 border-l-2 px-4 py-2.5 text-left text-sm transition-colors ${
+      className={`group grid min-h-12 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-l-2 px-3 py-2.5 text-left text-sm transition-colors sm:gap-3 sm:px-4 ${
         selected
           ? "border-teal-700 bg-teal-50/80 dark:border-teal-400 dark:bg-teal-950/35"
           : "border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/50"
@@ -137,10 +140,12 @@ function RunMethodRow({
       <span className={`min-w-0 truncate font-semibold ${selected ? "text-teal-900 dark:text-teal-100" : ""}`}>
         {methodLabel}
       </span>
-      <span className="data-value text-xs text-slate-500 dark:text-slate-300" aria-hidden="true">P {score(run.privacy_score)}</span>
-      <span className="data-value text-xs text-slate-500 dark:text-slate-300" aria-hidden="true">G {score(run.gdpr_score)}</span>
-      <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLES[run.pipeline_status] ?? ""}`}>
-        {titleCase(run.pipeline_status)}
+      <span className="flex flex-wrap items-center justify-end gap-2" aria-hidden="true">
+        <span className="data-value text-xs text-slate-500 dark:text-slate-300">P {score(run.privacy_score)}</span>
+        <span className="data-value text-xs text-slate-500 dark:text-slate-300">G {score(run.gdpr_score)}</span>
+        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLES[run.pipeline_status] ?? ""}`}>
+          {titleCase(run.pipeline_status)}
+        </span>
       </span>
     </button>
   );
@@ -204,7 +209,7 @@ function RunCard({
       aria-label={`${title} from ${date.toLocaleDateString()}`}
       tabIndex={0}
     >
-      <header className="flex items-center gap-3 bg-slate-50/70 px-4 py-3 dark:bg-slate-900/45">
+      <header className="flex items-center gap-2 bg-slate-50/70 px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-3 dark:bg-slate-900/45">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{title}</h3>
@@ -285,7 +290,7 @@ function PendingRunCard({
 
 // ── Provider page ─────────────────────────────────────────────────────────────
 
-export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, historyTargetTaskId, historyTargetNonce }: Props) {
+export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, onBack, historyTargetTaskId, historyTargetNonce }: Props) {
   const qc = useQueryClient();
   const { tasks } = useTasks();
   const taskCanAffectSelectedProvider = tasks.some((task) =>
@@ -293,7 +298,7 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, history
       ? task.provider_id === provider?.id || ["collection-analysis", "refresh", "score-all"].includes(task.kind ?? "")
       : false,
   );
-  const { data: runs = [], isLoading } = useRuns(provider?.id ?? null, taskCanAffectSelectedProvider);
+  const { data: runs = [], isLoading, isError, error } = useRuns(provider?.id ?? null, taskCanAffectSelectedProvider);
   const { data: schedules = [] } = useSchedules(provider?.id ?? null);
   const actions = useRunActions(provider?.id ?? "");
   const schedule = schedules[0] ?? null;
@@ -342,7 +347,7 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, history
 
   if (!provider) {
     return (
-      <div className="flex flex-1 items-center justify-center text-slate-400 dark:text-slate-500">
+      <div className="flex flex-1 items-center justify-center text-slate-500 dark:text-slate-400">
         <div className="text-center">
           <p className="font-medium text-slate-500 dark:text-slate-400">Select a company</p>
           <p className="mt-1 text-sm">Configure its policy source and review past analyses.</p>
@@ -353,7 +358,14 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, history
 
   const scheduleOn = schedule?.enabled ?? false;
   const busy = actions.runNow.isPending || actions.upload.isPending;
+  const workspaceActionError = actions.setSource.error
+    ?? actions.verifySource.error
+    ?? actions.previewSource.error
+    ?? actions.runNow.error
+    ?? actions.upload.error
+    ?? actions.toggle.error;
   const normalizedSourceUrl = sourceUrl.trim();
+  const sourceUrlIsValid = isValidWebUrl(normalizedSourceUrl);
   const sourceHasUnsavedChanges = normalizedSourceUrl !== savedSourceUrl;
   const showSourceEditor = !savedSourceUrl || editingSource;
   const providerTasks = tasks.filter((task) => task.provider_id === provider.id && isRunTask(task));
@@ -383,18 +395,30 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, history
   };
 
   return (
-    <div className="min-w-0 flex-1 overflow-auto px-6 py-8 lg:px-8">
+    <div className={`${selectedPolicyId ? "hidden xl:block" : "block"} min-w-0 flex-1 overflow-auto px-3 py-3 sm:px-6 sm:py-8 lg:px-8`}>
+      <div className="mx-auto w-full max-w-[96rem]">
       {/* Provider heading */}
       <div>
-        <h1 className="font-display text-3xl font-semibold tracking-tight text-slate-950 dark:text-white">{provider.name}</h1>
-        <p className="mt-1.5 text-sm text-slate-500 dark:text-slate-400">
-          {provider.industry ?? "Uncategorized"} · {provider.policy_count} policy records
+        {onBack && (
+          <button type="button" className="mb-2 inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-teal-700 hover:underline sm:mb-4 md:hidden dark:text-teal-400" onClick={onBack}>
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4" aria-hidden="true"><path d="m12 5-5 5 5 5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            Companies
+          </button>
+        )}
+        <h1 className="font-display text-xl font-semibold tracking-tight text-slate-950 sm:text-3xl dark:text-white">{provider.name}</h1>
+        <p className="mt-0.5 text-xs text-slate-500 sm:mt-1.5 sm:text-sm dark:text-slate-400">
+          {provider.industry ?? "Uncategorized"} · {provider.policy_count} {provider.policy_count === 1 ? "analysis" : "analyses"}
         </p>
       </div>
 
       {/* Research configuration */}
-      <section className="surface-card mt-7 overflow-hidden">
-        <div className="p-5">
+      <section className="surface-card isolate mt-4 overflow-visible sm:mt-7">
+        {workspaceActionError && (
+          <p role="alert" className="m-3 mb-0 sm:m-5 sm:mb-0 status-error">
+            {workspaceActionError instanceof Error ? workspaceActionError.message : "The action could not be completed. Try again."}
+          </p>
+        )}
+        <div className="p-3 sm:p-5">
         <div className="mb-2 flex items-center justify-between">
           <div>
             <h2 className="text-sm font-semibold">Website source</h2>
@@ -405,7 +429,7 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, history
           {schedule?.needs_attention && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-700 dark:bg-amber-950 dark:text-amber-300">Needs confirmation</span>}
         </div>
         {savedSourceUrl && !editingSource && (
-          <div className="mt-4 flex flex-wrap items-center gap-3 rounded-md border border-slate-200 bg-slate-50/70 px-3 py-3 dark:border-slate-800 dark:bg-slate-950/40">
+          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-slate-50/70 px-3 py-2.5 sm:mt-4 sm:gap-3 sm:py-3 dark:border-slate-800 dark:bg-slate-950/40">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <span className={`rounded px-2 py-1 text-[11px] font-semibold ${SOURCE_STATUS_STYLE[provider.source_status] ?? SOURCE_STATUS_STYLE.unchecked}`}>
@@ -415,7 +439,7 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, history
                 <span className="max-w-full truncate text-xs font-medium text-slate-700 dark:text-slate-200">{savedSourceUrl}</span>
               </div>
               {provider.source_checked_at && (
-                <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+                <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400">
                   Checked {new Date(provider.source_checked_at).toLocaleString()}
                   {provider.source_final_url && provider.source_final_url !== provider.source_url ? " · Redirect detected" : ""}
                 </p>
@@ -435,42 +459,53 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, history
         {showSourceEditor && (
           <div className="mt-4">
             <label className="form-label" htmlFor="policy-source-url">Privacy policy URL</label>
-            <div className="flex items-start gap-2">
+            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-start">
               <input
                 id="policy-source-url"
+                type="url"
                 className="form-input flex-1"
                 value={sourceUrl}
                 onChange={(e) => setSourceUrl(e.target.value)}
                 placeholder="https://example.com/privacy"
+                aria-invalid={normalizedSourceUrl && !sourceUrlIsValid ? true : undefined}
+                aria-describedby="policy-source-url-help"
               />
-              <button
-                className="btn-secondary"
-                disabled={actions.setSource.isPending || !normalizedSourceUrl || !sourceHasUnsavedChanges}
-                onClick={() => actions.setSource.mutate(normalizedSourceUrl, {
-                  onSuccess: (updatedProvider) => {
-                    const updatedSourceUrl = updatedProvider.source_url ?? "";
-                    setSavedSourceUrl(updatedSourceUrl);
-                    setSourceUrl(updatedSourceUrl);
-                    setEditingSource(false);
-                  },
-                })}
-              >
-                {actions.setSource.isPending ? "Saving…" : "Save"}
-              </button>
-              {savedSourceUrl && (
+              <div className="flex gap-2 sm:flex-none">
                 <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => {
-                    setSourceUrl(savedSourceUrl);
-                    setEditingSource(false);
-                  }}
+                  className="btn-primary flex-1 sm:flex-none"
+                  disabled={actions.setSource.isPending || !sourceUrlIsValid || !sourceHasUnsavedChanges}
+                  onClick={() => actions.setSource.mutate(normalizedSourceUrl, {
+                    onSuccess: (updatedProvider) => {
+                      const updatedSourceUrl = updatedProvider.source_url ?? "";
+                      setSavedSourceUrl(updatedSourceUrl);
+                      setSourceUrl(updatedSourceUrl);
+                      setEditingSource(false);
+                    },
+                  })}
                 >
-                  Cancel
+                  {actions.setSource.isPending ? "Saving…" : "Save source"}
                 </button>
-              )}
+                {savedSourceUrl && (
+                  <button
+                    type="button"
+                    className="btn-secondary flex-1 sm:flex-none"
+                    onClick={() => {
+                      setSourceUrl(savedSourceUrl);
+                      setEditingSource(false);
+                    }}
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
             </div>
-            {sourceHasUnsavedChanges && <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">Save this URL before starting a website analysis.</p>}
+            <div id="policy-source-url-help">
+              {normalizedSourceUrl && !sourceUrlIsValid ? (
+                <p className="mt-2 text-xs text-red-600 dark:text-red-400">Enter a complete web address beginning with http:// or https://.</p>
+              ) : sourceHasUnsavedChanges ? (
+                <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">Save this URL before starting a website analysis.</p>
+              ) : null}
+            </div>
           </div>
         )}
         {!savedSourceUrl && !sourceHasUnsavedChanges && (
@@ -496,23 +531,23 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, history
             >
               {actions.previewSource.isPending ? "Looking for a privacy policy…" : "Find a privacy policy automatically"}
             </button>
-            {!provider.domain && <span className="text-xs text-slate-400">Add a company website before using discovery.</span>}
+            {!provider.domain && <span className="text-xs text-slate-500 dark:text-slate-400">Add a company website before using discovery.</span>}
           </div>
         )}
         {sourceLookupMessage && <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">{sourceLookupMessage}</p>}
         </div>
 
       {/* Explicit analysis actions */}
-      <div ref={newAnalysisRef} tabIndex={-1} className="border-t border-slate-300 p-5 focus-visible:outline-none dark:border-slate-800">
+      <div ref={newAnalysisRef} tabIndex={-1} className="border-t border-slate-300 p-3 focus-visible:outline-none sm:p-5 dark:border-slate-800">
         <div>
           <h2 className="text-sm font-semibold">Start a new analysis</h2>
           <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
             Choose where the policy should come from. Results will appear in the history below.
           </p>
         </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className="mt-3 grid gap-2 sm:mt-4 sm:grid-cols-2 sm:gap-3">
           <button
-            className="group rounded-md border border-teal-300 bg-teal-50/50 p-4 text-left transition-colors hover:border-teal-600 hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-teal-900 dark:bg-teal-950/25 dark:hover:border-teal-700 dark:hover:bg-teal-950/40"
+            className="group rounded-md border border-teal-300 bg-teal-50/50 p-3 text-left transition-colors hover:border-teal-600 hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-50 sm:p-4 dark:border-teal-900 dark:bg-teal-950/25 dark:hover:border-teal-700 dark:hover:bg-teal-950/40"
             disabled={busy || !savedSourceUrl || sourceHasUnsavedChanges}
             onClick={() => actions.runNow.mutate()}
           >
@@ -524,7 +559,7 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, history
             </span>
           </button>
           <button
-            className="rounded-md border border-slate-300 p-4 text-left transition-colors hover:border-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:hover:border-slate-600 dark:hover:bg-slate-800/60"
+            className="rounded-md border border-slate-300 p-3 text-left transition-colors hover:border-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 sm:p-4 dark:border-slate-700 dark:hover:border-slate-600 dark:hover:bg-slate-800/60"
             disabled={busy}
             onClick={() => fileRef.current?.click()}
           >
@@ -550,9 +585,10 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, history
       </div>
 
       {/* Automatic monitoring */}
-      <div className="border-t border-slate-300 p-5 dark:border-slate-800">
-        <div className="flex items-start gap-3">
+      <div className="border-t border-slate-300 p-3 sm:p-5 dark:border-slate-800">
+        <div className="flex items-start gap-2 sm:gap-3">
           <Toggle
+            label="Monitor for policy changes"
             on={scheduleOn}
             disabled={actions.toggle.isPending || !savedSourceUrl}
             onChange={(v) => actions.toggle.mutate({ enabled: v })}
@@ -561,16 +597,14 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, history
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-sm font-semibold">Monitor for policy changes</h2>
               {scheduleOn && schedule && (
-                <select
-                  aria-label="Monitoring frequency"
-                  className="form-input w-28 py-1 text-xs"
+                <SelectMenu
+                  label="Monitoring frequency"
+                  heading="Frequency"
+                  className="w-28"
                   value={schedule.cadence}
-                  onChange={(e) => actions.toggle.mutate({ enabled: true, cadence: e.target.value })}
-                >
-                  {CADENCES.map((c) => (
-                    <option key={c} value={c}>{titleCase(c)}</option>
-                  ))}
-                </select>
+                  options={CADENCES.map((cadence) => ({ value: cadence, label: titleCase(cadence) }))}
+                  onChange={(cadence) => actions.toggle.mutate({ enabled: true, cadence })}
+                />
               )}
             </div>
             <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
@@ -579,7 +613,7 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, history
                 : "Save a website source before enabling automatic monitoring."}
             </p>
             {scheduleOn && schedule && (
-              <p className="mt-2 text-xs text-slate-400">
+              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
                 {schedule.last_status !== "idle" ? `${titleCase(schedule.last_status)} · ` : ""}
                 Next check {schedule.next_run_at ? new Date(schedule.next_run_at).toLocaleString() : "not scheduled"}
               </p>
@@ -590,18 +624,20 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, history
       </section>
 
       {/* Analysis history */}
-      <section className="mt-8">
-        <div className="mb-3">
+      <section className="mt-5 sm:mt-8">
+        <div className="mb-2 sm:mb-3">
           <h2 className="text-sm font-semibold">Analysis history</h2>
           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
             Select a method to inspect its results.
           </p>
-          {historyActionError && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{historyActionError}</p>}
+          {historyActionError && <p role="alert" className="mt-2 status-error">{historyActionError}</p>}
         </div>
         {isLoading ? (
-          <p className="text-sm text-slate-400">Loading…</p>
+          <p role="status" className="quiet-state py-6">Loading analysis history…</p>
+        ) : isError ? (
+          <p role="alert" className="status-error">Could not load analysis history. {error instanceof Error ? error.message : "Try refreshing the page."}</p>
         ) : runs.length === 0 && provisionalTasks.length === 0 ? (
-          <p className="text-sm text-slate-400">
+          <p className="quiet-state py-6">
             No analyses yet. Analyze the saved website or upload a PDF to get started.
           </p>
         ) : (
@@ -644,7 +680,7 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, history
             <button type="button" className="btn-secondary" onClick={() => setDeleteTarget(null)}>Cancel</button>
             <button
               type="button"
-              className="rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+              className="btn-danger"
               disabled={actions.deleteRun.isPending}
               onClick={() => actions.deleteRun.mutate(deleteTarget.run_id, {
                 onSuccess: () => {
@@ -683,6 +719,7 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, history
           </div>
         </Modal>
       )}
+      </div>
     </div>
   );
 }

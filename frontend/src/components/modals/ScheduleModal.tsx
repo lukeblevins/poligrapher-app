@@ -5,6 +5,7 @@ import { api } from "../../api/client";
 import type { Provider, Schedule } from "../../api/types";
 import { useScheduleMutations, useSchedules } from "../../hooks/useSchedules";
 import { Modal } from "../Modal";
+import { SelectMenu } from "../SelectMenu";
 
 const CADENCES = ["daily", "weekly", "monthly"];
 
@@ -31,18 +32,15 @@ function ExistingSchedule({ schedule, providerId }: { schedule: Schedule; provid
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
-        <label className="form-label mb-0">Cadence</label>
-        <select
-          className="form-input w-40"
+        <span className="form-label mb-0">Cadence</span>
+        <SelectMenu
+          label="Schedule cadence"
+          heading="Cadence"
+          className="w-40"
           value={schedule.cadence}
-          onChange={(e) => m.update.mutate({ id: schedule.id, body: { cadence: e.target.value } })}
-        >
-          {CADENCES.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
+          options={CADENCES.map((cadence) => ({ value: cadence, label: cadence }))}
+          onChange={(cadence) => m.update.mutate({ id: schedule.id, body: { cadence } })}
+        />
         <label className="ml-2 flex items-center gap-1 text-sm">
           <input
             type="checkbox"
@@ -54,17 +52,17 @@ function ExistingSchedule({ schedule, providerId }: { schedule: Schedule; provid
       </div>
 
       <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-        <dt className="text-zinc-500">Status</dt>
+        <dt className="text-slate-500">Status</dt>
         <dd>{schedule.last_status}</dd>
-        <dt className="text-zinc-500">Last run</dt>
+        <dt className="text-slate-500">Last run</dt>
         <dd>{fmt(schedule.last_run_at)}</dd>
-        <dt className="text-zinc-500">Next run</dt>
+        <dt className="text-slate-500">Next run</dt>
         <dd>{fmt(schedule.next_run_at)}</dd>
-        <dt className="text-zinc-500">Resolved source</dt>
+        <dt className="text-slate-500">Resolved source</dt>
         <dd className="truncate">
           {schedule.last_strategy ? (
             <>
-              <span className="text-zinc-400">{schedule.last_strategy}</span>{" "}
+              <span className="text-slate-500 dark:text-slate-400">{schedule.last_strategy}</span>{" "}
               {schedule.last_source_url ? (
                 <a className="text-brand underline" href={schedule.last_source_url} target="_blank" rel="noreferrer">
                   {schedule.last_source_url}
@@ -90,6 +88,7 @@ function ExistingSchedule({ schedule, providerId }: { schedule: Schedule; provid
           </p>
           <div className="flex gap-2">
             <input
+              aria-label="Confirmed privacy policy URL"
               className="form-input flex-1"
               value={confirmUrl}
               onChange={(e) => setConfirmUrl(e.target.value)}
@@ -135,7 +134,7 @@ function CreateSchedule({ provider }: { provider: Provider }) {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-zinc-500 dark:text-zinc-400">
+      <p className="text-sm text-slate-500 dark:text-slate-400">
         No schedule yet. A schedule re-acquires this provider's privacy policy on a cadence and
         re-runs generation + scoring only when the policy actually changes.
       </p>
@@ -145,24 +144,24 @@ function CreateSchedule({ provider }: { provider: Provider }) {
           {preview.isFetching ? "Resolving source…" : "Preview current source"}
         </button>
         {preview.data && (
-          <div className="mt-2 rounded-md border border-zinc-200 p-3 text-sm dark:border-zinc-700">
+          <div className="mt-2 rounded-md border border-slate-200 p-3 text-sm dark:border-slate-700">
             {preview.data.resolved ? (
               <>
                 <div className="mb-1 flex items-center gap-2">
-                  <span className="text-zinc-400">{preview.data.strategy}</span>
+                  <span className="text-slate-500 dark:text-slate-400">{preview.data.strategy}</span>
                   <ConfidenceBadge confidence={preview.data.confidence} auto={preview.data.auto} />
                 </div>
                 <a className="break-all text-brand underline" href={preview.data.url ?? undefined} target="_blank" rel="noreferrer">
                   {preview.data.url}
                 </a>
                 {!preview.data.auto && (
-                  <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                  <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
                     Low confidence — runs will pause for you to confirm the source.
                   </p>
                 )}
               </>
             ) : (
-              <p className="text-amber-600 dark:text-amber-400">
+              <p className="text-amber-700 dark:text-amber-400">
                 No source could be resolved automatically ({preview.data.notes}). Runs will ask you
                 to confirm a URL.
               </p>
@@ -173,14 +172,15 @@ function CreateSchedule({ provider }: { provider: Provider }) {
 
       <div className="flex items-end gap-2">
         <div>
-          <label className="form-label">Cadence</label>
-          <select className="form-input w-40" value={cadence} onChange={(e) => setCadence(e.target.value)}>
-            {CADENCES.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
+          <span className="form-label">Cadence</span>
+          <SelectMenu
+            label="New schedule cadence"
+            heading="Cadence"
+            className="w-40"
+            value={cadence}
+            options={CADENCES.map((option) => ({ value: option, label: option }))}
+            onChange={setCadence}
+          />
         </div>
         <button
           className="btn-primary"
@@ -200,7 +200,7 @@ export function ScheduleModal({ provider, onClose }: { provider: Provider; onClo
   return (
     <Modal title={`Schedule · ${provider.name}`} onClose={onClose}>
       {isLoading ? (
-        <p className="text-sm text-zinc-400">Loading…</p>
+        <p role="status" className="text-sm text-slate-500 dark:text-slate-400">Loading schedule…</p>
       ) : schedules.length > 0 ? (
         <ExistingSchedule schedule={schedules[0]} providerId={provider.id} />
       ) : (

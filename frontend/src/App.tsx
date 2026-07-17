@@ -1,12 +1,13 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 
-import { DetailPane } from "./components/DetailPane";
 import { PolicyList } from "./components/PolicyList";
 import { ProviderSidebar } from "./components/ProviderSidebar";
 import { TopBar } from "./components/TopBar";
 import { TooltipProvider } from "./components/Tooltip";
 import type { Provider, TaskStatus } from "./api/types";
 import { useProviders } from "./hooks/queries";
+
+const DetailPane = lazy(() => import("./components/DetailPane").then((module) => ({ default: module.DetailPane })));
 
 export default function App() {
   const { data: providers = [] } = useProviders();
@@ -27,6 +28,11 @@ export default function App() {
     }
   }
 
+  function handleBackToCompanies() {
+    setSelectedProviderId(null);
+    setSelectedPolicyId(null);
+  }
+
   function handleViewRun(task: TaskStatus) {
     if (!task.provider_id || !providers.some((provider) => provider.id === task.provider_id)) return;
     setSelectedProviderId(task.provider_id);
@@ -36,31 +42,35 @@ export default function App() {
 
   return (
     <TooltipProvider>
-    <div className="flex h-full flex-col">
-      <TopBar onProviderCreated={handleSelectProvider} onViewRun={handleViewRun} />
-      <div className="flex flex-1 overflow-hidden">
-        <ProviderSidebar
-          selectedId={selectedProviderId}
-          onSelect={handleSelectProvider}
-          onDeleted={handleProviderDeleted}
-        />
-        <main className="flex flex-1 overflow-hidden bg-slate-50 dark:bg-slate-950">
-          <PolicyList
-            provider={selectedProvider}
-            selectedPolicyId={selectedPolicyId}
-            onSelectPolicy={setSelectedPolicyId}
-            historyTargetTaskId={historyTarget?.taskId ?? null}
-            historyTargetNonce={historyTarget?.nonce}
+      <div className="flex h-dvh min-h-0 flex-col overflow-hidden">
+        <TopBar onProviderCreated={handleSelectProvider} onViewRun={handleViewRun} />
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          <ProviderSidebar
+            selectedId={selectedProviderId}
+            onSelect={handleSelectProvider}
+            onDeleted={handleProviderDeleted}
+            mobileHidden={Boolean(selectedProvider)}
           />
-          {selectedPolicyId && (
-            <DetailPane
-              policyId={selectedPolicyId}
-              onClose={() => setSelectedPolicyId(null)}
+          <main className={`${selectedProvider ? "flex" : "hidden md:flex"} min-w-0 flex-1 overflow-hidden bg-slate-50 dark:bg-slate-950`}>
+            <PolicyList
+              provider={selectedProvider}
+              selectedPolicyId={selectedPolicyId}
+              onSelectPolicy={setSelectedPolicyId}
+              onBack={handleBackToCompanies}
+              historyTargetTaskId={historyTarget?.taskId ?? null}
+              historyTargetNonce={historyTarget?.nonce}
             />
-          )}
-        </main>
+            {selectedPolicyId && (
+              <Suspense fallback={<div role="status" className="flex flex-1 items-center justify-center p-6 text-sm text-slate-500">Loading analysis details…</div>}>
+                <DetailPane
+                  policyId={selectedPolicyId}
+                  onClose={() => setSelectedPolicyId(null)}
+                />
+              </Suspense>
+            )}
+          </main>
+        </div>
       </div>
-    </div>
     </TooltipProvider>
   );
 }

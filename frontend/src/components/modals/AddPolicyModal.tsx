@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { useAddPolicy } from "../../hooks/queries";
 import { Modal } from "../Modal";
+import { SelectMenu } from "../SelectMenu";
 
 export function AddPolicyModal({
   providerId,
@@ -38,21 +39,24 @@ export function AddPolicyModal({
     <Modal title="Add policy" onClose={onClose}>
       <form onSubmit={submit} className="space-y-3">
         <div>
-          <label className="form-label">Source</label>
-          <select
-            className="form-input"
+          <span className="form-label">Source</span>
+          <SelectMenu
+            label="Policy source type"
+            heading="Source"
             value={source}
-            onChange={(e) => setSource(e.target.value as "webpage" | "pdf")}
-          >
-            <option value="webpage">Webpage (URL)</option>
-            <option value="pdf">PDF upload</option>
-          </select>
+            options={[
+              { value: "webpage", label: "Webpage (URL)" },
+              { value: "pdf", label: "PDF upload" },
+            ]}
+            onChange={(value) => setSource(value as "webpage" | "pdf")}
+          />
         </div>
 
         {source === "webpage" ? (
           <div>
-            <label className="form-label">Policy URL</label>
+            <label className="form-label" htmlFor="new-policy-url">Policy URL</label>
             <input
+              id="new-policy-url"
               className="form-input"
               type="url"
               value={url}
@@ -64,8 +68,9 @@ export function AddPolicyModal({
           </div>
         ) : (
           <div>
-            <label className="form-label">PDF file</label>
+            <label className="form-label" htmlFor="new-policy-file">PDF file</label>
             <input
+              id="new-policy-file"
               className="form-input"
               type="file"
               accept="application/pdf"
@@ -76,8 +81,9 @@ export function AddPolicyModal({
         )}
 
         <div>
-          <label className="form-label">Capture date (optional)</label>
+          <label className="form-label" htmlFor="new-policy-date">Capture date (optional)</label>
           <input
+            id="new-policy-date"
             className="form-input"
             type="date"
             value={captureDate}
@@ -86,7 +92,7 @@ export function AddPolicyModal({
         </div>
 
         {addPolicy.isError && (
-          <p className="text-xs text-red-600 dark:text-red-400">
+          <p role="alert" className="status-error">
             {(addPolicy.error as Error).message}
           </p>
         )}
@@ -95,7 +101,7 @@ export function AddPolicyModal({
             Cancel
           </button>
           <button type="submit" className="btn-primary" disabled={addPolicy.isPending}>
-            {addPolicy.isPending ? "Adding…" : "Add"}
+            {addPolicy.isPending ? "Adding…" : "Add policy"}
           </button>
         </div>
       </form>

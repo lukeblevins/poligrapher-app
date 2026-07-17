@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import { AssessmentsPanel } from "./AssessmentsPanel";
 import { GraphViewer } from "./GraphViewer";
@@ -42,21 +42,37 @@ function TabIcon({ tab }: { tab: Tab }) {
 
 export function DetailPane({ policyId, onClose }: Props) {
   const [tab, setTab] = useState<Tab>("graph");
+  const tabsId = useId();
+
+  const selectAdjacentTab = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const currentIndex = TABS.findIndex((item) => item.id === tab);
+    const nextIndex = event.key === "Home" ? 0
+      : event.key === "End" ? TABS.length - 1
+        : event.key === "ArrowRight" ? (currentIndex + 1) % TABS.length
+          : (currentIndex - 1 + TABS.length) % TABS.length;
+    const nextTab = TABS[nextIndex].id;
+    setTab(nextTab);
+    event.currentTarget.querySelector<HTMLButtonElement>(`#${CSS.escape(`${tabsId}-${nextTab}`)}`)?.focus();
+  };
 
   return (
     <div
-      className="flex flex-shrink-0 flex-col border-l border-slate-300 bg-white dark:border-slate-800 dark:bg-slate-900"
-      style={{ width: "52%" }}
+      className="flex w-full flex-shrink-0 flex-col border-l border-slate-300 bg-white xl:w-[52%] dark:border-slate-800 dark:bg-slate-900"
+      aria-label="Analysis details"
     >
       <div className="flex flex-shrink-0 items-stretch justify-between border-b border-slate-300 bg-slate-50 dark:border-slate-800 dark:bg-slate-950">
-        <div role="tablist" aria-label="Analysis views" className="flex">
+        <div role="tablist" aria-label="Analysis views" className="flex min-w-0" onKeyDown={selectAdjacentTab}>
           {TABS.map((t) => (
             <button
               key={t.id}
+              id={`${tabsId}-${t.id}`}
               role="tab"
               aria-selected={tab === t.id}
-              aria-controls="analysis-detail-panel"
-              className={`flex items-center gap-2 border-r border-slate-300 px-4 py-3 text-xs font-semibold transition-colors first:border-l dark:border-slate-800 ${
+              aria-controls={`${tabsId}-panel`}
+              tabIndex={tab === t.id ? 0 : -1}
+              className={`flex min-h-12 min-w-0 items-center gap-1.5 border-r border-slate-300 px-3 py-3 text-xs font-semibold transition-colors sm:gap-2 sm:px-4 first:border-l dark:border-slate-800 ${
                 tab === t.id
                   ? "bg-white text-slate-950 dark:bg-slate-900 dark:text-white"
                   : "text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-slate-100"
@@ -69,15 +85,24 @@ export function DetailPane({ policyId, onClose }: Props) {
           ))}
         </div>
         <button
-          className="my-auto mr-3 grid h-8 w-8 place-items-center rounded text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+          className="icon-button my-auto mr-1.5 sm:mr-3"
           onClick={onClose}
-          aria-label="Close panel"
+          aria-label="Close analysis details"
         >
-          ✕
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4" aria-hidden="true">
+            <path className="xl:hidden" d="m12 5-5 5 5 5" strokeLinecap="round" strokeLinejoin="round" />
+            <path className="hidden xl:block" d="m5 5 10 10M15 5 5 15" strokeLinecap="round" />
+          </svg>
         </button>
       </div>
 
-      <div id="analysis-detail-panel" role="tabpanel" className="min-h-0 flex-1 overflow-hidden">
+      <div
+        id={`${tabsId}-panel`}
+        role="tabpanel"
+        aria-labelledby={`${tabsId}-${tab}`}
+        tabIndex={0}
+        className="min-h-0 flex-1 overflow-hidden focus-visible:ring-inset"
+      >
         {tab === "graph" && (
           <div className="h-full">
             <GraphViewer key={policyId} policyId={policyId} />

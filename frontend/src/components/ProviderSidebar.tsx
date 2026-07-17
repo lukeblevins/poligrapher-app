@@ -1,17 +1,21 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { Provider } from "../api/types";
 import { useCollections, useDeleteProvider, useProviders } from "../hooks/queries";
 import { CompanyLogo } from "./CompanyLogo";
 import { Modal } from "./Modal";
 import { OverflowMenu } from "./OverflowMenu";
+import { SelectMenu } from "./SelectMenu";
 import { Tooltip } from "./Tooltip";
 
 interface Props {
   selectedId: string | null;
   onSelect: (provider: Provider) => void;
   onDeleted?: (id: string) => void;
+  mobileHidden?: boolean;
 }
+
+const PROVIDER_BATCH_SIZE = 100;
 
 interface IndustryOption {
   key: string;
@@ -68,7 +72,7 @@ function companyHealth(p: Provider): { color: string; label: string; detail: str
   if (p.source_status === "available") {
     return { color: "bg-teal-500", label: "Ready", detail: `Source: ${sourceLabel}. Analyses: ${analysisLabel}.` };
   }
-  return { color: "bg-slate-300 dark:bg-slate-600", label: "Not ready", detail: `Source: ${sourceLabel}. Analyses: ${analysisLabel}.` };
+  return { color: "bg-slate-500 dark:bg-slate-400", label: "Not ready", detail: `Source: ${sourceLabel}. Analyses: ${analysisLabel}.` };
 }
 
 function logoDomain(p: Provider): string | null {
@@ -81,8 +85,12 @@ function logoDomain(p: Provider): string | null {
   }
 }
 
-export function ProviderSidebar({ selectedId, onSelect, onDeleted }: Props) {
-  const { data: providers = [], isLoading } = useProviders();
+function analysisCount(count: number): string {
+  return `${count} ${count === 1 ? "analysis" : "analyses"}`;
+}
+
+export function ProviderSidebar({ selectedId, onSelect, onDeleted, mobileHidden = false }: Props) {
+  const { data: providers = [], isLoading, isError, error } = useProviders();
   const { data: collections = [] } = useCollections();
   const deleteProvider = useDeleteProvider();
   const [query, setQuery] = useState("");
@@ -90,14 +98,15 @@ export function ProviderSidebar({ selectedId, onSelect, onDeleted }: Props) {
   const [selectedIndustries, setSelectedIndustries] = useState<string[]>([]);
   const [industryMenuOpen, setIndustryMenuOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Provider | null>(null);
+  const [visibleCount, setVisibleCount] = useState(PROVIDER_BATCH_SIZE);
   const industryMenuRef = useRef<HTMLDivElement>(null);
   const industryButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!industryMenuOpen) return;
 
-    const closeOnOutsideClick = (event: MouseEvent) => {
-      if (!industryMenuRef.current?.contains(event.target as Node)) {
+    const closeOnOutsideInteraction = (event: PointerEvent | FocusEvent) => {
+      if (event.target instanceof Node && !industryMenuRef.current?.contains(event.target)) {
         setIndustryMenuOpen(false);
       }
     };
@@ -108,30 +117,47 @@ export function ProviderSidebar({ selectedId, onSelect, onDeleted }: Props) {
       }
     };
 
-    document.addEventListener("mousedown", closeOnOutsideClick);
+    document.addEventListener("pointerdown", closeOnOutsideInteraction, true);
+    document.addEventListener("focusin", closeOnOutsideInteraction, true);
     document.addEventListener("keydown", closeOnEscape);
     return () => {
-      document.removeEventListener("mousedown", closeOnOutsideClick);
+      document.removeEventListener("pointerdown", closeOnOutsideInteraction, true);
+      document.removeEventListener("focusin", closeOnOutsideInteraction, true);
       document.removeEventListener("keydown", closeOnEscape);
     };
   }, [industryMenuOpen]);
 
-  const selectedCollection = collections.find((collection) => collection.id === collectionId);
-  const collectionMembers = selectedCollection ? new Set(selectedCollection.provider_ids) : null;
-  const industries = getIndustryOptions(providers);
-  const industryLabels = new Map(industries.map((industry) => [industry.key, industry.label]));
-  const selectedIndustrySet = new Set(selectedIndustries);
+  const industries = useMemo(() => getIndustryOptions(providers), [providers]);
+  const industryLabels = useMemo(() => new Map(industries.map((industry) => [industry.key, industry.label])), [industries]);
+  const selectedIndustrySet = useMemo(() => new Set(selectedIndustries), [selectedIndustries]);
   const industryLabel = selectedIndustries.length === 0
     ? "All industries"
     : selectedIndustries.length === 1
       ? industries.find((industry) => industry.key === selectedIndustries[0])?.label ?? selectedIndustries[0]
       : `${selectedIndustries.length} industries`;
-  const needle = query.toLowerCase();
-  const filtered = providers.filter((provider) =>
-    (!collectionMembers || collectionMembers.has(provider.id))
-    && (selectedIndustries.length === 0 || (!!provider.industry && selectedIndustrySet.has(normalizeIndustry(provider.industry))))
-    && (provider.name.toLowerCase().includes(needle) || provider.tickers.some((ticker) => ticker.toLowerCase().includes(needle))),
-  );
+  const filtered = useMemo(() => {
+    const selectedCollection = collections.find((collection) => collection.id === collectionId);
+    const collectionMembers = selectedCollection ? new Set(selectedCollection.provider_ids) : null;
+    const needle = query.toLowerCase();
+    return providers.filter((provider) =>
+      (!collectionMembers || collectionMembers.has(provider.id))
+      && (selectedIndustries.length === 0 || (!!provider.industry && selectedIndustrySet.has(normalizeIndustry(provider.industry))))
+      && (provider.name.toLowerCase().includes(needle) || provider.tickers.some((ticker) => ticker.toLowerCase().includes(needle))),
+    );
+  }, [collectionId, collections, providers, query, selectedIndustries.length, selectedIndustrySet]);
+  const visibleProviders = filtered.slice(0, visibleCount);
+
+  useEffect(() => {
+    setVisibleCount(PROVIDER_BATCH_SIZE);
+  }, [query, collectionId, selectedIndustries]);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    const selectedIndex = filtered.findIndex((provider) => provider.id === selectedId);
+    if (selectedIndex >= visibleCount) {
+      setVisibleCount(Math.ceil((selectedIndex + 1) / PROVIDER_BATCH_SIZE) * PROVIDER_BATCH_SIZE);
+    }
+  }, [filtered, selectedId, visibleCount]);
 
   const toggleIndustry = (industry: string) => {
     setSelectedIndustries((current) => current.includes(industry)
@@ -140,10 +166,13 @@ export function ProviderSidebar({ selectedId, onSelect, onDeleted }: Props) {
   };
 
   return (
-    <aside className="flex w-72 flex-shrink-0 flex-col border-r border-slate-200/80 bg-white dark:border-slate-800 dark:bg-slate-950">
+    <aside
+      aria-label="Company browser"
+      className={`${mobileHidden ? "hidden md:flex" : "flex"} w-full flex-shrink-0 flex-col border-r border-slate-200/80 bg-white md:w-72 dark:border-slate-800 dark:bg-slate-950`}
+    >
       <div className="border-b border-slate-100 px-4 py-4 dark:border-slate-800">
         <div className="mb-2.5 flex items-center justify-between px-0.5">
-          <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Companies</span>
+          <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">Companies</span>
           <span
             className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400"
             aria-live="polite"
@@ -153,7 +182,9 @@ export function ProviderSidebar({ selectedId, onSelect, onDeleted }: Props) {
             {filtered.length}
           </span>
         </div>
+        <label className="sr-only" htmlFor="company-search">Search companies</label>
         <input
+          id="company-search"
           type="search"
           className="form-input"
           placeholder="Search companies…"
@@ -161,19 +192,23 @@ export function ProviderSidebar({ selectedId, onSelect, onDeleted }: Props) {
           onChange={(e) => setQuery(e.target.value)}
         />
         <div className="mt-2 grid grid-cols-2 gap-2">
-          <label>
-            <span className="sr-only">Company collection</span>
-            <select className="form-input py-1.5 text-xs" value={collectionId} onChange={(event) => setCollectionId(event.target.value)}>
-              <option value="all">All collections</option>
-              {collections.map((collection) => <option key={collection.id} value={collection.id}>{collection.name}</option>)}
-            </select>
-          </label>
+          <SelectMenu
+            label="Company collection"
+            heading="Collections"
+            value={collectionId}
+            options={[
+              { value: "all", label: "All collections" },
+              ...collections.map((collection) => ({ value: collection.id, label: collection.name })),
+            ]}
+            onChange={setCollectionId}
+          />
           <div className="relative" ref={industryMenuRef}>
             <button
               ref={industryButtonRef}
               type="button"
               className="form-input flex items-center justify-between gap-2 py-1.5 text-left text-xs"
               aria-label={`Filter by industries, ${industryLabel}`}
+              aria-haspopup="true"
               aria-expanded={industryMenuOpen}
               aria-controls="industry-filter-menu"
               onClick={() => setIndustryMenuOpen((open) => !open)}
@@ -218,12 +253,17 @@ export function ProviderSidebar({ selectedId, onSelect, onDeleted }: Props) {
           </div>
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto">
-        {isLoading && <p className="p-4 text-sm text-slate-400">Loading…</p>}
-        {!isLoading && filtered.length === 0 && (
-          <p className="p-4 text-sm text-slate-400">No companies.</p>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {isLoading && <p role="status" className="p-4 text-sm text-slate-500 dark:text-slate-400">Loading companies…</p>}
+        {isError && (
+          <div role="alert" className="m-4 status-error">
+            Could not load companies. {error instanceof Error ? error.message : "Try refreshing the page."}
+          </div>
         )}
-        {filtered.map((p) => {
+        {!isLoading && !isError && filtered.length === 0 && (
+          <p className="m-4 quiet-state py-6">No companies match these filters.</p>
+        )}
+        {visibleProviders.map((p) => {
           const health = companyHealth(p);
           return (
           <div
@@ -256,8 +296,8 @@ export function ProviderSidebar({ selectedId, onSelect, onDeleted }: Props) {
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate">{p.name}</span>
-                <span className="mt-0.5 block truncate text-xs font-normal text-slate-400 dark:text-slate-500">
-                  {p.ticker ? `${p.ticker} · ` : ""}{p.industry ? industryLabels.get(normalizeIndustry(p.industry)) ?? p.industry : "Uncategorized"} · {p.policy_count} results
+                <span className="mt-0.5 block truncate text-xs font-normal text-slate-500 dark:text-slate-400">
+                  {p.ticker ? `${p.ticker} · ` : ""}{p.industry ? industryLabels.get(normalizeIndustry(p.industry)) ?? p.industry : "Uncategorized"} · {analysisCount(p.policy_count)}
                 </span>
               </span>
             </button>
@@ -269,17 +309,38 @@ export function ProviderSidebar({ selectedId, onSelect, onDeleted }: Props) {
             />
           </div>
         );})}
+        {visibleProviders.length > 0 && (
+          <div className="border-t border-slate-100 px-4 py-3 text-center dark:border-slate-800">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Showing {visibleProviders.length} of {filtered.length} companies
+            </p>
+            {visibleProviders.length < filtered.length && (
+              <button
+                type="button"
+                className="mt-1 min-h-10 text-xs font-semibold text-teal-700 hover:underline dark:text-teal-400"
+                onClick={() => setVisibleCount((count) => count + PROVIDER_BATCH_SIZE)}
+              >
+                Show {Math.min(PROVIDER_BATCH_SIZE, filtered.length - visibleProviders.length)} more
+              </button>
+            )}
+          </div>
+        )}
       </div>
       {deleteTarget && (
         <Modal title="Delete company" onClose={() => setDeleteTarget(null)}>
           <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
             Delete {deleteTarget.name} and all of its policy analyses? This can’t be undone.
           </p>
+          {deleteProvider.isError && (
+            <p role="alert" className="mt-3 status-error">
+              {deleteProvider.error instanceof Error ? deleteProvider.error.message : "The company could not be deleted."}
+            </p>
+          )}
           <div className="mt-5 flex justify-end gap-2">
             <button type="button" className="btn-secondary" onClick={() => setDeleteTarget(null)}>Cancel</button>
             <button
               type="button"
-              className="rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+              className="btn-danger"
               disabled={deleteProvider.isPending}
               onClick={() => deleteProvider.mutate(deleteTarget.id, {
                 onSuccess: () => {
