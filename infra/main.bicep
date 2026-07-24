@@ -195,6 +195,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           resources: { cpu: json('0.5'), memory: '1Gi' }
           env: concat([
             { name: 'APP_ENV', value: 'production' }
+            { name: 'RUN_MIGRATIONS', value: 'false' }
             { name: 'DATABASE_URL', secretRef: 'database-url' }
             { name: 'STORAGE_BACKEND', value: 'azure' }
             { name: 'AZURE_STORAGE_CONNECTION_STRING', secretRef: 'storage-connection' }
@@ -208,6 +209,42 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
         }
       ]
       scale: { minReplicas: 0, maxReplicas: 1, rules: [ { name: 'http', http: { metadata: { concurrentRequests: '1' } } } ] }
+    }
+  }
+}
+
+resource migrations 'Microsoft.App/jobs@2024-03-01' = {
+  name: '${namePrefix}-migrations'
+  location: location
+  tags: tags
+  properties: {
+    environmentId: containerEnv.id
+    workloadProfileName: 'Consumption'
+    configuration: {
+      triggerType: 'Manual'
+      replicaTimeout: 600
+      replicaRetryLimit: 0
+      manualTriggerConfig: {
+        parallelism: 1
+        replicaCompletionCount: 1
+      }
+      secrets: [
+        { name: 'database-url', value: databaseUrl }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'migrations'
+          image: webImage
+          command: [ 'alembic', 'upgrade', 'head' ]
+          resources: { cpu: json('0.25'), memory: '0.5Gi' }
+          env: [
+            { name: 'APP_ENV', value: 'production' }
+            { name: 'DATABASE_URL', secretRef: 'database-url' }
+          ]
+        }
+      ]
     }
   }
 }
@@ -317,5 +354,6 @@ resource analysisWorker 'Microsoft.App/jobs@2024-03-01' = {
 }
 
 output appUrl string = 'https://${app.properties.configuration.ingress.fqdn}'
+output migrationJobName string = migrations.name
 output postgresHost string = postgres.properties.fullyQualifiedDomainName
 output storageAccount string = storage.name

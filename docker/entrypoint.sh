@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Apply explicit schema migrations before serving traffic.
-echo "Applying database migrations..."
-alembic upgrade head
+# Standalone deployments migrate on startup. Azure disables this because its
+# deployment workflow runs the same command as a gated Container Apps Job.
+if [[ "${RUN_MIGRATIONS:-true}" == "true" ]]; then
+  echo "Applying database migrations..."
+  alembic upgrade head
+fi
 
 # Seed the database from the bundled CSV. migrate_csv is idempotent.
 echo "Seeding database..."

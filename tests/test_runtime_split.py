@@ -159,3 +159,19 @@ def test_dockerfile_exposes_separate_web_and_worker_targets():
     assert " AS worker" in dockerfile
     assert "pip install --user --no-cache-dir ." in dockerfile
     assert "pip install --user --no-cache-dir '.[analysis]'" in dockerfile
+
+
+def test_azure_deploy_uses_oidc_and_gated_migrations():
+    workflow = open(".github/workflows/deploy-azure.yml").read()
+    infrastructure = open("infra/main.bicep").read()
+    entrypoint = open("docker/entrypoint.sh").read()
+
+    assert "id-token: write" in workflow
+    assert "azure/login@v2" in workflow
+    assert "azure-production" in workflow
+    assert "az containerapp job start" in workflow
+    assert "Verify deployed application" in workflow
+    assert "triggerType: 'Manual'" in infrastructure
+    assert "command: [ 'alembic', 'upgrade', 'head' ]" in infrastructure
+    assert "{ name: 'RUN_MIGRATIONS', value: 'false' }" in infrastructure
+    assert "RUN_MIGRATIONS:-true" in entrypoint
