@@ -2,14 +2,13 @@ import json
 import logging
 import sys
 import tomllib
+from types import SimpleNamespace
 
-import pytest
-from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from poligrapher_app.api.database import Base
-from poligrapher_app.api.routers.analysis import _require_task_output_access
+from poligrapher_app.api.routers.analysis import get_task_output
 from poligrapher_app.services import tasks as task_module
 from poligrapher_app.services.task_execution import execute_task
 from poligrapher_app.services.task_output import _TaskLogSink, capture_task_output
@@ -91,17 +90,66 @@ def test_task_output_batches_short_lines():
     assert registry.chunks == [("task", "short line\n" * 100)]
 
 
-def test_task_output_requires_export_token_only_in_production(monkeypatch):
-    monkeypatch.setenv("APP_ENV", "development")
-    _require_task_output_access(None)
+def test_task_output_endpoint_is_public():
+    class Registry:
+        @staticmethod
+        def get_output(task_id):
+            return {
+                "task_id": task_id,
+                "status": "done",
+                "output": "safe output",
+                "truncated": False,
+            }
 
-    monkeypatch.setenv("APP_ENV", "production")
-    monkeypatch.setenv("EXPORT_TOKEN", "expected")
-    with pytest.raises(HTTPException) as error:
-        _require_task_output_access(None)
-    assert error.value.status_code == 401
+    request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(tasks=Registry())),
+    )
 
-    _require_task_output_access("Bearer expected")
+    assert get_task_output("task-id", request).output == "safe output"
+
+
+def test_task_output_redacts_environment_secrets(tmp_path, monkeypatch):
+    engine = create_engine(f"sqlite:///{tmp_path / 'redaction.db'}")
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine, expire_on_commit=False)
+    monkeypatch.setattr(task_module, "SessionLocal", session)
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql+psycopg://admin:database%40password@example.test/database",
+    )
+    monkeypatch.setenv(
+        "AZURE_STORAGE_CONNECTION_STRING",
+        "DefaultEndpointsProtocol=https;AccountName=example;AccountKey=storage-secret-key",
+    )
+    monkeypatch.setenv("CRAWL_PROXY_PASSWORD", "proxy-secret-password")
+    monkeypatch.setenv("SCRAPE_API_KEY", "scrape-secret-key")
+    monkeypatch.setenv("EXPORT_TOKEN", "export-secret-token")
+
+    registry = task_module.TaskRegistry()
+    task_id = registry.create(kind="comparison", title="Redaction", total=1)
+    registry.append_output(
+        task_id,
+        " ".join([
+            "postgresql+psycopg://admin:database%40password@example.test/database",
+            "database@password",
+            "storage-secret-key",
+            "proxy-secret-password",
+            "scrape-secret-key",
+            "export-secret-token",
+        ]),
+    )
+
+    output = registry.get_output(task_id)["output"]
+    for secret in (
+        "database%40password",
+        "database@password",
+        "storage-secret-key",
+        "proxy-secret-password",
+        "scrape-secret-key",
+        "export-secret-token",
+    ):
+        assert secret not in output
+    assert output.count("[REDACTED]") >= 5
 
 
 def test_task_output_captures_streams_and_logging(tmp_path, monkeypatch):

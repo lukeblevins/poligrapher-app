@@ -50,7 +50,7 @@ Configure these **environment secrets**:
 | Name | Required | Purpose |
 |---|---:|---|
 | `POSTGRES_PASSWORD` | yes | PostgreSQL administrator password |
-| `EXPORT_TOKEN` | yes | Protected source, artifact, and task-output access |
+| `EXPORT_TOKEN` | yes | Protected source and artifact access |
 | `CRAWL_PROXY` | no | Existing proxy endpoint |
 | `CRAWL_PROXY_USERNAME` | no | Existing proxy username |
 | `CRAWL_PROXY_PASSWORD` | no | Existing proxy password |

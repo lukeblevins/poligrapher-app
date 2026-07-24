@@ -12,6 +12,7 @@ import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from urllib.parse import parse_qsl, quote, quote_plus, unquote, urlsplit
 
 from sqlalchemy import and_, or_
 
@@ -23,6 +24,61 @@ _RECENT = timedelta(minutes=15)
 _FAILED_RECENT = timedelta(days=7)
 _MAX_OUTPUT_CHARS = 250_000
 _TRUNCATION_NOTICE = "[Earlier terminal output was truncated.]\n"
+_REDACTION = "[REDACTED]"
+_SENSITIVE_ENV_NAMES = (
+    "DATABASE_URL",
+    "AZURE_STORAGE_CONNECTION_STRING",
+    "AZURE_QUEUE_CONNECTION_STRING",
+    "EXPORT_TOKEN",
+    "CRAWL_PROXY",
+    "CRAWL_PROXY_USERNAME",
+    "CRAWL_PROXY_PASSWORD",
+    "SCRAPE_API_URL",
+    "SCRAPE_API_KEY",
+    "GITHUB_TOKEN",
+)
+_SENSITIVE_COMPONENT_NAMES = ("key", "password", "secret", "signature", "token")
+
+
+def _sensitive_output_values() -> list[str]:
+    values: set[str] = set()
+
+    def add(value: str | None) -> None:
+        if value and len(value) >= 6:
+            values.add(value)
+            decoded = unquote(value)
+            if len(decoded) >= 6:
+                values.add(decoded)
+                values.add(quote(decoded, safe=""))
+                values.add(quote_plus(decoded, safe=""))
+
+    for name in _SENSITIVE_ENV_NAMES:
+        value = (os.getenv(name) or "").strip()
+        if not value:
+            continue
+        add(value)
+
+        if "://" in value:
+            parsed = urlsplit(value)
+            add(parsed.password)
+            for key, component in parse_qsl(parsed.query, keep_blank_values=True):
+                if any(marker in key.lower() for marker in _SENSITIVE_COMPONENT_NAMES):
+                    add(component)
+
+        for part in value.split(";"):
+            key, separator, component = part.partition("=")
+            if separator and any(
+                marker in key.lower() for marker in _SENSITIVE_COMPONENT_NAMES
+            ):
+                add(component)
+
+    return sorted(values, key=len, reverse=True)
+
+
+def _redact_output(value: str) -> str:
+    for sensitive in _sensitive_output_values():
+        value = value.replace(sensitive, _REDACTION)
+    return value
 
 
 def _now() -> datetime:
@@ -151,7 +207,7 @@ class TaskRegistry:
             task = db.get(TaskRecord, uuid.UUID(task_id))
             if task is None:
                 return
-            output = (task.output or "") + chunk.replace("\x00", "")
+            output = _redact_output((task.output or "") + chunk.replace("\x00", ""))
             if len(output) > _MAX_OUTPUT_CHARS:
                 keep = _MAX_OUTPUT_CHARS - len(_TRUNCATION_NOTICE)
                 output = _TRUNCATION_NOTICE + output[-keep:]
