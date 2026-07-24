@@ -1,0 +1,247 @@
+name: Deploy to Azure
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_what_if:
+        description: Preview the Bicep changes before deployment
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: azure-production
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }} image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [web, worker]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          push: true
+          platforms: linux/amd64
+          tags: ghcr.io/${{ github.repository }}:azure-${{ matrix.target }}-${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.target }}
+
+  deploy:
+    name: Deploy production
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: azure-production
+      url: ${{ steps.deploy.outputs.app_url }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AZURE_CORE_OUTPUT: none
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_NAME_PREFIX: ${{ vars.AZURE_NAME_PREFIX }}
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      EXPORT_TOKEN: ${{ secrets.EXPORT_TOKEN }}
+      CRAWL_PROXY: ${{ secrets.CRAWL_PROXY }}
+      CRAWL_PROXY_USERNAME: ${{ secrets.CRAWL_PROXY_USERNAME }}
+      CRAWL_PROXY_PASSWORD: ${{ secrets.CRAWL_PROXY_PASSWORD }}
+      CRAWL_PROXY_MODE: ${{ vars.CRAWL_PROXY_MODE }}
+      SCRAPE_API_URL: ${{ secrets.SCRAPE_API_URL }}
+      SCRAPE_API_KEY: ${{ secrets.SCRAPE_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Validate deployment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in AZURE_RESOURCE_GROUP AZURE_NAME_PREFIX AZURE_LOCATION POSTGRES_PASSWORD EXPORT_TOKEN; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing GitHub Environment configuration: $name"
+              exit 1
+            fi
+          done
+          az group show --name "$AZURE_RESOURCE_GROUP" --only-show-errors
+
+      - name: Resolve immutable image names
+        id: images
+        shell: bash
+        run: |
+          set -euo pipefail
+          image_repo="ghcr.io/${GITHUB_REPOSITORY,,}"
+          web_image="${image_repo}:azure-web-${GITHUB_SHA}"
+          worker_image="${image_repo}:azure-worker-${GITHUB_SHA}"
+          docker manifest inspect "$web_image" >/dev/null
+          docker manifest inspect "$worker_image" >/dev/null
+          echo "web_image=$web_image" >> "$GITHUB_OUTPUT"
+          echo "worker_image=$worker_image" >> "$GITHUB_OUTPUT"
+
+      - name: Preview infrastructure changes
+        if: inputs.run_what_if
+        shell: bash
+        env:
+          WEB_IMAGE: ${{ steps.images.outputs.web_image }}
+          WORKER_IMAGE: ${{ steps.images.outputs.worker_image }}
+        run: |
+          set -euo pipefail
+          parameters=(
+            "namePrefix=$AZURE_NAME_PREFIX"
+            "location=$AZURE_LOCATION"
+            "webImage=$WEB_IMAGE"
+            "workerImage=$WORKER_IMAGE"
+            "postgresPassword=$POSTGRES_PASSWORD"
+            "exportToken=$EXPORT_TOKEN"
+            "crawlProxyMode=${CRAWL_PROXY_MODE:-fallback}"
+          )
+          [ -n "${CRAWL_PROXY:-}" ] && parameters+=("crawlProxy=$CRAWL_PROXY")
+          [ -n "${CRAWL_PROXY_USERNAME:-}" ] && parameters+=("crawlProxyUsername=$CRAWL_PROXY_USERNAME")
+          [ -n "${CRAWL_PROXY_PASSWORD:-}" ] && parameters+=("crawlProxyPassword=$CRAWL_PROXY_PASSWORD")
+          [ -n "${SCRAPE_API_URL:-}" ] && parameters+=("scrapeApiUrl=$SCRAPE_API_URL")
+          [ -n "${SCRAPE_API_KEY:-}" ] && parameters+=("scrapeApiKey=$SCRAPE_API_KEY")
+          az deployment group what-if \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --template-file infra/main.bicep \
+            --parameters "${parameters[@]}" \
+            --no-pretty-print \
+            --result-format ResourceIdOnly \
+            --output table \
+            --only-show-errors
+
+      - name: Deploy infrastructure and application
+        id: deploy
+        shell: bash
+        env:
+          WEB_IMAGE: ${{ steps.images.outputs.web_image }}
+          WORKER_IMAGE: ${{ steps.images.outputs.worker_image }}
+        run: |
+          set -euo pipefail
+          deployment_name="github-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          parameters=(
+            "namePrefix=$AZURE_NAME_PREFIX"
+            "location=$AZURE_LOCATION"
+            "webImage=$WEB_IMAGE"
+            "workerImage=$WORKER_IMAGE"
+            "postgresPassword=$POSTGRES_PASSWORD"
+            "exportToken=$EXPORT_TOKEN"
+            "crawlProxyMode=${CRAWL_PROXY_MODE:-fallback}"
+          )
+          [ -n "${CRAWL_PROXY:-}" ] && parameters+=("crawlProxy=$CRAWL_PROXY")
+          [ -n "${CRAWL_PROXY_USERNAME:-}" ] && parameters+=("crawlProxyUsername=$CRAWL_PROXY_USERNAME")
+          [ -n "${CRAWL_PROXY_PASSWORD:-}" ] && parameters+=("crawlProxyPassword=$CRAWL_PROXY_PASSWORD")
+          [ -n "${SCRAPE_API_URL:-}" ] && parameters+=("scrapeApiUrl=$SCRAPE_API_URL")
+          [ -n "${SCRAPE_API_KEY:-}" ] && parameters+=("scrapeApiKey=$SCRAPE_API_KEY")
+          az deployment group create \
+            --name "$deployment_name" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --template-file infra/main.bicep \
+            --parameters "${parameters[@]}" \
+            --only-show-errors
+          app_url="$(az deployment group show \
+            --name "$deployment_name" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --query properties.outputs.appUrl.value \
+            --output tsv \
+            --only-show-errors)"
+          echo "app_url=$app_url" >> "$GITHUB_OUTPUT"
+
+      - name: Run database migrations in Azure
+        shell: bash
+        run: |
+          set -euo pipefail
+          job_name="${AZURE_NAME_PREFIX}-migrations"
+          previous_execution="$(az containerapp job execution list \
+            --name "$job_name" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --query 'sort_by(@, &properties.startTime)[-1].name' \
+            --output tsv \
+            --only-show-errors || true)"
+          az containerapp job start \
+            --name "$job_name" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --no-wait \
+            --only-show-errors
+
+          execution_name=""
+          for attempt in {1..60}; do
+            candidate="$(az containerapp job execution list \
+              --name "$job_name" \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --query 'sort_by(@, &properties.startTime)[-1].name' \
+              --output tsv \
+              --only-show-errors || true)"
+            if [ -n "$candidate" ] && [ "$candidate" != "$previous_execution" ]; then
+              execution_name="$candidate"
+              break
+            fi
+            sleep 5
+          done
+          if [ -z "$execution_name" ]; then
+            echo "::error::Azure did not create a migration execution."
+            exit 1
+          fi
+
+          for attempt in {1..120}; do
+            status="$(az containerapp job execution show \
+              --name "$job_name" \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --job-execution-name "$execution_name" \
+              --query properties.status \
+              --output tsv \
+              --only-show-errors)"
+            case "$status" in
+              Succeeded)
+                echo "Database migrations completed."
+                exit 0
+                ;;
+              Failed|Stopped|Degraded)
+                echo "::error::Migration execution $execution_name ended with status $status."
+                exit 1
+                ;;
+            esac
+            sleep 5
+          done
+          echo "::error::Migration execution $execution_name did not finish within 10 minutes."
+          exit 1
+
+      - name: Verify deployed application
+        shell: bash
+        env:
+          APP_URL: ${{ steps.deploy.outputs.app_url }}
+        run: |
+          set -euo pipefail
+          for attempt in {1..60}; do
+            if curl --fail --silent --show-error --max-time 20 "$APP_URL/api/providers" >/dev/null; then
+              echo "Deployment verified at $APP_URL"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::The deployed application did not become healthy within 10 minutes."
+          exit 1
