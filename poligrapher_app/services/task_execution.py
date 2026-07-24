@@ -101,12 +101,20 @@ def _rerun_upload(task_id: str, payload: dict, registry) -> None:
         temp_root = os.getenv("TEMP_WORKSPACE_ROOT") or None
         with tempfile.TemporaryDirectory(prefix="poligrapher-rerun-upload-", dir=temp_root) as workspace:
             source = Path(workspace) / (original.source_filename or "source.pdf")
-            storage = get_storage()
-            storage.download_file(original.source_blob_key, source)
-            policy.source_blob_key = source_key(policy.id, policy.source_filename or source.name)
-            storage.upload_file(policy.source_blob_key, source, content_type="application/pdf")
-            policy.content_hash = file_hash(str(source))
-            db.commit()
+            try:
+                storage = get_storage()
+                storage.download_file(original.source_blob_key, source)
+                policy.source_blob_key = source_key(policy.id, policy.source_filename or source.name)
+                storage.upload_file(policy.source_blob_key, source, content_type="application/pdf")
+                policy.content_hash = file_hash(str(source))
+                db.commit()
+            except Exception as exc:
+                policy.pipeline_status = "failed"
+                policy.pipeline_errors = list(policy.pipeline_errors or []) + [
+                    f"Saved PDF could not be restored: {exc}"
+                ]
+                db.commit()
+                raise
     _settle_result(
         task_id,
         run_upload(policy_id, registry=registry, task_id=task_id),

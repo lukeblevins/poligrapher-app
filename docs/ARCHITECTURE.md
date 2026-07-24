@@ -50,6 +50,9 @@ scoring/    In-repo heuristic PrivacyScorer + its TOML rules/criteria.
 Tasks are durable `TaskRecord` rows. Production publishes task IDs to Azure Queue
 Storage; local development executes the same dispatcher in a thread. Clients
 poll `GET /api/tasks/{task_id}`, so status survives web scale-to-zero restarts.
+Captured worker output is available without credentials in development. In
+production, `GET /api/tasks/{task_id}/output` requires the same `EXPORT_TOKEN`
+bearer credential as retained source and artifact downloads.
 
 ## Persistence
 

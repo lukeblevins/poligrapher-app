@@ -5,9 +5,13 @@ from __future__ import annotations
 import logging
 import sys
 import threading
+import time
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Callable, Iterator, TextIO
+
+_FLUSH_INTERVAL_SECONDS = 1.0
+_FLUSH_SIZE_CHARS = 16_384
 
 _current_sink: ContextVar[Callable[[str], None] | None] = ContextVar(
     "task_output_sink",
@@ -64,6 +68,7 @@ class _TaskLogSink:
         self.size = 0
         self.lock = threading.Lock()
         self.writing = False
+        self.last_flush = time.monotonic()
 
     def __call__(self, value: str) -> None:
         if self.writing:
@@ -71,7 +76,10 @@ class _TaskLogSink:
         with self.lock:
             self.chunks.append(value)
             self.size += len(value)
-            if "\n" in value or self.size >= 4096:
+            if (
+                self.size >= _FLUSH_SIZE_CHARS
+                or time.monotonic() - self.last_flush >= _FLUSH_INTERVAL_SECONDS
+            ):
                 self._flush_locked()
 
     def flush(self) -> None:
@@ -84,6 +92,7 @@ class _TaskLogSink:
         value = "".join(self.chunks)
         self.chunks.clear()
         self.size = 0
+        self.last_flush = time.monotonic()
         self.writing = True
         try:
             self.registry.append_output(self.task_id, value)

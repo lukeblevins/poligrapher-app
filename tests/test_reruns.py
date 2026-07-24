@@ -2,13 +2,17 @@ import zipfile
 import uuid
 from types import SimpleNamespace
 
+import pytest
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
+from poligrapher_app.api import database
 from poligrapher_app.api.database import Base
 from poligrapher_app.api.models import Policy, Provider
 from poligrapher_app.api.routers.runs import _rerun_availability, delete_run
+from poligrapher_app.services.runs import run_archived_comparison
 from poligrapher_app.services.storage import LocalObjectStorage
+from poligrapher_app.services.task_execution import _rerun_upload
 
 
 def _upload(storage, tmp_path, key, content):
@@ -96,3 +100,82 @@ def test_grouped_delete_removes_both_methods_and_owned_blobs(monkeypatch, tmp_pa
         assert response.status_code == 204
         assert db.query(Policy).filter(Policy.run_group == run_id).count() == 0
         assert all(not storage.exists(key) for key in keys)
+
+
+def test_archived_rerun_marks_rows_failed_when_blob_download_fails(monkeypatch, tmp_path):
+    monkeypatch.setenv("STORAGE_BACKEND", "local")
+    monkeypatch.setenv("LOCAL_STORAGE_ROOT", str(tmp_path / "objects"))
+    engine = create_engine(f"sqlite:///{tmp_path / 'archived.db'}")
+    Base.metadata.create_all(engine)
+    sessions = sessionmaker(bind=engine, expire_on_commit=False)
+    monkeypatch.setattr(database, "SessionLocal", sessions)
+
+    with sessions() as db:
+        provider = Provider(name="Example")
+        original = Policy(
+            provider=provider,
+            url="https://example.com/privacy",
+            source="webpage",
+            method="website",
+            artifact_blob_key="artifacts/missing.zip",
+        )
+        website = Policy(
+            provider=provider,
+            url=original.url,
+            source="webpage",
+            method="website",
+        )
+        pdf = Policy(
+            provider=provider,
+            url=original.url,
+            source="pdf",
+            method="pdf_from_page",
+        )
+        db.add_all([original, website, pdf])
+        db.commit()
+        ids = original.id, website.id, pdf.id
+
+    with pytest.raises(FileNotFoundError):
+        run_archived_comparison(*ids)
+
+    with sessions() as db:
+        assert db.get(Policy, ids[1]).pipeline_status == "failed"
+        assert db.get(Policy, ids[2]).pipeline_status == "failed"
+
+
+def test_upload_rerun_marks_row_failed_when_blob_download_fails(monkeypatch, tmp_path):
+    monkeypatch.setenv("STORAGE_BACKEND", "local")
+    monkeypatch.setenv("LOCAL_STORAGE_ROOT", str(tmp_path / "objects"))
+    engine = create_engine(f"sqlite:///{tmp_path / 'upload.db'}")
+    Base.metadata.create_all(engine)
+    sessions = sessionmaker(bind=engine, expire_on_commit=False)
+    monkeypatch.setattr(database, "SessionLocal", sessions)
+
+    with sessions() as db:
+        provider = Provider(name="Example")
+        original = Policy(
+            provider=provider,
+            url="source.pdf",
+            source="pdf",
+            method="pdf_upload",
+            source_blob_key="sources/missing.pdf",
+        )
+        rerun = Policy(
+            provider=provider,
+            url="source.pdf",
+            source="pdf",
+            method="pdf_upload",
+        )
+        db.add_all([original, rerun])
+        db.commit()
+        original_id, rerun_id = original.id, rerun.id
+
+    with pytest.raises(FileNotFoundError):
+        _rerun_upload(
+            "00000000-0000-0000-0000-000000000001",
+            {"original_policy_id": str(original_id), "policy_id": str(rerun_id)},
+            SimpleNamespace(),
+        )
+
+    with sessions() as db:
+        assert db.get(Policy, rerun_id).pipeline_status == "failed"

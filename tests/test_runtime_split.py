@@ -3,13 +3,16 @@ import logging
 import sys
 import tomllib
 
+import pytest
+from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from poligrapher_app.api.database import Base
+from poligrapher_app.api.routers.analysis import _require_task_output_access
 from poligrapher_app.services import tasks as task_module
 from poligrapher_app.services.task_execution import execute_task
-from poligrapher_app.services.task_output import capture_task_output
+from poligrapher_app.services.task_output import _TaskLogSink, capture_task_output
 
 
 class FakeQueue:
@@ -69,6 +72,36 @@ def test_task_output_is_persisted(tmp_path, monkeypatch):
         "output": "first line\nsecond line\n",
         "truncated": False,
     }
+
+
+def test_task_output_batches_short_lines():
+    class RecordingRegistry:
+        chunks = []
+
+        def append_output(self, task_id, value):
+            self.chunks.append((task_id, value))
+
+    registry = RecordingRegistry()
+    sink = _TaskLogSink("task", registry)
+    for _ in range(100):
+        sink("short line\n")
+
+    assert registry.chunks == []
+    sink.flush()
+    assert registry.chunks == [("task", "short line\n" * 100)]
+
+
+def test_task_output_requires_export_token_only_in_production(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "development")
+    _require_task_output_access(None)
+
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("EXPORT_TOKEN", "expected")
+    with pytest.raises(HTTPException) as error:
+        _require_task_output_access(None)
+    assert error.value.status_code == 401
+
+    _require_task_output_access("Bearer expected")
 
 
 def test_task_output_captures_streams_and_logging(tmp_path, monkeypatch):

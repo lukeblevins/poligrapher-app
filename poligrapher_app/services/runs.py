@@ -224,8 +224,8 @@ def run_archived_comparison(
         with tempfile.TemporaryDirectory(prefix="poligrapher-rerun-", dir=temp_root) as workspace:
             root = Path(workspace)
             archive_path = root / "source.zip"
-            get_storage().download_file(original.artifact_blob_key, archive_path)
             try:
+                get_storage().download_file(original.artifact_blob_key, archive_path)
                 with zipfile.ZipFile(archive_path) as archive:
                     members = {
                         Path(member.filename).name: member
