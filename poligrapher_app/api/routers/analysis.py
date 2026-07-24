@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from poligrapher_app.api.deps import get_db
 from poligrapher_app.api.models import AnalysisResult, Policy
-from poligrapher_app.api.schemas import Assessments, GraphElements, GraphStats, TaskStatus
+from poligrapher_app.api.schemas import Assessments, GraphElements, GraphStats, TaskOutput, TaskStatus
 from poligrapher_app.services.graph import gdpr_report, readability_from_gdpr
 
 router = APIRouter(tags=["analysis"])
@@ -73,6 +73,12 @@ def _require_export_token(authorization: str | None) -> None:
         raise HTTPException(status_code=401, detail="A valid export token is required")
 
 
+def _require_task_output_access(authorization: str | None) -> None:
+    """Keep local diagnostics convenient without publishing production logs."""
+    if os.getenv("APP_ENV", "development").lower() == "production":
+        _require_export_token(authorization)
+
+
 @router.get("/api/policies/{policy_id}/artifacts")
 def download_artifacts(policy_id: uuid.UUID, db: Db,
                        authorization: str | None = Header(default=None)):
@@ -130,6 +136,16 @@ def get_task_status(task_id: str, request: Request):
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
     return TaskStatus(**task)
+
+
+@router.get("/api/tasks/{task_id}/output", response_model=TaskOutput)
+def get_task_output(task_id: str, request: Request,
+                    authorization: str | None = Header(default=None)):
+    _require_task_output_access(authorization)
+    output = request.app.state.tasks.get_output(task_id)
+    if output is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return TaskOutput(**output)
 
 
 @router.post("/api/tasks/{task_id}/cancel", response_model=TaskStatus)

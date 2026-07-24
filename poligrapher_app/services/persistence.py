@@ -20,6 +20,8 @@ ARCHIVE_NAMES = {
     "graph.yml",
     "graph.graphml",
     "cleaned.html",
+    "output.html",
+    "readability.json",
     "accessibility_tree.json",
     "output.pdf",
 }
@@ -49,15 +51,6 @@ def persist_workspace(policy, doc: PolicyDocumentInfo, archive_path: str | Path)
     policy.graph_stats = stats
     policy.artifact_blob_key = key
     policy.persistence_status = "persisted"
-
-
-def legacy_graph_data(output_dir: str | Path) -> dict | None:
-    doc = PolicyDocumentInfo(str(output_dir), str(output_dir), __import__(
-        "poligrapher_app.domain.policy_analysis", fromlist=["DocumentCaptureSource"]
-    ).DocumentCaptureSource.WEBPAGE, __import__("datetime").date.today(), False)
-    data, _ = canonical_results(doc)
-    return data if data["elements"] else None
-
 
 @contextmanager
 def temporary_document(policy, *, restore_artifacts: bool = False):

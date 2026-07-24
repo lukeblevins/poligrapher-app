@@ -30,12 +30,16 @@ def test_archive_includes_canonical_files_only(tmp_path):
     output.mkdir()
     (output / "graph-original.yml").write_text("nodes: []")
     (output / "run.log").write_text("ok")
+    (output / "output.html").write_text("<html></html>")
+    (output / "readability.json").write_text("{}")
     (output / "document.pickle").write_bytes(b"large")
     archive = tmp_path / "artifacts.zip"
-    assert create_artifact_archive(output, archive) == 2
+    assert create_artifact_archive(output, archive) == 4
     import zipfile
     with zipfile.ZipFile(archive) as zipped:
-        assert set(zipped.namelist()) == {"graph-original.yml", "run.log"}
+        assert set(zipped.namelist()) == {
+            "graph-original.yml", "run.log", "output.html", "readability.json"
+        }
 
 
 def test_temporary_workspace_is_removed(monkeypatch, tmp_path):

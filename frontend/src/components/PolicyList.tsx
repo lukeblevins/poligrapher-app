@@ -1,19 +1,35 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
-import type { Policy, Provider, RunGroup } from "../api/types";
+import { api } from "../api/client";
+import type { Policy, Provider, RunGroup, TaskStatus } from "../api/types";
+import { isRunTask } from "../api/types";
 import { useSchedules } from "../hooks/useSchedules";
 import { useRunActions, useRuns } from "../hooks/useRuns";
+import { useTasks } from "../hooks/useTasks";
+import { TaskOutputPanel } from "./TaskOutputPanel";
+import { OverflowMenu } from "./OverflowMenu";
+import { Modal } from "./Modal";
+import { SelectMenu } from "./SelectMenu";
+import { Tooltip } from "./Tooltip";
 
 interface Props {
   provider: Provider | null;
   selectedPolicyId: string | null;
-  onSelectPolicy: (id: string) => void;
+  onSelectPolicy: (id: string | null) => void;
+  onBack?: () => void;
+  historyTargetTaskId?: string | null;
+  historyTargetNonce?: number;
 }
 
 const CADENCES = ["daily", "weekly", "monthly"];
 
 const STATUS_STYLES: Record<string, string> = {
   succeeded: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400",
+  done: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400",
+  running: "bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300",
+  cancelling: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+  cancelled: "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300",
   failed: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400",
   pending: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400",
 };
@@ -41,7 +57,7 @@ const SOURCE_STATUS_LABEL: Record<string, string> = {
 
 const SOURCE_STATUS_STYLE: Record<string, string> = {
   unchecked: "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400",
-  available: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400",
+  available: "bg-teal-50 text-teal-700 ring-1 ring-inset ring-teal-200 dark:bg-teal-950/50 dark:text-teal-300 dark:ring-teal-800",
   restricted: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400",
   broken: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400",
   error: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400",
@@ -56,34 +72,35 @@ function score(n: number | null): string {
   return n === null || n === undefined ? "—" : n.toFixed(1);
 }
 
-function Toggle({ on, onChange, disabled }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
+function isValidWebUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function Toggle({ label, on, onChange, disabled }: { label: string; on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
     <button
+      type="button"
       role="switch"
       aria-checked={on}
+      aria-label={label}
       disabled={disabled}
       onClick={() => onChange(!on)}
-      className={`relative inline-flex h-7 w-12 flex-shrink-0 items-center rounded-full border shadow-inner transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-45 ${
-        on
-          ? "border-teal-600 bg-teal-700"
-          : "border-slate-300 bg-slate-200 dark:border-slate-600 dark:bg-slate-700"
-      }`}
+      className="inline-grid h-11 w-11 flex-shrink-0 place-items-center rounded-full disabled:cursor-not-allowed disabled:opacity-45"
     >
       <span
-        className={`grid h-5 w-5 transform place-items-center rounded-full bg-white text-teal-700 shadow ring-1 ring-black/5 transition-transform duration-200 ${
-          on ? "translate-x-6" : "translate-x-1"
+        aria-hidden="true"
+        className={`relative inline-flex h-6 w-11 items-center rounded-full border shadow-inner transition-colors duration-150 ${
+          on
+            ? "border-teal-600 bg-teal-700"
+            : "border-slate-300 bg-slate-200 dark:border-slate-600 dark:bg-slate-700"
         }`}
       >
-        <svg
-          viewBox="0 0 16 16"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          className={`h-3 w-3 transition-opacity ${on ? "opacity-100" : "opacity-0"}`}
-          aria-hidden="true"
-        >
-          <path d="m4 8 2.5 2.5L12 5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+        <span className={`h-5 w-5 rounded-full bg-white shadow ring-1 ring-black/5 transition-transform duration-200 ${on ? "translate-x-[21px]" : "translate-x-0.5"}`} />
       </span>
     </button>
   );
@@ -113,78 +130,114 @@ function RunMethodRow({
     <button
       onClick={onSelect}
       aria-current={selected ? "true" : undefined}
-      className={`group grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2 border-l-2 px-4 py-3 text-left text-sm transition-colors ${
+      aria-label={`${methodLabel}. Privacy score ${score(run.privacy_score)}. GDPR score ${score(run.gdpr_score)}. ${titleCase(run.pipeline_status)}. ${methodDescription}`}
+      className={`group grid min-h-12 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-l-2 px-3 py-2.5 text-left text-sm transition-colors sm:gap-3 sm:px-4 ${
         selected
           ? "border-teal-700 bg-teal-50/80 dark:border-teal-400 dark:bg-teal-950/35"
           : "border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/50"
       }`}
     >
-      <span className="min-w-0 flex-1">
-        <span className={`block font-semibold ${selected ? "text-teal-900 dark:text-teal-100" : ""}`}>
-          {methodLabel}
-        </span>
-        <span className="mt-0.5 block text-xs font-normal leading-4 text-slate-500 dark:text-slate-400">
-          {methodDescription}
-        </span>
+      <span className={`min-w-0 truncate font-semibold ${selected ? "text-teal-900 dark:text-teal-100" : ""}`}>
+        {methodLabel}
       </span>
-      <span className={`self-start rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLES[run.pipeline_status] ?? ""}`}>
-        {titleCase(run.pipeline_status)}
-      </span>
-      <span className="col-span-2 flex gap-5 border-t border-slate-200/80 pt-2 text-[11px] font-medium text-slate-500 dark:border-slate-800 dark:text-slate-400">
-        <span>Privacy score <b className="data-value ml-1 text-xs text-slate-800 dark:text-slate-200">{score(run.privacy_score)}</b></span>
-        <span>GDPR score <b className="data-value ml-1 text-xs text-slate-800 dark:text-slate-200">{score(run.gdpr_score)}</b></span>
+      <span className="flex flex-wrap items-center justify-end gap-2" aria-hidden="true">
+        <span className="data-value text-xs text-slate-500 dark:text-slate-300">P {score(run.privacy_score)}</span>
+        <span className="data-value text-xs text-slate-500 dark:text-slate-300">G {score(run.gdpr_score)}</span>
+        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLES[run.pipeline_status] ?? ""}`}>
+          {titleCase(run.pipeline_status)}
+        </span>
       </span>
     </button>
   );
 }
 
+function groupStatus(group: RunGroup, task: TaskStatus | null): string {
+  if (task && ["running", "cancelling", "cancelled", "failed"].includes(task.status)) return task.status;
+  if (group.runs.some((run) => run.pipeline_status === "pending")) return "pending";
+  if (group.runs.some((run) => run.pipeline_status === "failed")) return "failed";
+  return "succeeded";
+}
+
 function RunCard({
   group,
+  task,
+  outputExpanded,
+  onToggleOutput,
+  onRerun,
+  onDelete,
+  actionsBusy,
   selectedPolicyId,
   onSelectPolicy,
 }: {
   group: RunGroup;
+  task: TaskStatus | null;
+  outputExpanded: boolean;
+  onToggleOutput: () => void;
+  onRerun: () => void;
+  onDelete: () => void;
+  actionsBusy: boolean;
   selectedPolicyId: string | null;
   onSelectPolicy: (id: string) => void;
 }) {
-  const date = group.capture_date
-    ? new Date(`${group.capture_date}T00:00:00`)
-    : new Date(group.created_at);
+  const date = new Date(group.created_at);
   const title = group.kind === "legacy"
-    ? "Legacy result"
+    ? "Legacy analysis"
     : group.kind === "upload"
-      ? "Uploaded policy analysis"
-      : "Policy analysis";
-  const methodCount = group.runs.length;
-  const metadata = group.kind === "legacy"
-    ? "Original capture details unavailable"
-    : `${group.scheduled ? "Automatic" : "Manual"} run · ${methodCount} ${methodCount === 1 ? "method" : "methods"}`;
+      ? "Uploaded PDF"
+      : "Website comparison";
+  const status = groupStatus(group, task);
+  const rerun = group.runs.some((run) => run.rerun_of_policy_id);
+  const captureText = group.capture_date
+    ? new Date(`${group.capture_date}T00:00:00`).toLocaleDateString()
+    : "Unknown";
+  const canShowOutput = !!task && (task.has_output || ["running", "cancelling", "failed"].includes(task.status));
+  const tooltipContent = (
+    <>
+      <div className="font-semibold text-white">{group.scheduled ? "Automatic" : "Manual"} {title.toLowerCase()}</div>
+      <div className="mt-1 text-slate-200">{group.runs.length} {group.runs.length === 1 ? "method" : "methods"} · Started {date.toLocaleString()}</div>
+      <div className="text-slate-200">Source captured {captureText}</div>
+      <div className="mt-1 font-mono text-slate-300">Run {group.run_id.slice(0, 8)}</div>
+    </>
+  );
 
   return (
-    <article className="overflow-hidden">
-      <header className="flex items-start gap-4 bg-slate-50/70 px-4 py-3.5 dark:bg-slate-900/45">
-        <time className="w-12 flex-none pt-0.5 text-center" dateTime={date.toISOString()}>
-          <span className="block text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-            {date.toLocaleDateString(undefined, { month: "short" })}
-          </span>
-          <span className="data-value mt-0.5 block text-xl font-semibold leading-none text-slate-900 dark:text-slate-100">
-            {date.toLocaleDateString(undefined, { day: "numeric" })}
-          </span>
-          <span className="data-value mt-1 block text-[10px] text-slate-400 dark:text-slate-500">
-            {date.toLocaleDateString(undefined, { year: "numeric" })}
-          </span>
-        </time>
-        <div className="min-w-0 flex-1 border-l border-slate-200 pl-4 dark:border-slate-700">
-          <div className="flex items-center gap-2">
+    <Tooltip content={tooltipContent} side="bottom" align="end">
+    <article
+      className="group/run relative overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500"
+      data-task-id={task?.task_id}
+      role="group"
+      aria-label={`${title} from ${date.toLocaleDateString()}`}
+      tabIndex={0}
+    >
+      <header className="flex items-center gap-2 bg-slate-50/70 px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-3 dark:bg-slate-900/45">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{title}</h3>
-            {group.kind === "legacy" && (
-              <span className="rounded border border-slate-300 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                Legacy data
-              </span>
-            )}
+            {rerun && <span className="rounded border border-slate-300 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 dark:border-slate-700 dark:text-slate-400">Re-run</span>}
+            <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLES[status] ?? ""}`}>{titleCase(status)}</span>
           </div>
-          <p className="mt-1 text-xs leading-4 text-slate-500 dark:text-slate-400">{metadata}</p>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+            {group.scheduled ? "Automatic" : "Manual"} · <time dateTime={date.toISOString()}>{date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</time>
+            {task && task.total > 0 && ["running", "cancelling"].includes(task.status) ? ` · ${task.completed}/${task.total}` : ""}
+          </p>
         </div>
+        {canShowOutput && (
+          <button
+            type="button"
+            className="btn-secondary min-h-8 shrink-0 px-2.5 py-1 text-xs"
+            aria-expanded={outputExpanded}
+            onClick={onToggleOutput}
+          >
+            {outputExpanded ? "Hide output" : "Output"}
+          </button>
+        )}
+        <OverflowMenu
+          label={`Actions for ${title} from ${date.toLocaleDateString()}`}
+          items={[
+            { label: "Run again", onSelect: onRerun, disabled: actionsBusy },
+            { label: "Delete", onSelect: onDelete, disabled: actionsBusy, danger: true },
+          ]}
+        />
       </header>
       <div className="divide-y divide-slate-200/80 border-t border-slate-200/80 dark:divide-slate-800 dark:border-slate-800">
         {group.runs.map((run) => (
@@ -197,14 +250,55 @@ function RunCard({
           />
         ))}
       </div>
+      {task && outputExpanded && <TaskOutputPanel task={task} context={title} />}
+    </article>
+    </Tooltip>
+  );
+}
+
+function PendingRunCard({
+  task,
+  expanded,
+  onToggleOutput,
+}: {
+  task: TaskStatus;
+  expanded: boolean;
+  onToggleOutput: () => void;
+}) {
+  const progress = task.total > 0 ? `${task.completed}/${task.total}` : "Starting";
+  return (
+    <article className="overflow-hidden" data-task-id={task.task_id}>
+      <div className="flex items-center gap-3 border-l-2 border-teal-500 bg-teal-50/50 px-4 py-3 dark:bg-teal-950/20">
+        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${task.status === "failed" ? "bg-red-500" : task.status === "cancelled" ? "bg-slate-400" : "bg-teal-500"}`} aria-hidden="true" />
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate text-sm font-semibold">{task.title ?? "Analysis run"}</h3>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+            {titleCase(task.status)} · {progress}
+          </p>
+          {task.error && <p className="mt-1 line-clamp-2 text-xs text-red-600 dark:text-red-400">{task.error}</p>}
+        </div>
+        {(task.has_output || task.status === "running" || task.status === "cancelling" || task.status === "failed") && (
+          <button type="button" className="btn-secondary min-h-8 shrink-0 px-2.5 py-1 text-xs" aria-expanded={expanded} onClick={onToggleOutput}>
+            {expanded ? "Hide output" : "Output"}
+          </button>
+        )}
+      </div>
+      {expanded && <TaskOutputPanel task={task} context={task.provider_name ?? task.title ?? "Analysis run"} />}
     </article>
   );
 }
 
 // ── Provider page ─────────────────────────────────────────────────────────────
 
-export function PolicyList({ provider, selectedPolicyId, onSelectPolicy }: Props) {
-  const { data: runs = [], isLoading } = useRuns(provider?.id ?? null);
+export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, onBack, historyTargetTaskId, historyTargetNonce }: Props) {
+  const qc = useQueryClient();
+  const { tasks } = useTasks();
+  const taskCanAffectSelectedProvider = tasks.some((task) =>
+    task.status === "running" || task.status === "cancelling"
+      ? task.provider_id === provider?.id || ["collection-analysis", "refresh", "score-all"].includes(task.kind ?? "")
+      : false,
+  );
+  const { data: runs = [], isLoading, isError, error } = useRuns(provider?.id ?? null, taskCanAffectSelectedProvider);
   const { data: schedules = [] } = useSchedules(provider?.id ?? null);
   const actions = useRunActions(provider?.id ?? "");
   const schedule = schedules[0] ?? null;
@@ -212,7 +306,14 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy }: Props
   const [sourceUrl, setSourceUrl] = useState("");
   const [savedSourceUrl, setSavedSourceUrl] = useState("");
   const [sourceLookupMessage, setSourceLookupMessage] = useState("");
+  const [editingSource, setEditingSource] = useState(false);
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<RunGroup | null>(null);
+  const [rerunFallback, setRerunFallback] = useState<RunGroup | null>(null);
+  const [checkingRunId, setCheckingRunId] = useState<string | null>(null);
+  const [historyActionError, setHistoryActionError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  const newAnalysisRef = useRef<HTMLDivElement>(null);
 
   // Keep the source input in sync when switching providers.
   useEffect(() => {
@@ -220,11 +321,33 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy }: Props
     setSourceUrl(nextSourceUrl);
     setSavedSourceUrl(nextSourceUrl);
     setSourceLookupMessage("");
+    setEditingSource(false);
   }, [provider?.id, provider?.source_url]);
+
+  useEffect(() => {
+    if (!historyTargetTaskId || !provider) return;
+    setExpandedTaskId(historyTargetTaskId);
+    requestAnimationFrame(() => {
+      const target = document.querySelector<HTMLElement>(`[data-task-id="${historyTargetTaskId}"]`);
+      target?.scrollIntoView({ behavior: "smooth", block: "center" });
+      target?.querySelector<HTMLElement>("button[aria-expanded]")?.focus();
+    });
+  }, [historyTargetTaskId, historyTargetNonce, provider]);
+
+  const taskLifecycleSignature = useMemo(
+    () => tasks.map((task) => `${task.task_id}:${task.status}:${task.completed}:${task.failed}`).join("|"),
+    [tasks],
+  );
+
+  useEffect(() => {
+    if (!provider) return;
+    qc.invalidateQueries({ queryKey: ["runs", provider.id] });
+    qc.invalidateQueries({ queryKey: ["providers"] });
+  }, [provider?.id, taskLifecycleSignature, qc]);
 
   if (!provider) {
     return (
-      <div className="flex flex-1 items-center justify-center text-slate-400 dark:text-slate-500">
+      <div className="flex flex-1 items-center justify-center text-slate-500 dark:text-slate-400">
         <div className="text-center">
           <p className="font-medium text-slate-500 dark:text-slate-400">Select a company</p>
           <p className="mt-1 text-sm">Configure its policy source and review past analyses.</p>
@@ -235,22 +358,67 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy }: Props
 
   const scheduleOn = schedule?.enabled ?? false;
   const busy = actions.runNow.isPending || actions.upload.isPending;
+  const workspaceActionError = actions.setSource.error
+    ?? actions.verifySource.error
+    ?? actions.previewSource.error
+    ?? actions.runNow.error
+    ?? actions.upload.error
+    ?? actions.toggle.error;
   const normalizedSourceUrl = sourceUrl.trim();
+  const sourceUrlIsValid = isValidWebUrl(normalizedSourceUrl);
   const sourceHasUnsavedChanges = normalizedSourceUrl !== savedSourceUrl;
+  const showSourceEditor = !savedSourceUrl || editingSource;
+  const providerTasks = tasks.filter((task) => task.provider_id === provider.id && isRunTask(task));
+  const linkedTaskIds = new Set(runs.flatMap((group) => {
+    const task = group.task ?? providerTasks.find((candidate) => candidate.run_id === group.run_id);
+    return task ? [task.task_id] : [];
+  }));
+  const provisionalTasks = providerTasks.filter((task) => !linkedTaskIds.has(task.task_id));
+
+  const handleRerun = async (group: RunGroup) => {
+    setCheckingRunId(group.run_id);
+    setHistoryActionError("");
+    try {
+      const availability = await api.getRerunAvailability(provider.id, group.run_id);
+      if (!availability.available) {
+        setRerunFallback(group);
+        return;
+      }
+      actions.rerun.mutate(group.run_id, {
+        onError: (error) => setHistoryActionError(error instanceof Error ? error.message : "Could not start the re-run."),
+      });
+    } catch (error) {
+      setHistoryActionError(error instanceof Error ? error.message : "Could not check the saved source.");
+    } finally {
+      setCheckingRunId(null);
+    }
+  };
 
   return (
-    <div className="min-w-0 flex-1 overflow-auto px-6 py-8 lg:px-8">
+    <div className={`${selectedPolicyId ? "hidden xl:block" : "block"} min-w-0 flex-1 overflow-auto px-3 py-3 sm:px-6 sm:py-8 lg:px-8`}>
+      <div className="mx-auto w-full max-w-[96rem]">
       {/* Provider heading */}
       <div>
-        <h1 className="font-display text-3xl font-semibold tracking-tight text-slate-950 dark:text-white">{provider.name}</h1>
-        <p className="mt-1.5 text-sm text-slate-500 dark:text-slate-400">
-          {provider.industry ?? "Uncategorized"} · {provider.policy_count} policy records
+        {onBack && (
+          <button type="button" className="mb-2 inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-teal-700 hover:underline sm:mb-4 md:hidden dark:text-teal-400" onClick={onBack}>
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4" aria-hidden="true"><path d="m12 5-5 5 5 5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            Companies
+          </button>
+        )}
+        <h1 className="font-display text-xl font-semibold tracking-tight text-slate-950 sm:text-3xl dark:text-white">{provider.name}</h1>
+        <p className="mt-0.5 text-xs text-slate-500 sm:mt-1.5 sm:text-sm dark:text-slate-400">
+          {provider.industry ?? "Uncategorized"} · {provider.policy_count} {provider.policy_count === 1 ? "analysis" : "analyses"}
         </p>
       </div>
 
       {/* Research configuration */}
-      <section className="surface-card mt-7 overflow-hidden">
-        <div className="p-5">
+      <section className="surface-card isolate mt-4 overflow-visible sm:mt-7">
+        {workspaceActionError && (
+          <p role="alert" className="m-3 mb-0 sm:m-5 sm:mb-0 status-error">
+            {workspaceActionError instanceof Error ? workspaceActionError.message : "The action could not be completed. Try again."}
+          </p>
+        )}
+        <div className="p-3 sm:p-5">
         <div className="mb-2 flex items-center justify-between">
           <div>
             <h2 className="text-sm font-semibold">Website source</h2>
@@ -258,58 +426,87 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy }: Props
               The public privacy-policy page used for website analyses and automatic monitoring.
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            {schedule?.needs_attention && (
-              <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-700 dark:bg-amber-950 dark:text-amber-300">Needs confirmation</span>
-            )}
-            <span className={`rounded px-2 py-1 text-[11px] font-semibold ${SOURCE_STATUS_STYLE[provider.source_status] ?? SOURCE_STATUS_STYLE.unchecked}`}>
-              {SOURCE_STATUS_LABEL[provider.source_status] ?? "Not checked"}
-              {provider.source_http_status ? ` · ${provider.source_http_status}` : ""}
-            </span>
-            {savedSourceUrl && (
-              <button
-                className="text-xs font-semibold text-teal-700 hover:underline disabled:opacity-50 dark:text-teal-400"
-                disabled={actions.verifySource.isPending}
-                onClick={() => actions.verifySource.mutate()}
-              >
-                {actions.verifySource.isPending ? "Checking…" : "Check source"}
-              </button>
-            )}
+          {schedule?.needs_attention && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-700 dark:bg-amber-950 dark:text-amber-300">Needs confirmation</span>}
+        </div>
+        {savedSourceUrl && !editingSource && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-slate-50/70 px-3 py-2.5 sm:mt-4 sm:gap-3 sm:py-3 dark:border-slate-800 dark:bg-slate-950/40">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`rounded px-2 py-1 text-[11px] font-semibold ${SOURCE_STATUS_STYLE[provider.source_status] ?? SOURCE_STATUS_STYLE.unchecked}`}>
+                  {SOURCE_STATUS_LABEL[provider.source_status] ?? "Not checked"}
+                  {provider.source_http_status ? ` · HTTP ${provider.source_http_status}` : ""}
+                </span>
+                <span className="max-w-full truncate text-xs font-medium text-slate-700 dark:text-slate-200">{savedSourceUrl}</span>
+              </div>
+              {provider.source_checked_at && (
+                <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+                  Checked {new Date(provider.source_checked_at).toLocaleString()}
+                  {provider.source_final_url && provider.source_final_url !== provider.source_url ? " · Redirect detected" : ""}
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              className="text-xs font-semibold text-teal-700 hover:underline disabled:opacity-50 dark:text-teal-400"
+              disabled={actions.verifySource.isPending}
+              onClick={() => actions.verifySource.mutate()}
+            >
+              {actions.verifySource.isPending ? "Checking…" : "Check"}
+            </button>
+            <button type="button" className="btn-secondary min-h-8 px-2.5 py-1 text-xs" onClick={() => setEditingSource(true)}>Edit</button>
           </div>
-        </div>
-        <label className="form-label mt-4" htmlFor="policy-source-url">Privacy policy URL</label>
-        <div className="flex items-start gap-2">
-          <input
-            id="policy-source-url"
-            className="form-input flex-1"
-            value={sourceUrl}
-            onChange={(e) => setSourceUrl(e.target.value)}
-            placeholder="https://example.com/privacy"
-          />
-          <button
-            className="btn-secondary"
-            disabled={actions.setSource.isPending || !normalizedSourceUrl || !sourceHasUnsavedChanges}
-            onClick={() => actions.setSource.mutate(normalizedSourceUrl, {
-              onSuccess: (updatedProvider) => {
-                const updatedSourceUrl = updatedProvider.source_url ?? "";
-                setSavedSourceUrl(updatedSourceUrl);
-                setSourceUrl(updatedSourceUrl);
-              },
-            })}
-          >
-            {actions.setSource.isPending ? "Saving…" : "Save source"}
-          </button>
-        </div>
-        {sourceHasUnsavedChanges && (
-          <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
-            Save this URL before starting a website analysis.
-          </p>
         )}
-        {provider.source_checked_at && (
-          <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
-            Last checked {new Date(provider.source_checked_at).toLocaleString()}
-            {provider.source_final_url && provider.source_final_url !== provider.source_url ? " · Redirect detected" : ""}
-          </p>
+        {showSourceEditor && (
+          <div className="mt-4">
+            <label className="form-label" htmlFor="policy-source-url">Privacy policy URL</label>
+            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-start">
+              <input
+                id="policy-source-url"
+                type="url"
+                className="form-input flex-1"
+                value={sourceUrl}
+                onChange={(e) => setSourceUrl(e.target.value)}
+                placeholder="https://example.com/privacy"
+                aria-invalid={normalizedSourceUrl && !sourceUrlIsValid ? true : undefined}
+                aria-describedby="policy-source-url-help"
+              />
+              <div className="flex gap-2 sm:flex-none">
+                <button
+                  className="btn-primary flex-1 sm:flex-none"
+                  disabled={actions.setSource.isPending || !sourceUrlIsValid || !sourceHasUnsavedChanges}
+                  onClick={() => actions.setSource.mutate(normalizedSourceUrl, {
+                    onSuccess: (updatedProvider) => {
+                      const updatedSourceUrl = updatedProvider.source_url ?? "";
+                      setSavedSourceUrl(updatedSourceUrl);
+                      setSourceUrl(updatedSourceUrl);
+                      setEditingSource(false);
+                    },
+                  })}
+                >
+                  {actions.setSource.isPending ? "Saving…" : "Save source"}
+                </button>
+                {savedSourceUrl && (
+                  <button
+                    type="button"
+                    className="btn-secondary flex-1 sm:flex-none"
+                    onClick={() => {
+                      setSourceUrl(savedSourceUrl);
+                      setEditingSource(false);
+                    }}
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
+            </div>
+            <div id="policy-source-url-help">
+              {normalizedSourceUrl && !sourceUrlIsValid ? (
+                <p className="mt-2 text-xs text-red-600 dark:text-red-400">Enter a complete web address beginning with http:// or https://.</p>
+              ) : sourceHasUnsavedChanges ? (
+                <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">Save this URL before starting a website analysis.</p>
+              ) : null}
+            </div>
+          </div>
         )}
         {!savedSourceUrl && !sourceHasUnsavedChanges && (
           <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3 dark:border-slate-800">
@@ -334,23 +531,23 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy }: Props
             >
               {actions.previewSource.isPending ? "Looking for a privacy policy…" : "Find a privacy policy automatically"}
             </button>
-            {!provider.domain && <span className="text-xs text-slate-400">Add a company website before using discovery.</span>}
+            {!provider.domain && <span className="text-xs text-slate-500 dark:text-slate-400">Add a company website before using discovery.</span>}
           </div>
         )}
         {sourceLookupMessage && <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">{sourceLookupMessage}</p>}
         </div>
 
       {/* Explicit analysis actions */}
-      <div className="border-t border-slate-300 p-5 dark:border-slate-800">
+      <div ref={newAnalysisRef} tabIndex={-1} className="border-t border-slate-300 p-3 focus-visible:outline-none sm:p-5 dark:border-slate-800">
         <div>
           <h2 className="text-sm font-semibold">Start a new analysis</h2>
           <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
             Choose where the policy should come from. Results will appear in the history below.
           </p>
         </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className="mt-3 grid gap-2 sm:mt-4 sm:grid-cols-2 sm:gap-3">
           <button
-            className="group rounded-md border border-teal-300 bg-teal-50/50 p-4 text-left transition-colors hover:border-teal-600 hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-teal-900 dark:bg-teal-950/25 dark:hover:border-teal-700 dark:hover:bg-teal-950/40"
+            className="group rounded-md border border-teal-300 bg-teal-50/50 p-3 text-left transition-colors hover:border-teal-600 hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-50 sm:p-4 dark:border-teal-900 dark:bg-teal-950/25 dark:hover:border-teal-700 dark:hover:bg-teal-950/40"
             disabled={busy || !savedSourceUrl || sourceHasUnsavedChanges}
             onClick={() => actions.runNow.mutate()}
           >
@@ -362,7 +559,7 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy }: Props
             </span>
           </button>
           <button
-            className="rounded-md border border-slate-300 p-4 text-left transition-colors hover:border-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:hover:border-slate-600 dark:hover:bg-slate-800/60"
+            className="rounded-md border border-slate-300 p-3 text-left transition-colors hover:border-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 sm:p-4 dark:border-slate-700 dark:hover:border-slate-600 dark:hover:bg-slate-800/60"
             disabled={busy}
             onClick={() => fileRef.current?.click()}
           >
@@ -388,9 +585,10 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy }: Props
       </div>
 
       {/* Automatic monitoring */}
-      <div className="border-t border-slate-300 p-5 dark:border-slate-800">
-        <div className="flex items-start gap-3">
+      <div className="border-t border-slate-300 p-3 sm:p-5 dark:border-slate-800">
+        <div className="flex items-start gap-2 sm:gap-3">
           <Toggle
+            label="Monitor for policy changes"
             on={scheduleOn}
             disabled={actions.toggle.isPending || !savedSourceUrl}
             onChange={(v) => actions.toggle.mutate({ enabled: v })}
@@ -399,16 +597,14 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy }: Props
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-sm font-semibold">Monitor for policy changes</h2>
               {scheduleOn && schedule && (
-                <select
-                  aria-label="Monitoring frequency"
-                  className="form-input w-28 py-1 text-xs"
+                <SelectMenu
+                  label="Monitoring frequency"
+                  heading="Frequency"
+                  className="w-28"
                   value={schedule.cadence}
-                  onChange={(e) => actions.toggle.mutate({ enabled: true, cadence: e.target.value })}
-                >
-                  {CADENCES.map((c) => (
-                    <option key={c} value={c}>{titleCase(c)}</option>
-                  ))}
-                </select>
+                  options={CADENCES.map((cadence) => ({ value: cadence, label: titleCase(cadence) }))}
+                  onChange={(cadence) => actions.toggle.mutate({ enabled: true, cadence })}
+                />
               )}
             </div>
             <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
@@ -417,7 +613,7 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy }: Props
                 : "Save a website source before enabling automatic monitoring."}
             </p>
             {scheduleOn && schedule && (
-              <p className="mt-2 text-xs text-slate-400">
+              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
                 {schedule.last_status !== "idle" ? `${titleCase(schedule.last_status)} · ` : ""}
                 Next check {schedule.next_run_at ? new Date(schedule.next_run_at).toLocaleString() : "not scheduled"}
               </p>
@@ -428,25 +624,45 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy }: Props
       </section>
 
       {/* Analysis history */}
-      <section className="mt-8">
-        <div className="mb-3">
+      <section className="mt-5 sm:mt-8">
+        <div className="mb-2 sm:mb-3">
           <h2 className="text-sm font-semibold">Analysis history</h2>
           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            Select a result to explore its graph, statistics, and assessments.
+            Select a method to inspect its results.
           </p>
+          {historyActionError && <p role="alert" className="mt-2 status-error">{historyActionError}</p>}
         </div>
         {isLoading ? (
-          <p className="text-sm text-slate-400">Loading…</p>
-        ) : runs.length === 0 ? (
-          <p className="text-sm text-slate-400">
+          <p role="status" className="quiet-state py-6">Loading analysis history…</p>
+        ) : isError ? (
+          <p role="alert" className="status-error">Could not load analysis history. {error instanceof Error ? error.message : "Try refreshing the page."}</p>
+        ) : runs.length === 0 && provisionalTasks.length === 0 ? (
+          <p className="quiet-state py-6">
             No analyses yet. Analyze the saved website or upload a PDF to get started.
           </p>
         ) : (
           <div className="surface-card divide-y divide-slate-300 overflow-hidden dark:divide-slate-700">
+            {provisionalTasks.map((task) => (
+              <PendingRunCard
+                key={task.task_id}
+                task={task}
+                expanded={expandedTaskId === task.task_id}
+                onToggleOutput={() => setExpandedTaskId((current) => current === task.task_id ? null : task.task_id)}
+              />
+            ))}
             {runs.map((group) => (
               <RunCard
                 key={group.run_group ?? group.runs[0].id}
                 group={group}
+                task={group.task ?? providerTasks.find((task) => task.run_id === group.run_id) ?? null}
+                outputExpanded={expandedTaskId === (group.task ?? providerTasks.find((task) => task.run_id === group.run_id))?.task_id}
+                onToggleOutput={() => {
+                  const task = group.task ?? providerTasks.find((candidate) => candidate.run_id === group.run_id);
+                  if (task) setExpandedTaskId((current) => current === task.task_id ? null : task.task_id);
+                }}
+                onRerun={() => handleRerun(group)}
+                onDelete={() => setDeleteTarget(group)}
+                actionsBusy={checkingRunId === group.run_id || actions.rerun.isPending || actions.deleteRun.isPending}
                 selectedPolicyId={selectedPolicyId}
                 onSelectPolicy={onSelectPolicy}
               />
@@ -454,6 +670,56 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy }: Props
           </div>
         )}
       </section>
+
+      {deleteTarget && (
+        <Modal title="Delete analysis run" onClose={() => setDeleteTarget(null)}>
+          <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+            Delete this analysis run? Its results and saved output will be permanently removed.
+          </p>
+          <div className="mt-5 flex justify-end gap-2">
+            <button type="button" className="btn-secondary" onClick={() => setDeleteTarget(null)}>Cancel</button>
+            <button
+              type="button"
+              className="btn-danger"
+              disabled={actions.deleteRun.isPending}
+              onClick={() => actions.deleteRun.mutate(deleteTarget.run_id, {
+                onSuccess: () => {
+                  if (deleteTarget.runs.some((run) => run.id === selectedPolicyId)) onSelectPolicy(null);
+                  setDeleteTarget(null);
+                },
+                onError: (error) => setHistoryActionError(error instanceof Error ? error.message : "Could not delete the run."),
+              })}
+            >
+              {actions.deleteRun.isPending ? "Deleting…" : "Delete"}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {rerunFallback && (
+        <Modal title="Saved source unavailable" onClose={() => setRerunFallback(null)}>
+          <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+            The saved copy for this run isn’t available. Start a new analysis for {provider.name} instead?
+          </p>
+          <div className="mt-5 flex justify-end gap-2">
+            <button type="button" className="btn-secondary" onClick={() => setRerunFallback(null)}>Cancel</button>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => {
+                setRerunFallback(null);
+                requestAnimationFrame(() => {
+                  newAnalysisRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                  newAnalysisRef.current?.focus();
+                });
+              }}
+            >
+              Start new analysis
+            </button>
+          </div>
+        </Modal>
+      )}
+      </div>
     </div>
   );
 }

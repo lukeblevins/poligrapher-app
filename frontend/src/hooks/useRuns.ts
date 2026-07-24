@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import type { RunGroup } from "../api/types";
 
 /** Runs for a provider; polls while any run is still generating. */
-export function useRuns(providerId: string | null) {
+export function useRuns(providerId: string | null, pollForTasks = false) {
   return useQuery({
     queryKey: ["runs", providerId],
     queryFn: () => api.listRuns(providerId!),
@@ -12,7 +12,7 @@ export function useRuns(providerId: string | null) {
     refetchInterval: (query) => {
       const groups = (query.state.data ?? []) as RunGroup[];
       const pending = groups.some((g) => g.runs.some((r) => r.pipeline_status === "pending"));
-      return pending ? 2500 : false;
+      return pending || pollForTasks ? 1500 : false;
     },
   });
 }
@@ -25,6 +25,13 @@ export function useRunActions(providerId: string) {
     qc.invalidateQueries({ queryKey: ["providers"] });
     qc.invalidateQueries({ queryKey: ["schedules", providerId] });
     qc.invalidateQueries({ queryKey: ["tasks"] });
+  };
+  const registerTask = (task: import("../api/types").TaskStatus) => {
+    qc.setQueryData<import("../api/types").TaskStatus[]>(["tasks"], (current = []) => [
+      task,
+      ...current.filter((candidate) => candidate.task_id !== task.task_id),
+    ]);
+    invalidate();
   };
   return {
     setSource: useMutation({
@@ -40,10 +47,18 @@ export function useRunActions(providerId: string) {
     }),
     runNow: useMutation({
       mutationFn: () => api.runNow(providerId),
-      onSuccess: invalidate,
+      onSuccess: registerTask,
     }),
     upload: useMutation({
       mutationFn: (file: File) => api.uploadPdf(providerId, file),
+      onSuccess: registerTask,
+    }),
+    rerun: useMutation({
+      mutationFn: (runId: string) => api.rerun(providerId, runId),
+      onSuccess: registerTask,
+    }),
+    deleteRun: useMutation({
+      mutationFn: (runId: string) => api.deleteRun(providerId, runId),
       onSuccess: invalidate,
     }),
     toggle: useMutation({

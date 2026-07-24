@@ -9,15 +9,16 @@ const TIER_STYLES: Record<string, string> = {
 
 const SEVERITY_STYLES: Record<string, string> = {
   CRITICAL: "text-red-600 dark:text-red-400",
-  HIGH: "text-orange-600 dark:text-orange-400",
-  MEDIUM: "text-amber-600 dark:text-amber-400",
+  HIGH: "text-orange-700 dark:text-orange-400",
+  MEDIUM: "text-amber-700 dark:text-amber-400",
 };
 
 export function AssessmentsPanel({ policyId }: { policyId: string }) {
-  const { data, isLoading, isError } = useAssessments(policyId);
+  const { data, isLoading, isError, error } = useAssessments(policyId);
 
-  if (isLoading) return <p className="quiet-state">Loading assessments…</p>;
-  if (isError || !data) return <p className="quiet-state">No assessments are available for this analysis.</p>;
+  if (isLoading) return <p role="status" className="quiet-state">Loading assessments…</p>;
+  if (isError) return <p role="alert" className="status-error">Could not load assessments. {error instanceof Error ? error.message : "Try again."}</p>;
+  if (!data) return <p className="quiet-state">No assessments are available for this analysis.</p>;
 
   const { privacy, gdpr, readability } = data;
   if (!privacy && !gdpr) {
@@ -85,7 +86,7 @@ function GdprSection({ gdpr }: { gdpr: GdprAssessment }) {
     return (
       <section>
         <h3 className="mb-1 text-sm font-semibold">GDPR</h3>
-        <p className="text-xs text-red-600 dark:text-red-400">
+        <p role="alert" className="text-xs text-red-600 dark:text-red-400">
           {gdpr.feedback?.join(", ") || "Analysis failed."}
         </p>
       </section>

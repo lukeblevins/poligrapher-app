@@ -17,28 +17,35 @@ export function CompanyLogo({
   className?: string;
 }) {
   const [failed, setFailed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const safeDomain = domain?.trim().toLowerCase();
   const canLoad = !!safeDomain && /^[a-z0-9.-]+$/.test(safeDomain) && !failed;
 
-  useEffect(() => setFailed(false), [safeDomain]);
+  useEffect(() => {
+    setFailed(false);
+    setLoaded(false);
+  }, [safeDomain]);
 
   return (
     <span
-      className={`grid flex-shrink-0 place-items-center overflow-hidden rounded border border-slate-300 bg-white text-[10px] font-bold tracking-wide text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 ${className}`}
+      className={`relative grid flex-shrink-0 place-items-center overflow-hidden rounded border border-slate-300 bg-white text-[10px] font-bold tracking-wide text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 ${className}`}
       aria-hidden="true"
     >
-      {canLoad ? (
+      <span>{initials(name)}</span>
+      {canLoad && (
         <img
           src={`https://${safeDomain}/favicon.ico`}
           alt=""
           loading="lazy"
           decoding="async"
           referrerPolicy="no-referrer"
-          className="h-full w-full object-contain p-1"
-          onError={() => setFailed(true)}
+          className={`absolute inset-0 h-full w-full object-contain p-1 transition-opacity ${loaded ? "opacity-100" : "opacity-0"}`}
+          onLoad={(event) => setLoaded(event.currentTarget.naturalWidth > 0 && event.currentTarget.naturalHeight > 0)}
+          onError={() => {
+            setLoaded(false);
+            setFailed(true);
+          }}
         />
-      ) : (
-        <span>{initials(name)}</span>
       )}
     </span>
   );

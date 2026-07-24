@@ -2,11 +2,11 @@ import type { GraphStatsData } from "../api/types";
 import { useStats } from "../hooks/queries";
 
 export function StatsPanel({ policyId }: { policyId: string }) {
-  const { data, isLoading, isError } = useStats(policyId);
+  const { data, isLoading, isError, error } = useStats(policyId);
 
-  if (isLoading) return <p className="quiet-state">Loading graph statistics…</p>;
-  if (isError || !data?.stats)
-    return <p className="quiet-state">No graph statistics are available for this analysis.</p>;
+  if (isLoading) return <p role="status" className="quiet-state">Loading graph statistics…</p>;
+  if (isError) return <p role="alert" className="status-error">Could not load graph statistics. {error instanceof Error ? error.message : "Try again."}</p>;
+  if (!data?.stats) return <p className="quiet-state">No graph statistics are available for this analysis.</p>;
 
   const s = data.stats;
   return (
@@ -78,7 +78,7 @@ function DegreeSection({ s }: { s: GraphStatsData }) {
       </h3>
       <table className="w-full overflow-hidden rounded-lg text-xs tabular-nums">
         <thead>
-          <tr className="text-left text-slate-400">
+          <tr className="text-left text-slate-500 dark:text-slate-400">
             <th className="py-1 font-medium"></th>
             <th className="py-1 font-medium">min</th>
             <th className="py-1 font-medium">max</th>
