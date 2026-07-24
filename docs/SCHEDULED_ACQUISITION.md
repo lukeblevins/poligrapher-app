@@ -6,7 +6,8 @@ a source more reliable than a hard-coded URL or file path.
 
 Implementation: `services/acquisition.py` (resolver), `services/scheduler.py`
 (APScheduler engine), `api/routers/schedules.py`, `Provider.domain` + `Schedule`
-model, and a `ScheduleModal` in the frontend reached from the provider header.
+model, and scheduling controls embedded in the provider workspace
+(`frontend/src/components/PolicyList.tsx`).
 
 ## The real problem: acquisition, not scheduling
 
@@ -118,8 +119,9 @@ class PolicySourceResolver:
 - A fired job **enqueues through the existing `TaskRegistry`**, so scheduled runs
   appear in the Status Center and reuse the atomic-cancellation machinery already
   built. Run = `resolve source → (hash changed?) → generate_graph → score`.
-- Reuse the existing dated `output/<Provider_Slug>/<date>_<source>/` convention
-  so each scheduled capture is a normal `Policy` row + artifact dir.
+- Store each scheduled capture as a normal grouped pair of `Policy` rows.
+  Pipeline workspaces are temporary; canonical graph/results data is persisted
+  in the database and source/artifact archives are retained in object storage.
 
 ## Data model changes
 

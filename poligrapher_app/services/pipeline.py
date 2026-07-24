@@ -4,7 +4,6 @@ Runs the four-stage PoliGraph pipeline (crawl/parse → init → annotate → bu
 graph) for a captured policy. Pure business logic — no HTTP or view concerns.
 """
 
-import ipaddress
 import logging
 import os
 import shutil
@@ -108,37 +107,6 @@ def ensure_source_pdf_copy(source_path: str | None, output_dir: str) -> bool:
     except Exception as exc:
         logger.warning("Failed to copy source PDF %s -> %s: %s", source_path, dest_path, exc)
         return False
-
-
-def is_ip_address(s: str) -> bool:
-    try:
-        return bool(ipaddress.ip_address(s))
-    except ValueError:
-        return False
-
-
-def validate_url(url: str) -> dict:
-    """Validate URL format and accessibility."""
-    if not url or not url.strip():
-        return {"valid": False, "message": "No URL provided"}
-
-    url = url.strip()
-
-    try:
-        result = urllib.parse.urlparse(url)
-        if not all([result.scheme, result.netloc]):
-            return {"valid": False, "message": "Invalid URL format"}
-    except Exception:
-        return {"valid": False, "message": "Invalid URL format"}
-
-    hostname = result.netloc.split(":")[0]
-    if is_ip_address(hostname):
-        return {"valid": False, "message": "IP addresses not allowed. Please use domain names"}
-
-    if _url_reachable(url):
-        return {"valid": True, "message": "URL is valid"}
-    return {"valid": False, "message": "URL not accessible"}
-
 
 def _url_reachable(url: str, timeout: float = 15.0, attempts: int = 2) -> bool:
     """Reachability probe with a realistic browser identity and retries.

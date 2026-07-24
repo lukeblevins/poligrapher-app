@@ -153,8 +153,6 @@ export interface RerunAvailability {
   reason: string | null;
 }
 
-export const TASK_ACTIVE_STATES: TaskState[] = ["running", "cancelling"];
-
 export function isTaskActive(status: TaskState): boolean {
   return status === "running" || status === "cancelling";
 }

@@ -28,19 +28,21 @@ scoring/    In-repo heuristic PrivacyScorer + its TOML rules/criteria.
 
 ## Data flow
 
-1. **Add policy** (`POST /api/providers/{id}/policies`) — records a `Policy` row
-   (URL or uploaded PDF) and computes its artifact directory
-   `output/<Provider_Slug>/<date>_<source>/`.
-2. **Generate** (`POST /api/policies/{id}/generate`) — the API writes a durable
-   task and queue message. An Azure Container Apps Job scales from zero and runs
-   `services.pipeline.generate_graph`, which drives PoliGraph
-   (crawl/parse → init → annotate → build graph) and writes
-   `graph-original.full.yml`, `graph-original.yml`, and `graph-original.graphml`
-   into the policy's output dir.
-3. **Score** (`POST /api/policies/{id}/score`) — a background task runs
-   `services.scoring.score_privacy` and `score_gdpr`, persisting results as
-   `AnalysisResult` rows and updating the policy's scores.
-4. **View** — the SPA fetches JSON:
+1. **Configure a provider source** (`PATCH /api/providers/{id}/source`) — stores
+   the canonical privacy-policy URL used for website analysis. The source can
+   also be discovered from the provider's domain and checked independently.
+2. **Start a run** (`POST /api/providers/{id}/runs`) — the API writes a durable
+   task and queue message. A worker fetches the source once, then builds and
+   scores two related `Policy` records: one from the live HTML and one from a PDF
+   rendering of that same capture. Their shared `run_group` keeps the comparison
+   together in history.
+3. **Upload a PDF** (`POST /api/providers/{id}/uploads`) — stores the source in
+   private object storage and queues a single-method analysis. Manual and
+   scheduled runs use the same task and persistence infrastructure.
+4. **Persist results** — the worker stores graph/results data on the policy rows
+   and uploads source files and artifact archives to private object storage.
+   Temporary pipeline workspaces are discarded after persistence.
+5. **View** — the SPA fetches JSON:
    - `GET /api/policies/{id}/graph` → cytoscape `elements` (rendered client-side)
    - `GET /api/policies/{id}/stats` → graph statistics
    - `GET /api/policies/{id}/assessments` → privacy + GDPR + readability
@@ -55,6 +57,10 @@ SQLAlchemy 2.0 ORM over **SQLite by default** and PostgreSQL in production.
 Production schema changes are Alembic migrations; canonical graph/results and
 task state are stored in PostgreSQL, while source PDFs and artifact archives are
 private Blob objects.
+
+Older policy CRUD, generate, and score endpoints remain available as a
+compatibility API for imported records and non-SPA clients. The current SPA uses
+the provider source, run, upload, and schedule endpoints above.
 
 ## Frontend
 

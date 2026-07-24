@@ -3,7 +3,6 @@ import type {
   GraphElements,
   GraphStats,
   ImportSummary,
-  Policy,
   Provider,
   CompanyCatalogSearch,
   CompanyCollection,
@@ -80,16 +79,6 @@ export const api = {
     request<TaskStatus>(`/api/collections/${id}/runs`, { method: "POST" }),
 
   // Policies
-  listPolicies: (providerId: string) =>
-    request<Policy[]>(`/api/providers/${providerId}/policies`),
-  addPolicy: (providerId: string, form: FormData) =>
-    request<Policy>(`/api/providers/${providerId}/policies`, { method: "POST", body: form }),
-  deletePolicy: (id: string) =>
-    request<void>(`/api/policies/${id}`, { method: "DELETE" }),
-  generate: (id: string) =>
-    request<TaskStatus>(`/api/policies/${id}/generate`, { method: "POST" }),
-  score: (id: string) =>
-    request<TaskStatus>(`/api/policies/${id}/score`, { method: "POST" }),
   refreshAll: () => request<TaskStatus>("/api/refresh", { method: "POST" }),
   scoreAll: () => request<TaskStatus>("/api/score-all", { method: "POST" }),
 
@@ -126,26 +115,6 @@ export const api = {
   // Schedules
   listSchedules: (providerId: string) =>
     request<Schedule[]>(`/api/providers/${providerId}/schedules`),
-  createSchedule: (providerId: string, body: { cadence: string; enabled: boolean; source_override_url?: string | null }) =>
-    request<Schedule>(`/api/providers/${providerId}/schedules`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }),
-  updateSchedule: (id: string, body: Partial<{ cadence: string; enabled: boolean; source_override_url: string | null }>) =>
-    request<Schedule>(`/api/schedules/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }),
-  deleteSchedule: (id: string) => request<void>(`/api/schedules/${id}`, { method: "DELETE" }),
-  runSchedule: (id: string) => request<Schedule>(`/api/schedules/${id}/run`, { method: "POST" }),
-  confirmSource: (id: string, url: string) =>
-    request<Schedule>(`/api/schedules/${id}/confirm-source`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url }),
-    }),
   sourcePreview: (providerId: string) =>
     request<SourcePreview>(`/api/providers/${providerId}/source-preview`),
 

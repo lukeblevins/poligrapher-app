@@ -3,20 +3,6 @@
 import json
 from datetime import date
 
-
-def provider_slug(name: str) -> str:
-    """Filesystem-safe slug for a provider's output directory.
-
-    Mirrors the existing convention (spaces → underscores, other characters
-    preserved so names like ``S&P_Global`` stay stable) but neutralizes path
-    separators and parent references so a malicious provider name can't escape
-    the output directory.
-    """
-    slug = name.strip().replace(" ", "_")
-    slug = slug.replace("/", "_").replace("\\", "_").replace("..", "_")
-    return slug or "provider"
-
-
 def best_website_url(policies) -> str | None:
     """Pick the best website URL to prefill a provider's source from its policies.
 
