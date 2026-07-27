@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import type { ImportSummary } from "../../api/types";
 import { useImportCsv } from "../../hooks/queries";
+import { MdFilledButton, MdOutlinedButton } from "../MaterialControls";
 import { Modal } from "../Modal";
 
 export function ImportCsvModal({ onClose }: { onClose: () => void }) {
@@ -22,14 +23,14 @@ export function ImportCsvModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal title="Import companies from CSV" onClose={onClose}>
       <form onSubmit={submit} className="space-y-3">
-        <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+        <p className="text-xs leading-5 text-[var(--md-sys-color-on-surface-variant)]">
           CSV columns: Provider, Policy URL, Industry, Source, Date, Status, Score, GDPR Score,
           Graph Kind, Pipeline Status, Pipeline Errors.
         </p>
         <label className="form-label" htmlFor="company-csv-file">CSV file</label>
         <input
           id="company-csv-file"
-          className="form-input"
+          className="m3-file-input"
           type="file"
           accept=".csv"
           onChange={(e) => {
@@ -49,12 +50,12 @@ export function ImportCsvModal({ onClose }: { onClose: () => void }) {
           </p>
         )}
         <div className="flex justify-end gap-2 pt-2">
-          <button type="button" className="btn-secondary" onClick={onClose}>
+          <MdOutlinedButton type="button" onClick={onClose}>
             {summary ? "Done" : "Cancel"}
-          </button>
-          <button type="submit" className="btn-primary" disabled={importCsv.isPending || !file || Boolean(summary)}>
+          </MdOutlinedButton>
+          <MdFilledButton type="submit" disabled={importCsv.isPending || !file || Boolean(summary)}>
             {importCsv.isPending ? "Importing…" : summary ? "Imported" : "Import companies"}
-          </button>
+          </MdFilledButton>
         </div>
       </form>
     </Modal>

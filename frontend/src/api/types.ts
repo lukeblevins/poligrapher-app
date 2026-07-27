@@ -148,6 +148,27 @@ export interface TaskOutput {
   truncated: boolean;
 }
 
+export type BulkOperation = "generate" | "score";
+
+export interface BulkActionPreview {
+  operation: BulkOperation;
+  provider_count: number;
+  eligible_count: number;
+  skipped_count: number;
+  collection_count: number;
+  providers: string[];
+  skipped: string[];
+}
+
+export interface RetentionPreview {
+  older_than_days: number;
+  cutoff: string;
+  policy_count: number;
+  analysis_result_count: number;
+  artifact_count: number;
+  provider_count: number;
+}
+
 export interface RerunAvailability {
   available: boolean;
   reason: string | null;
@@ -164,6 +185,9 @@ const RUN_TASK_KINDS = new Set([
   "rerun-comparison",
   "generate",
   "score",
+  "bulk-generate",
+  "bulk-score",
+  "retention-cleanup",
   "schedule",
 ]);
 

@@ -34,6 +34,12 @@ def execute_task(task_id: str, registry) -> None:
                 _refresh(task_id, payload, registry)
             elif kind == "score-all":
                 _score_all(task_id, payload, registry)
+            elif kind == "bulk-generate":
+                _refresh(task_id, payload, registry)
+            elif kind == "bulk-score":
+                _score_all(task_id, payload, registry)
+            elif kind == "retention-cleanup":
+                _retention_cleanup(task_id, payload, registry)
             elif kind == "source-verification":
                 _verify_sources(task_id, payload, registry)
             elif kind == "collection-analysis":
@@ -207,6 +213,7 @@ def _refresh(task_id: str, payload: dict, registry) -> None:
                 return
             policy = db.get(Policy, uuid.UUID(raw_id))
             if policy is None:
+                registry.incr(task_id, "completed")
                 continue
             try:
                 with temporary_document(policy) as (doc, workspace):
@@ -241,6 +248,7 @@ def _score_all(task_id: str, payload: dict, registry) -> None:
                 return
             policy = db.get(Policy, uuid.UUID(raw_id))
             if policy is None:
+                registry.incr(task_id, "completed")
                 continue
             try:
                 with temporary_document(policy, restore_artifacts=True) as (doc, _):
@@ -296,3 +304,19 @@ def _schedule(task_id: str, payload: dict, registry) -> None:
     from poligrapher_app.services.scheduler import run_schedule_job
 
     run_schedule_job(payload["schedule_id"], task_id=task_id, registry=registry)
+
+
+def _retention_cleanup(task_id: str, payload: dict, registry) -> None:
+    from poligrapher_app.services.retention import cleanup_retention
+
+    result = cleanup_retention(
+        int(payload["older_than_days"]), registry=registry, task_id=task_id,
+    )
+    if result["cancelled"]:
+        registry.set_cancelled(task_id)
+    else:
+        registry.append_output(
+            task_id,
+            f"Retention cleanup removed {result['removed']} policies; {result['failed']} could not be removed.\n",
+        )
+        registry.set_done(task_id)

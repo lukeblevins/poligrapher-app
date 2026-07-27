@@ -12,11 +12,13 @@ import { OverflowMenu } from "./OverflowMenu";
 import { Modal } from "./Modal";
 import { SelectMenu } from "./SelectMenu";
 import { Tooltip } from "./Tooltip";
+import { CompanyLogo } from "./CompanyLogo";
+import { materialSelected, materialValue, MdFilledButton, MdOutlinedButton, MdOutlinedTextField, MdSwitch, MdTextButton } from "./MaterialControls";
 
 interface Props {
   provider: Provider | null;
   selectedPolicyId: string | null;
-  onSelectPolicy: (id: string | null) => void;
+  onSelectPolicy: (policy: Policy | null) => void;
   onBack?: () => void;
   historyTargetTaskId?: string | null;
   historyTargetNonce?: number;
@@ -25,25 +27,25 @@ interface Props {
 const CADENCES = ["daily", "weekly", "monthly"];
 
 const STATUS_STYLES: Record<string, string> = {
-  succeeded: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400",
-  done: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400",
-  running: "bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300",
-  cancelling: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
-  cancelled: "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300",
-  failed: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400",
-  pending: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400",
+  succeeded: "m3-status-success",
+  done: "m3-status-success",
+  running: "m3-status-primary",
+  cancelling: "m3-status-warning",
+  cancelled: "m3-status-neutral",
+  failed: "m3-status-error",
+  pending: "m3-status-warning",
 };
 
 const METHOD_LABEL: Record<string, string> = {
-  website: "Live page extraction",
-  pdf_from_page: "Rendered PDF extraction",
-  pdf_upload: "Uploaded PDF",
+  website: "Live policy page",
+  pdf_from_page: "Policy page PDF",
+  pdf_upload: "Uploaded policy PDF",
 };
 
 const METHOD_DESCRIPTION: Record<string, string> = {
-  website: "Generated from the live privacy-policy page",
-  pdf_from_page: "Generated from a PDF rendering of the same page",
-  pdf_upload: "Generated from a PDF supplied by the researcher",
+  website: "Analyzed from the saved live policy page",
+  pdf_from_page: "Analyzed from a PDF published with the policy page",
+  pdf_upload: "Analyzed from a policy PDF supplied by the researcher",
 };
 
 const SOURCE_STATUS_LABEL: Record<string, string> = {
@@ -56,13 +58,22 @@ const SOURCE_STATUS_LABEL: Record<string, string> = {
 };
 
 const SOURCE_STATUS_STYLE: Record<string, string> = {
-  unchecked: "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400",
-  available: "bg-teal-50 text-teal-700 ring-1 ring-inset ring-teal-200 dark:bg-teal-950/50 dark:text-teal-300 dark:ring-teal-800",
-  restricted: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400",
-  broken: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400",
-  error: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400",
-  missing: "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400",
+  unchecked: "m3-source-status m3-source-status-neutral",
+  available: "m3-source-status m3-source-status-ready",
+  restricted: "m3-source-status m3-source-status-warning",
+  broken: "m3-source-status m3-source-status-error",
+  error: "m3-source-status m3-source-status-error",
+  missing: "m3-source-status m3-source-status-neutral",
 };
+
+function companyHealth(provider: Provider): { label: string; tone: "ready" | "attention" | "error" | "neutral" } {
+  const allFailed = provider.policy_count > 0 && provider.failed_count === provider.policy_count;
+  const mixedResults = provider.failed_count > 0 && provider.succeeded_count > 0;
+  if (["broken", "error"].includes(provider.source_status) || allFailed) return { label: "Needs attention", tone: "error" };
+  if (provider.source_status === "restricted" || mixedResults || provider.failed_count > 0) return { label: "Attention recommended", tone: "attention" };
+  if (provider.source_status === "available") return { label: "Ready", tone: "ready" };
+  return { label: "Not ready", tone: "neutral" };
+}
 
 function titleCase(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
@@ -83,26 +94,13 @@ function isValidWebUrl(value: string): boolean {
 
 function Toggle({ label, on, onChange, disabled }: { label: string; on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
+    <MdSwitch
       aria-label={label}
+      selected={on}
       disabled={disabled}
-      onClick={() => onChange(!on)}
-      className="inline-grid h-11 w-11 flex-shrink-0 place-items-center rounded-full disabled:cursor-not-allowed disabled:opacity-45"
-    >
-      <span
-        aria-hidden="true"
-        className={`relative inline-flex h-6 w-11 items-center rounded-full border shadow-inner transition-colors duration-150 ${
-          on
-            ? "border-teal-600 bg-teal-700"
-            : "border-slate-300 bg-slate-200 dark:border-slate-600 dark:bg-slate-700"
-        }`}
-      >
-        <span className={`h-5 w-5 rounded-full bg-white shadow ring-1 ring-black/5 transition-transform duration-200 ${on ? "translate-x-[21px]" : "translate-x-0.5"}`} />
-      </span>
-    </button>
+      icons
+      onChange={(event) => onChange(materialSelected(event))}
+    />
   );
 }
 
@@ -121,7 +119,7 @@ function RunMethodRow({
 }) {
   const methodLabel = legacy
     ? "Unknown analysis method"
-    : METHOD_LABEL[run.method] ?? "Unrecognized analysis method";
+    : METHOD_LABEL[run.method] ?? "Imported analysis method";
   const methodDescription = legacy
     ? "Imported without recorded processing metadata"
     : METHOD_DESCRIPTION[run.method] ?? "No processing metadata recorded";
@@ -131,18 +129,18 @@ function RunMethodRow({
       onClick={onSelect}
       aria-current={selected ? "true" : undefined}
       aria-label={`${methodLabel}. Privacy score ${score(run.privacy_score)}. GDPR score ${score(run.gdpr_score)}. ${titleCase(run.pipeline_status)}. ${methodDescription}`}
-      className={`group grid min-h-12 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-l-2 px-3 py-2.5 text-left text-sm transition-colors sm:gap-3 sm:px-4 ${
+      className={`m3-run-method group grid min-h-14 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-3 py-2.5 text-left text-sm sm:gap-3 sm:px-4 ${
         selected
-          ? "border-teal-700 bg-teal-50/80 dark:border-teal-400 dark:bg-teal-950/35"
-          : "border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/50"
+          ? "m3-run-method-selected"
+          : ""
       }`}
     >
-      <span className={`min-w-0 truncate font-semibold ${selected ? "text-teal-900 dark:text-teal-100" : ""}`}>
+      <span className="min-w-0 truncate font-semibold">
         {methodLabel}
       </span>
       <span className="flex flex-wrap items-center justify-end gap-2" aria-hidden="true">
-        <span className="data-value text-xs text-slate-500 dark:text-slate-300">P {score(run.privacy_score)}</span>
-        <span className="data-value text-xs text-slate-500 dark:text-slate-300">G {score(run.gdpr_score)}</span>
+        <span className="data-value text-xs text-[var(--md-sys-color-on-surface-variant)]">P {score(run.privacy_score)}</span>
+        <span className="data-value text-xs text-[var(--md-sys-color-on-surface-variant)]">G {score(run.gdpr_score)}</span>
         <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLES[run.pipeline_status] ?? ""}`}>
           {titleCase(run.pipeline_status)}
         </span>
@@ -177,14 +175,14 @@ function RunCard({
   onDelete: () => void;
   actionsBusy: boolean;
   selectedPolicyId: string | null;
-  onSelectPolicy: (id: string) => void;
+  onSelectPolicy: (policy: Policy) => void;
 }) {
   const date = new Date(group.created_at);
   const title = group.kind === "legacy"
-    ? "Legacy analysis"
+    ? "Archived analysis"
     : group.kind === "upload"
-      ? "Uploaded PDF"
-      : "Website comparison";
+      ? "Uploaded policy PDF"
+      : "Live policy page";
   const status = groupStatus(group, task);
   const rerun = group.runs.some((run) => run.rerun_of_policy_id);
   const captureText = group.capture_date
@@ -194,42 +192,39 @@ function RunCard({
   const tooltipContent = (
     <>
       <div className="font-semibold text-white">{group.scheduled ? "Automatic" : "Manual"} {title.toLowerCase()}</div>
-      <div className="mt-1 text-slate-200">{group.runs.length} {group.runs.length === 1 ? "method" : "methods"} · Started {date.toLocaleString()}</div>
-      <div className="text-slate-200">Source captured {captureText}</div>
-      <div className="mt-1 font-mono text-slate-300">Run {group.run_id.slice(0, 8)}</div>
+      <div className="mt-1 text-[var(--md-sys-color-on-surface-variant)]">{group.runs.length} {group.runs.length === 1 ? "method" : "methods"} · Started {date.toLocaleString()}</div>
+      <div className="text-[var(--md-sys-color-on-surface-variant)]">Source captured {captureText}</div>
+      <div className="mt-1 font-mono text-[var(--md-sys-color-on-surface-variant)]">Run {group.run_id.slice(0, 8)}</div>
     </>
   );
 
   return (
     <Tooltip content={tooltipContent} side="bottom" align="end">
     <article
-      className="group/run relative overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500"
+      className="m3-run-group group/run relative overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--md-sys-color-primary)]"
       data-task-id={task?.task_id}
       role="group"
       aria-label={`${title} from ${date.toLocaleDateString()}`}
       tabIndex={0}
     >
-      <header className="flex items-center gap-2 bg-slate-50/70 px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-3 dark:bg-slate-900/45">
+      <header className="m3-run-group-header flex items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{title}</h3>
-            {rerun && <span className="rounded border border-slate-300 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 dark:border-slate-700 dark:text-slate-400">Re-run</span>}
+            <h3 className="text-sm font-semibold text-[var(--md-sys-color-on-surface)]">{title}</h3>
+            {rerun && <span className="m3-run-rerun">Re-run</span>}
             <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLES[status] ?? ""}`}>{titleCase(status)}</span>
           </div>
-          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+          <p className="mt-0.5 text-xs text-[var(--md-sys-color-on-surface-variant)]">
             {group.scheduled ? "Automatic" : "Manual"} · <time dateTime={date.toISOString()}>{date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</time>
             {task && task.total > 0 && ["running", "cancelling"].includes(task.status) ? ` · ${task.completed}/${task.total}` : ""}
           </p>
         </div>
         {canShowOutput && (
-          <button
-            type="button"
-            className="btn-secondary min-h-8 shrink-0 px-2.5 py-1 text-xs"
+          <MdOutlinedButton
+            className="min-h-8 shrink-0 text-xs"
             aria-expanded={outputExpanded}
             onClick={onToggleOutput}
-          >
-            {outputExpanded ? "Hide output" : "Output"}
-          </button>
+          >{outputExpanded ? "Hide output" : "Output"}</MdOutlinedButton>
         )}
         <OverflowMenu
           label={`Actions for ${title} from ${date.toLocaleDateString()}`}
@@ -239,14 +234,14 @@ function RunCard({
           ]}
         />
       </header>
-      <div className="divide-y divide-slate-200/80 border-t border-slate-200/80 dark:divide-slate-800 dark:border-slate-800">
+      <div className="m3-run-methods">
         {group.runs.map((run) => (
           <RunMethodRow
             key={run.id}
             run={run}
             legacy={group.kind === "legacy"}
             selected={selectedPolicyId === run.id}
-            onSelect={() => onSelectPolicy(run.id)}
+            onSelect={() => onSelectPolicy(run)}
           />
         ))}
       </div>
@@ -267,20 +262,18 @@ function PendingRunCard({
 }) {
   const progress = task.total > 0 ? `${task.completed}/${task.total}` : "Starting";
   return (
-    <article className="overflow-hidden" data-task-id={task.task_id}>
-      <div className="flex items-center gap-3 border-l-2 border-teal-500 bg-teal-50/50 px-4 py-3 dark:bg-teal-950/20">
-        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${task.status === "failed" ? "bg-red-500" : task.status === "cancelled" ? "bg-slate-400" : "bg-teal-500"}`} aria-hidden="true" />
+    <article className="m3-run-group overflow-hidden" data-task-id={task.task_id}>
+      <div className="m3-run-group-header flex items-center gap-3 px-4 py-3">
+        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${task.status === "failed" ? "bg-[var(--md-sys-color-error)]" : task.status === "cancelled" ? "bg-[var(--md-sys-color-on-surface-variant)]" : "bg-[var(--md-sys-color-primary)]"}`} aria-hidden="true" />
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-sm font-semibold">{task.title ?? "Analysis run"}</h3>
-          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+          <p className="mt-0.5 text-xs text-[var(--md-sys-color-on-surface-variant)]">
             {titleCase(task.status)} · {progress}
           </p>
-          {task.error && <p className="mt-1 line-clamp-2 text-xs text-red-600 dark:text-red-400">{task.error}</p>}
+          {task.error && <p className="mt-1 line-clamp-2 text-xs text-[var(--md-sys-color-error)]">{task.error}</p>}
         </div>
         {(task.has_output || task.status === "running" || task.status === "cancelling" || task.status === "failed") && (
-          <button type="button" className="btn-secondary min-h-8 shrink-0 px-2.5 py-1 text-xs" aria-expanded={expanded} onClick={onToggleOutput}>
-            {expanded ? "Hide output" : "Output"}
-          </button>
+          <MdOutlinedButton className="min-h-8 shrink-0 text-xs" aria-expanded={expanded} onClick={onToggleOutput}>{expanded ? "Hide output" : "Output"}</MdOutlinedButton>
         )}
       </div>
       {expanded && <TaskOutputPanel task={task} context={task.provider_name ?? task.title ?? "Analysis run"} />}
@@ -313,7 +306,7 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, onBack,
   const [checkingRunId, setCheckingRunId] = useState<string | null>(null);
   const [historyActionError, setHistoryActionError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
-  const newAnalysisRef = useRef<HTMLDivElement>(null);
+  const newAnalysisRef = useRef<HTMLElement>(null);
 
   // Keep the source input in sync when switching providers.
   useEffect(() => {
@@ -347,10 +340,10 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, onBack,
 
   if (!provider) {
     return (
-      <div className="flex flex-1 items-center justify-center text-slate-500 dark:text-slate-400">
-        <div className="text-center">
-          <p className="font-medium text-slate-500 dark:text-slate-400">Select a company</p>
-          <p className="mt-1 text-sm">Configure its policy source and review past analyses.</p>
+      <div className="flex flex-1 items-center justify-center p-6 text-[var(--md-sys-color-on-surface-variant)]">
+        <div className="m3-empty-state text-center">
+          <p className="font-display text-2xl font-semibold text-[var(--md-sys-color-on-surface)]">Select a company</p>
+          <p className="mt-2 text-sm leading-6">Configure its policy source and review past analyses.</p>
         </div>
       </div>
     );
@@ -367,13 +360,13 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, onBack,
   const normalizedSourceUrl = sourceUrl.trim();
   const sourceUrlIsValid = isValidWebUrl(normalizedSourceUrl);
   const sourceHasUnsavedChanges = normalizedSourceUrl !== savedSourceUrl;
-  const showSourceEditor = !savedSourceUrl || editingSource;
   const providerTasks = tasks.filter((task) => task.provider_id === provider.id && isRunTask(task));
   const linkedTaskIds = new Set(runs.flatMap((group) => {
     const task = group.task ?? providerTasks.find((candidate) => candidate.run_id === group.run_id);
     return task ? [task.task_id] : [];
   }));
   const provisionalTasks = providerTasks.filter((task) => !linkedTaskIds.has(task.task_id));
+  const health = companyHealth(provider);
 
   const handleRerun = async (group: RunGroup) => {
     setCheckingRunId(group.run_id);
@@ -395,185 +388,126 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, onBack,
   };
 
   return (
-    <div className={`${selectedPolicyId ? "hidden xl:block" : "block"} min-w-0 flex-1 overflow-auto px-3 py-3 sm:px-6 sm:py-8 lg:px-8`}>
-      <div className="mx-auto w-full max-w-[96rem]">
+    <div className="m3-company-record min-w-0 flex-1 overflow-auto px-4 py-3 sm:px-5 lg:px-6">
+      <div className="mx-auto w-full max-w-5xl">
       {/* Provider heading */}
-      <div>
+      <header className="overflow-hidden py-2">
         {onBack && (
-          <button type="button" className="mb-2 inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-teal-700 hover:underline sm:mb-4 md:hidden dark:text-teal-400" onClick={onBack}>
+          <button type="button" className="mb-2 inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-[var(--md-sys-color-primary)] hover:underline sm:mb-4 lg:hidden" onClick={onBack}>
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4" aria-hidden="true"><path d="m12 5-5 5 5 5" strokeLinecap="round" strokeLinejoin="round" /></svg>
             Companies
           </button>
         )}
-        <h1 className="font-display text-xl font-semibold tracking-tight text-slate-950 sm:text-3xl dark:text-white">{provider.name}</h1>
-        <p className="mt-0.5 text-xs text-slate-500 sm:mt-1.5 sm:text-sm dark:text-slate-400">
-          {provider.industry ?? "Uncategorized"} · {provider.policy_count} {provider.policy_count === 1 ? "analysis" : "analyses"}
-        </p>
-      </div>
+        <div className="flex items-center gap-3 sm:gap-4">
+          <CompanyLogo name={provider.name} domain={provider.domain} className="h-11 w-11 sm:h-12 sm:w-12" />
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="section-kicker">Company research record</p>
+              <span className={`m3-company-health m3-company-health-${health.tone}`}><span aria-hidden="true" />{health.label}</span>
+            </div>
+            <h1 className="mt-0.5 truncate font-display text-3xl font-normal tracking-normal text-[var(--md-sys-color-on-surface)] sm:text-4xl sm:leading-tight">{provider.name}</h1>
+          </div>
+        </div>
+        <dl className="mt-3 grid grid-cols-2 gap-x-5 gap-y-2 sm:grid-cols-4">
+          <div><dt className="section-kicker">Industry</dt><dd className="mt-1 truncate text-sm font-semibold text-[var(--md-sys-color-on-surface)]">{provider.industry ?? "Uncategorized"}</dd></div>
+          <div><dt className="section-kicker">Ticker</dt><dd className="data-value mt-1 text-sm font-semibold text-[var(--md-sys-color-on-surface)]">{provider.tickers.join(", ") || "—"}</dd></div>
+          <div><dt className="section-kicker">Analyses</dt><dd className="data-value mt-1 text-sm font-semibold text-[var(--md-sys-color-on-surface)]">{provider.policy_count}</dd></div>
+          <div><dt className="section-kicker">Website source</dt><dd className="mt-1 text-sm font-semibold text-[var(--md-sys-color-on-surface)]">{SOURCE_STATUS_LABEL[provider.source_status] ?? "Not checked"}</dd></div>
+        </dl>
+      </header>
 
       {/* Research configuration */}
-      <section className="surface-card isolate mt-4 overflow-visible sm:mt-7">
+      <section className="isolate mt-4 overflow-visible">
         {workspaceActionError && (
           <p role="alert" className="m-3 mb-0 sm:m-5 sm:mb-0 status-error">
             {workspaceActionError instanceof Error ? workspaceActionError.message : "The action could not be completed. Try again."}
           </p>
         )}
-        <div className="p-3 sm:p-5">
-        <div className="mb-2 flex items-center justify-between">
+      <section ref={newAnalysisRef} tabIndex={-1} aria-labelledby="new-analysis-heading" className="py-2 focus-visible:outline-none sm:py-3">
+        <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-end sm:gap-5">
           <div>
-            <h2 className="text-sm font-semibold">Website source</h2>
-            <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-              The public privacy-policy page used for website analyses and automatic monitoring.
+            <p className="section-kicker">New analysis</p>
+            <h2 id="new-analysis-heading" className="mt-1 font-display text-2xl font-normal">Start an analysis</h2>
+            <p className="mt-1 text-sm leading-6 text-[var(--md-sys-color-on-surface-variant)]">
+              Analyze the saved policy page or provide a policy PDF.
             </p>
           </div>
-          {schedule?.needs_attention && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-700 dark:bg-amber-950 dark:text-amber-300">Needs confirmation</span>}
         </div>
-        {savedSourceUrl && !editingSource && (
-          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-slate-50/70 px-3 py-2.5 sm:mt-4 sm:gap-3 sm:py-3 dark:border-slate-800 dark:bg-slate-950/40">
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className={`rounded px-2 py-1 text-[11px] font-semibold ${SOURCE_STATUS_STYLE[provider.source_status] ?? SOURCE_STATUS_STYLE.unchecked}`}>
-                  {SOURCE_STATUS_LABEL[provider.source_status] ?? "Not checked"}
-                  {provider.source_http_status ? ` · HTTP ${provider.source_http_status}` : ""}
-                </span>
-                <span className="max-w-full truncate text-xs font-medium text-slate-700 dark:text-slate-200">{savedSourceUrl}</span>
+        <div className="mt-4 grid items-stretch gap-3 md:grid-cols-[minmax(0,1.25fr)_minmax(16rem,0.75fr)]">
+          <article className="research-panel flex min-w-0 flex-col rounded-[var(--md-sys-shape-corner-large)] p-3 sm:p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="m3-recommended-label">Recommended</p>
+                <h3 className="mt-1 text-lg font-medium text-[var(--md-sys-color-on-surface)]">Analyze the live policy page</h3>
+                <p className="mt-1 text-sm leading-5 text-[var(--md-sys-color-on-surface-variant)]">Use the saved, maintained privacy-policy page.</p>
               </div>
-              {provider.source_checked_at && (
-                <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400">
-                  Checked {new Date(provider.source_checked_at).toLocaleString()}
-                  {provider.source_final_url && provider.source_final_url !== provider.source_url ? " · Redirect detected" : ""}
-                </p>
+              {schedule?.needs_attention && <span className="text-xs font-semibold text-[var(--md-sys-color-tertiary)]">Source needs confirmation</span>}
+            </div>
+            <div className="mt-4 flex-1">
+              <p className="m3-source-field-label">Website source</p>
+              {savedSourceUrl && !editingSource ? (
+                <div className="m3-source-summary mt-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`text-xs font-semibold ${SOURCE_STATUS_STYLE[provider.source_status] ?? SOURCE_STATUS_STYLE.unchecked}`}>
+                      {SOURCE_STATUS_LABEL[provider.source_status] ?? "Not checked"}{provider.source_http_status ? ` · HTTP ${provider.source_http_status}` : ""}
+                    </span>
+                  </div>
+                  <p className="m3-source-url mt-2 break-all">{savedSourceUrl}</p>
+                  {provider.source_checked_at && <p className="mt-1 data-value text-[11px] text-[var(--md-sys-color-on-surface-variant)]">Last checked {new Date(provider.source_checked_at).toLocaleString()}</p>}
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    <MdTextButton className="m3-source-action" disabled={actions.verifySource.isPending} onClick={() => actions.verifySource.mutate()}>{actions.verifySource.isPending ? "Checking…" : "Check source"}</MdTextButton>
+                    <MdTextButton className="m3-source-action" onClick={() => setEditingSource(true)}>Change source</MdTextButton>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-2">
+                  <MdOutlinedTextField
+                    id="policy-source-url"
+                    type="url"
+                    className="w-full"
+                    label="Privacy policy URL"
+                    value={sourceUrl}
+                    onInput={(event) => setSourceUrl(materialValue(event))}
+                    placeholder="https://example.com/privacy"
+                    error={Boolean(normalizedSourceUrl && !sourceUrlIsValid)}
+                    errorText="Enter a complete address beginning with http:// or https://."
+                    aria-describedby="policy-source-url-help"
+                  />
+                  <div id="policy-source-url-help">
+                    {normalizedSourceUrl && !sourceUrlIsValid ? <p className="mt-2 text-xs text-[var(--md-sys-color-error)]">Enter a complete address beginning with http:// or https://.</p> : sourceHasUnsavedChanges ? <p className="mt-2 text-xs text-[var(--md-sys-color-tertiary)]">Save this address before starting an analysis.</p> : null}
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <MdOutlinedButton disabled={actions.setSource.isPending || !sourceUrlIsValid || !sourceHasUnsavedChanges} onClick={() => actions.setSource.mutate(normalizedSourceUrl, { onSuccess: (updatedProvider) => { const url = updatedProvider.source_url ?? ""; setSavedSourceUrl(url); setSourceUrl(url); setEditingSource(false); } })}>{actions.setSource.isPending ? "Saving…" : "Save source"}</MdOutlinedButton>
+                    {savedSourceUrl && <MdOutlinedButton onClick={() => { setSourceUrl(savedSourceUrl); setEditingSource(false); }}>Cancel</MdOutlinedButton>}
+                    {!savedSourceUrl && !sourceHasUnsavedChanges && <MdTextButton disabled={actions.previewSource.isPending || !provider.domain} onClick={() => actions.previewSource.mutate(undefined, { onSuccess: (preview) => { if (preview.url) { setSourceUrl(preview.url); setSourceLookupMessage("Suggested source found. Review and save it to confirm."); } else setSourceLookupMessage("No source was found automatically. Enter one if you know it."); }, onError: () => setSourceLookupMessage("Source discovery is temporarily unavailable.") })}>{actions.previewSource.isPending ? "Searching…" : "Find automatically"}</MdTextButton>}
+                  </div>
+                  {sourceLookupMessage && <p className="mt-2 text-xs leading-5 text-[var(--md-sys-color-on-surface-variant)]">{sourceLookupMessage}</p>}
+                </div>
               )}
             </div>
-            <button
-              type="button"
-              className="text-xs font-semibold text-teal-700 hover:underline disabled:opacity-50 dark:text-teal-400"
-              disabled={actions.verifySource.isPending}
-              onClick={() => actions.verifySource.mutate()}
-            >
-              {actions.verifySource.isPending ? "Checking…" : "Check"}
-            </button>
-            <button type="button" className="btn-secondary min-h-8 px-2.5 py-1 text-xs" onClick={() => setEditingSource(true)}>Edit</button>
-          </div>
-        )}
-        {showSourceEditor && (
-          <div className="mt-4">
-            <label className="form-label" htmlFor="policy-source-url">Privacy policy URL</label>
-            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-start">
-              <input
-                id="policy-source-url"
-                type="url"
-                className="form-input flex-1"
-                value={sourceUrl}
-                onChange={(e) => setSourceUrl(e.target.value)}
-                placeholder="https://example.com/privacy"
-                aria-invalid={normalizedSourceUrl && !sourceUrlIsValid ? true : undefined}
-                aria-describedby="policy-source-url-help"
-              />
-              <div className="flex gap-2 sm:flex-none">
-                <button
-                  className="btn-primary flex-1 sm:flex-none"
-                  disabled={actions.setSource.isPending || !sourceUrlIsValid || !sourceHasUnsavedChanges}
-                  onClick={() => actions.setSource.mutate(normalizedSourceUrl, {
-                    onSuccess: (updatedProvider) => {
-                      const updatedSourceUrl = updatedProvider.source_url ?? "";
-                      setSavedSourceUrl(updatedSourceUrl);
-                      setSourceUrl(updatedSourceUrl);
-                      setEditingSource(false);
-                    },
-                  })}
-                >
-                  {actions.setSource.isPending ? "Saving…" : "Save source"}
-                </button>
-                {savedSourceUrl && (
-                  <button
-                    type="button"
-                    className="btn-secondary flex-1 sm:flex-none"
-                    onClick={() => {
-                      setSourceUrl(savedSourceUrl);
-                      setEditingSource(false);
-                    }}
-                  >
-                    Cancel
-                  </button>
-                )}
-              </div>
-            </div>
-            <div id="policy-source-url-help">
-              {normalizedSourceUrl && !sourceUrlIsValid ? (
-                <p className="mt-2 text-xs text-red-600 dark:text-red-400">Enter a complete web address beginning with http:// or https://.</p>
-              ) : sourceHasUnsavedChanges ? (
-                <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">Save this URL before starting a website analysis.</p>
-              ) : null}
-            </div>
-          </div>
-        )}
-        {!savedSourceUrl && !sourceHasUnsavedChanges && (
-          <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3 dark:border-slate-800">
-            <button
-              className="text-xs font-semibold text-teal-700 hover:underline disabled:cursor-not-allowed disabled:opacity-50 dark:text-teal-400"
-              disabled={actions.previewSource.isPending || !provider.domain}
-              onClick={() => actions.previewSource.mutate(undefined, {
-                onSuccess: (preview) => {
-                  if (preview.url) {
-                    setSourceUrl(preview.url);
-                    setSourceLookupMessage(
-                      preview.strategy === "ota"
-                        ? "Suggested from Open Terms Archive. Review and save it to confirm."
-                        : `Suggested from ${preview.notes || "the company website"}. Review and save it to confirm.`,
-                    );
-                  } else {
-                    setSourceLookupMessage("No privacy-policy source was found automatically. Enter one above if you know it.");
-                  }
-                },
-                onError: () => setSourceLookupMessage("Source discovery is temporarily unavailable. Enter a policy URL above if you know it."),
-              })}
-            >
-              {actions.previewSource.isPending ? "Looking for a privacy policy…" : "Find a privacy policy automatically"}
-            </button>
-            {!provider.domain && <span className="text-xs text-slate-500 dark:text-slate-400">Add a company website before using discovery.</span>}
-          </div>
-        )}
-        {sourceLookupMessage && <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">{sourceLookupMessage}</p>}
-        </div>
-
-      {/* Explicit analysis actions */}
-      <div ref={newAnalysisRef} tabIndex={-1} className="border-t border-slate-300 p-3 focus-visible:outline-none sm:p-5 dark:border-slate-800">
-        <div>
-          <h2 className="text-sm font-semibold">Start a new analysis</h2>
-          <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-            Choose where the policy should come from. Results will appear in the history below.
-          </p>
-        </div>
-        <div className="mt-3 grid gap-2 sm:mt-4 sm:grid-cols-2 sm:gap-3">
-          <button
-            className="group rounded-md border border-teal-300 bg-teal-50/50 p-3 text-left transition-colors hover:border-teal-600 hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-50 sm:p-4 dark:border-teal-900 dark:bg-teal-950/25 dark:hover:border-teal-700 dark:hover:bg-teal-950/40"
-            disabled={busy || !savedSourceUrl || sourceHasUnsavedChanges}
-            onClick={() => actions.runNow.mutate()}
-          >
-            <span className="block text-sm font-semibold text-teal-800 dark:text-teal-300">
-              {actions.runNow.isPending ? "Starting…" : "Analyze website"}
-            </span>
-            <span className="mt-1 block text-xs leading-5 text-teal-700/80 dark:text-teal-400">
-              Crawl the saved page and generate policy results.
-            </span>
-          </button>
-          <button
-            className="rounded-md border border-slate-300 p-3 text-left transition-colors hover:border-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 sm:p-4 dark:border-slate-700 dark:hover:border-slate-600 dark:hover:bg-slate-800/60"
+            {(!savedSourceUrl || sourceHasUnsavedChanges) && <p id="website-analysis-status" className="mt-3 text-xs leading-5 text-[var(--md-sys-color-tertiary)]">{!savedSourceUrl ? "Save a website source to enable this analysis." : "Save the edited website source before continuing."}</p>}
+            <MdFilledButton className="mt-3 w-full" disabled={busy || !savedSourceUrl || sourceHasUnsavedChanges} aria-describedby={!savedSourceUrl || sourceHasUnsavedChanges ? "website-analysis-status" : undefined} onClick={() => actions.runNow.mutate()}>
+              {actions.runNow.isPending ? "Starting analysis…" : "Analyze policy page"}
+            </MdFilledButton>
+          </article>
+          <article className="ui-subtle flex flex-col rounded-[var(--md-sys-shape-corner-large)] p-3 sm:p-4">
+            <p className="section-kicker">Use a policy PDF instead</p>
+            <h3 className="mt-1 text-lg font-medium text-[var(--md-sys-color-on-surface)]">Analyze a policy PDF</h3>
+            <p className="mt-2 flex-1 text-sm leading-6 text-[var(--md-sys-color-on-surface-variant)]">Use a policy document when the live page is unavailable or when you need to review a specific edition.</p>
+            <p className="text-xs leading-5 text-[var(--md-sys-color-on-surface-variant)]">PDF analyses appear alongside live-page analyses in analysis history.</p>
+            <MdOutlinedButton
+            className="mt-4 w-full"
             disabled={busy}
             onClick={() => fileRef.current?.click()}
           >
-            <span className="block text-sm font-semibold">
-              {actions.upload.isPending ? "Uploading…" : "Upload and analyze a PDF"}
-            </span>
-            <span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-slate-400">
-              Use a policy document from your computer instead.
-            </span>
-          </button>
+              {actions.upload.isPending ? "Uploading PDF…" : "Choose PDF to analyze"}
+          </MdOutlinedButton>
+          </article>
           <input
             ref={fileRef}
             type="file"
             accept="application/pdf"
+            aria-label="Upload policy PDF"
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0];
@@ -582,10 +516,10 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, onBack,
             }}
           />
         </div>
-      </div>
+      </section>
 
       {/* Automatic monitoring */}
-      <div className="border-t border-slate-300 p-3 sm:p-5 dark:border-slate-800">
+      <div className="ui-subtle mb-4 rounded-xl p-4 sm:mb-5">
         <div className="flex items-start gap-2 sm:gap-3">
           <Toggle
             label="Monitor for policy changes"
@@ -607,13 +541,13 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, onBack,
                 />
               )}
             </div>
-            <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+            <p className="mt-1 text-xs leading-5 text-[var(--md-sys-color-on-surface-variant)]">
               {savedSourceUrl
                 ? "Check the saved website source automatically and analyze it when the policy changes."
                 : "Save a website source before enabling automatic monitoring."}
             </p>
             {scheduleOn && schedule && (
-              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              <p className="mt-2 text-xs text-[var(--md-sys-color-on-surface-variant)]">
                 {schedule.last_status !== "idle" ? `${titleCase(schedule.last_status)} · ` : ""}
                 Next check {schedule.next_run_at ? new Date(schedule.next_run_at).toLocaleString() : "not scheduled"}
               </p>
@@ -624,10 +558,11 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, onBack,
       </section>
 
       {/* Analysis history */}
-      <section className="mt-5 sm:mt-8">
-        <div className="mb-2 sm:mb-3">
-          <h2 className="text-sm font-semibold">Analysis history</h2>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+      <section className="mt-5">
+        <div className="mb-3">
+          <p className="section-kicker">Past analysis runs</p>
+          <h2 className="mt-1 font-display text-2xl font-semibold">Analysis history</h2>
+          <p className="mt-1 text-xs text-[var(--md-sys-color-on-surface-variant)]">
             Select a method to inspect its results.
           </p>
           {historyActionError && <p role="alert" className="mt-2 status-error">{historyActionError}</p>}
@@ -638,10 +573,10 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, onBack,
           <p role="alert" className="status-error">Could not load analysis history. {error instanceof Error ? error.message : "Try refreshing the page."}</p>
         ) : runs.length === 0 && provisionalTasks.length === 0 ? (
           <p className="quiet-state py-6">
-            No analyses yet. Analyze the saved website or upload a PDF to get started.
+            No analyses yet. Analyze the saved policy page or choose a policy PDF to get started.
           </p>
         ) : (
-          <div className="surface-card divide-y divide-slate-300 overflow-hidden dark:divide-slate-700">
+          <div className="m3-analysis-history">
             {provisionalTasks.map((task) => (
               <PendingRunCard
                 key={task.task_id}
@@ -673,14 +608,13 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, onBack,
 
       {deleteTarget && (
         <Modal title="Delete analysis run" onClose={() => setDeleteTarget(null)}>
-          <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+          <p className="text-sm leading-6 text-[var(--md-sys-color-on-surface-variant)]">
             Delete this analysis run? Its results and saved output will be permanently removed.
           </p>
           <div className="mt-5 flex justify-end gap-2">
-            <button type="button" className="btn-secondary" onClick={() => setDeleteTarget(null)}>Cancel</button>
-            <button
-              type="button"
-              className="btn-danger"
+            <MdOutlinedButton onClick={() => setDeleteTarget(null)}>Cancel</MdOutlinedButton>
+            <MdFilledButton
+              className="material-error"
               disabled={actions.deleteRun.isPending}
               onClick={() => actions.deleteRun.mutate(deleteTarget.run_id, {
                 onSuccess: () => {
@@ -691,21 +625,19 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, onBack,
               })}
             >
               {actions.deleteRun.isPending ? "Deleting…" : "Delete"}
-            </button>
+            </MdFilledButton>
           </div>
         </Modal>
       )}
 
       {rerunFallback && (
         <Modal title="Saved source unavailable" onClose={() => setRerunFallback(null)}>
-          <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+          <p className="text-sm leading-6 text-[var(--md-sys-color-on-surface-variant)]">
             The saved copy for this run isn’t available. Start a new analysis for {provider.name} instead?
           </p>
           <div className="mt-5 flex justify-end gap-2">
-            <button type="button" className="btn-secondary" onClick={() => setRerunFallback(null)}>Cancel</button>
-            <button
-              type="button"
-              className="btn-primary"
+            <MdOutlinedButton onClick={() => setRerunFallback(null)}>Cancel</MdOutlinedButton>
+            <MdFilledButton
               onClick={() => {
                 setRerunFallback(null);
                 requestAnimationFrame(() => {
@@ -715,7 +647,7 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, onBack,
               }}
             >
               Start new analysis
-            </button>
+            </MdFilledButton>
           </div>
         </Modal>
       )}

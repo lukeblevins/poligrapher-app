@@ -9,8 +9,17 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Resp
 from sqlalchemy.orm import Session
 
 from poligrapher_app.api.deps import get_db
-from poligrapher_app.api.models import Policy, Provider
-from poligrapher_app.api.schemas import PolicyRead, TaskStatus
+from poligrapher_app.api.models import CompanyCollection, Policy, Provider
+from poligrapher_app.api.schemas import (
+    BulkActionPreview,
+    BulkActionRequest,
+    BulkSelection,
+    PolicyRead,
+    RetentionPreview,
+    RetentionRequest,
+    TaskStatus,
+)
+from poligrapher_app.services.retention import preview_retention
 
 router = APIRouter(tags=["policies"])
 
@@ -20,6 +29,112 @@ Db = Annotated[Session, Depends(get_db)]
 def _task_status(registry, task_id: str) -> TaskStatus:
     task = registry.get(task_id) or {"task_id": task_id, "status": "running"}
     return TaskStatus(**task)
+
+
+def _selected_providers(selection: BulkSelection, db: Session) -> list[Provider]:
+    provider_ids = set(selection.provider_ids)
+    collections = (
+        db.query(CompanyCollection)
+        .filter(CompanyCollection.id.in_(selection.collection_ids))
+        .all()
+        if selection.collection_ids
+        else []
+    )
+    if len(collections) != len(set(selection.collection_ids)):
+        raise HTTPException(status_code=422, detail="One or more collections do not exist")
+    provider_ids.update(provider.id for collection in collections for provider in collection.providers)
+    if not provider_ids:
+        raise HTTPException(status_code=422, detail="Select at least one company or collection")
+    providers = db.query(Provider).filter(Provider.id.in_(provider_ids)).order_by(Provider.name).all()
+    if len(providers) != len(provider_ids):
+        raise HTTPException(status_code=422, detail="One or more companies do not exist")
+    return providers
+
+
+def _bulk_targets(body: BulkActionRequest, db: Session) -> tuple[list[Provider], list[Policy], list[str]]:
+    providers = _selected_providers(body, db)
+    policies: list[Policy] = []
+    skipped: list[str] = []
+    for provider in providers:
+        query = db.query(Policy).filter(Policy.provider_id == provider.id)
+        if body.operation == "score":
+            query = query.filter(Policy.pipeline_status == "succeeded")
+        policy = query.order_by(Policy.created_at.desc()).first()
+        if policy is None:
+            reason = "no completed analysis to score" if body.operation == "score" else "no analysis to generate"
+            skipped.append(f"{provider.name} has {reason}")
+        else:
+            policies.append(policy)
+    return providers, policies, skipped
+
+
+@router.post("/api/bulk/preview", response_model=BulkActionPreview)
+def preview_bulk_action(body: BulkActionRequest, db: Db):
+    providers, policies, skipped = _bulk_targets(body, db)
+    return BulkActionPreview(
+        operation=body.operation,
+        provider_count=len(providers),
+        eligible_count=len(policies),
+        skipped_count=len(skipped),
+        collection_count=len(body.collection_ids),
+        providers=[provider.name for provider in providers],
+        skipped=skipped,
+    )
+
+
+@router.post("/api/bulk/run", response_model=TaskStatus)
+def run_bulk_action(body: BulkActionRequest, request: Request, db: Db):
+    providers, policies, skipped = _bulk_targets(body, db)
+    if not policies:
+        raise HTTPException(status_code=422, detail="None of the selected companies has an eligible analysis")
+    registry = request.app.state.tasks
+    kind = "bulk-generate" if body.operation == "generate" else "bulk-score"
+    task_id = registry.create(
+        kind=kind,
+        title=f"Bulk {body.operation} · {len(policies)} policies",
+        total=len(policies),
+    )
+    registry.append_output(
+        task_id,
+        f"Selected {len(providers)} companies; {len(policies)} policies are eligible for {body.operation}.\n",
+    )
+    if skipped:
+        registry.append_output(task_id, "Skipped: " + "; ".join(skipped) + "\n")
+    registry.enqueue(task_id, {
+        "kind": kind,
+        "policy_ids": [str(policy.id) for policy in policies],
+        "provider_ids": [str(provider.id) for provider in providers],
+        "skipped": skipped,
+    })
+    return _task_status(registry, task_id)
+
+
+@router.post("/api/retention/preview", response_model=RetentionPreview)
+def preview_retention_cleanup(body: RetentionRequest, db: Db):
+    return RetentionPreview(**preview_retention(db, body.older_than_days))
+
+
+@router.post("/api/retention/cleanup", response_model=TaskStatus)
+def start_retention_cleanup(body: RetentionRequest, request: Request, db: Db):
+    if not body.confirmed:
+        raise HTTPException(status_code=422, detail="Retention cleanup requires explicit confirmation")
+    preview = preview_retention(db, body.older_than_days)
+    registry = request.app.state.tasks
+    task_id = registry.create(
+        kind="retention-cleanup",
+        title=f"Retention cleanup · {body.older_than_days} days",
+        total=preview["policy_count"],
+    )
+    registry.append_output(
+        task_id,
+        "Retention cleanup queued for "
+        f"{preview['policy_count']} policies and up to {preview['artifact_count']} stored files.\n",
+    )
+    registry.enqueue(task_id, {
+        "kind": "retention-cleanup",
+        "older_than_days": body.older_than_days,
+    })
+    return _task_status(registry, task_id)
 
 
 # ── Provider-scoped policy routes ─────────────────────────────────────────────

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { GraphStatsData } from "../api/types";
 import { useStats } from "../hooks/queries";
 
@@ -6,119 +7,61 @@ export function StatsPanel({ policyId }: { policyId: string }) {
 
   if (isLoading) return <p role="status" className="quiet-state">Loading graph statistics…</p>;
   if (isError) return <p role="alert" className="status-error">Could not load graph statistics. {error instanceof Error ? error.message : "Try again."}</p>;
-  if (!data?.stats) return <p className="quiet-state">No graph statistics are available for this analysis.</p>;
+  if (!data?.stats) return <p className="quiet-state">Graph statistics are not available for this analysis.</p>;
 
-  const s = data.stats;
+  const stats = data.stats;
   return (
-    <div className="space-y-6 text-sm">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <Metric label="Nodes" value={s.node_count} />
-        <Metric label="Edges" value={s.edge_count} />
-        <Metric label="Components" value={s.component_count} />
-        <Metric label="Density" value={s.density.toFixed(4)} />
-        <Metric label="Clustering" value={s.average_clustering.toFixed(4)} />
-        <Metric label="Transitivity" value={s.transitivity.toFixed(4)} />
-        <Metric label="Isolated nodes" value={s.isolated_nodes} />
-        <Metric label="Self-loops" value={s.self_loop_count} />
-        <Metric
-          label="Largest component"
-          value={`${s.largest_component_size} (${(s.largest_component_ratio * 100).toFixed(0)}%)`}
-        />
-      </div>
-
-      <CountSection title="Node types" counts={s.node_type_counts} />
-      <CountSection title="Edge types" counts={s.edge_type_counts} />
-      <DegreeSection s={s} />
-      <HubSection title="Top hubs (degree)" nodes={s.top_degree_nodes} />
+    <div className="m3-results-panel">
+      <header className="m3-results-heading">
+        <p className="section-kicker">Policy graph</p>
+        <h2>Graph overview</h2>
+        <p>Structure and connectivity for this policy snapshot.</p>
+      </header>
+      <section aria-label="Graph overview" className="m3-metric-grid">
+        <Metric label="Nodes" value={stats.node_count} prominent />
+        <Metric label="Connections" value={stats.edge_count} prominent />
+        <Metric label="Components" value={stats.component_count} />
+        <Metric label="Density" value={stats.density.toFixed(4)} />
+        <Metric label="Clustering" value={stats.average_clustering.toFixed(4)} />
+        <Metric label="Transitivity" value={stats.transitivity.toFixed(4)} />
+        <Metric label="Isolated nodes" value={stats.isolated_nodes} />
+        <Metric label="Self-loops" value={stats.self_loop_count} />
+        <Metric label="Largest component" value={`${stats.largest_component_size} · ${(stats.largest_component_ratio * 100).toFixed(0)}%`} />
+      </section>
+      <ResultSection title="Graph composition">
+        <CountList title="Node types" counts={stats.node_type_counts} />
+        <CountList title="Relationship types" counts={stats.edge_type_counts} />
+      </ResultSection>
+      <ResultSection title="Connectivity">
+        <DegreeTable stats={stats} />
+      </ResultSection>
+      <ResultSection title="Most connected concepts">
+        <HubList nodes={stats.top_degree_nodes} />
+      </ResultSection>
     </div>
   );
 }
 
-function Metric({ label, value }: { label: string; value: number | string }) {
-  return (
-    <div className="rounded-md border border-slate-300 bg-slate-50/70 px-3.5 py-3 dark:border-slate-700 dark:bg-slate-800/50">
-      <div className="text-[11px] font-medium text-slate-500 dark:text-slate-400">{label}</div>
-      <div className="data-value mt-1 text-base font-semibold text-slate-900 dark:text-white">{value}</div>
-    </div>
-  );
+function Metric({ label, value, prominent = false }: { label: string; value: number | string; prominent?: boolean }) {
+  return <article className={`m3-metric-card${prominent ? " m3-metric-card-prominent" : ""}`}><p>{label}</p><strong className="data-value">{value}</strong></article>;
 }
 
-function CountSection({ title, counts }: { title: string; counts: Record<string, number> }) {
-  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  if (entries.length === 0) return null;
-  return (
-    <div>
-      <h3 className="section-kicker mb-2">
-        {title}
-      </h3>
-      <div className="flex flex-wrap gap-1.5">
-        {entries.map(([name, count]) => (
-          <span
-            key={name}
-            className="data-value rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-          >
-            {name}: {count}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
+function ResultSection({ title, children }: { title: string; children: ReactNode }) {
+  return <section className="m3-result-section"><h3>{title}</h3>{children}</section>;
 }
 
-function DegreeSection({ s }: { s: GraphStatsData }) {
-  const rows: [string, GraphStatsData["degree"]][] = [
-    ["Degree", s.degree],
-    ["In-degree", s.in_degree],
-    ["Out-degree", s.out_degree],
-  ];
-  return (
-    <div>
-      <h3 className="section-kicker mb-2">
-        Degree
-      </h3>
-      <table className="w-full overflow-hidden rounded-lg text-xs tabular-nums">
-        <thead>
-          <tr className="text-left text-slate-500 dark:text-slate-400">
-            <th className="py-1 font-medium"></th>
-            <th className="py-1 font-medium">min</th>
-            <th className="py-1 font-medium">max</th>
-            <th className="py-1 font-medium">mean</th>
-            <th className="py-1 font-medium">median</th>
-          </tr>
-        </thead>
-        <tbody className="font-mono">
-          {rows.map(([label, d]) => (
-            <tr key={label} className="border-t border-slate-100 dark:border-slate-800">
-              <td className="py-2 font-sans font-medium text-slate-500">{label}</td>
-              <td className="py-2">{d.min}</td>
-              <td className="py-2">{d.max}</td>
-              <td className="py-2">{d.mean.toFixed(2)}</td>
-              <td className="py-2">{d.median.toFixed(2)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+function CountList({ title, counts }: { title: string; counts: Record<string, number> }) {
+  const entries = Object.entries(counts).sort((left, right) => right[1] - left[1]);
+  if (!entries.length) return null;
+  return <div className="m3-count-list"><h4>{title}</h4><div>{entries.map(([name, count]) => <span key={name} className="m3-data-chip"><b>{name}</b><em className="data-value">{count}</em></span>)}</div></div>;
 }
 
-function HubSection({ title, nodes }: { title: string; nodes: [string, number][] }) {
-  if (!nodes?.length) return null;
-  return (
-    <div>
-      <h3 className="section-kicker mb-2">
-        {title}
-      </h3>
-      <div className="flex flex-wrap gap-1.5">
-        {nodes.slice(0, 8).map(([node, deg]) => (
-          <span
-            key={node}
-            className="data-value rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-          >
-            {node} ({deg})
-          </span>
-        ))}
-      </div>
-    </div>
-  );
+function DegreeTable({ stats }: { stats: GraphStatsData }) {
+  const rows: [string, GraphStatsData["degree"]][] = [["Total degree", stats.degree], ["Incoming degree", stats.in_degree], ["Outgoing degree", stats.out_degree]];
+  return <div className="m3-stat-table-wrap"><table className="m3-stat-table"><thead><tr><th scope="col">Measure</th><th scope="col">Minimum</th><th scope="col">Maximum</th><th scope="col">Average</th><th scope="col">Median</th></tr></thead><tbody>{rows.map(([label, value]) => <tr key={label}><th scope="row">{label}</th><td>{value.min}</td><td>{value.max}</td><td>{value.mean.toFixed(2)}</td><td>{value.median.toFixed(2)}</td></tr>)}</tbody></table></div>;
+}
+
+function HubList({ nodes }: { nodes: [string, number][] }) {
+  if (!nodes?.length) return <p className="m3-supporting-copy">No high-connectivity concepts were recorded.</p>;
+  return <ol className="m3-hub-list">{nodes.slice(0, 8).map(([node, degree], index) => <li key={node}><span>{index + 1}</span><b>{node}</b><em className="data-value">{degree}</em></li>)}</ol>;
 }

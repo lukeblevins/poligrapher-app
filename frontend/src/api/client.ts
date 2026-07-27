@@ -1,5 +1,7 @@
 import type {
   Assessments,
+  BulkActionPreview,
+  BulkOperation,
   GraphElements,
   GraphStats,
   ImportSummary,
@@ -13,6 +15,7 @@ import type {
   SourcePreview,
   TaskStatus,
   TaskOutput,
+  RetentionPreview,
 } from "./types";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -81,6 +84,38 @@ export const api = {
   // Policies
   refreshAll: () => request<TaskStatus>("/api/refresh", { method: "POST" }),
   scoreAll: () => request<TaskStatus>("/api/score-all", { method: "POST" }),
+  previewBulkAction: (body: {
+    operation: BulkOperation;
+    provider_ids: string[];
+    collection_ids: string[];
+  }) =>
+    request<BulkActionPreview>("/api/bulk/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  runBulkAction: (body: {
+    operation: BulkOperation;
+    provider_ids: string[];
+    collection_ids: string[];
+  }) =>
+    request<TaskStatus>("/api/bulk/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  previewRetention: (older_than_days: number) =>
+    request<RetentionPreview>("/api/retention/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ older_than_days }),
+    }),
+  cleanupRetention: (older_than_days: number) =>
+    request<TaskStatus>("/api/retention/cleanup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ older_than_days, confirmed: true }),
+    }),
 
   // Provider runs & source
   setSource: (providerId: string, source_url: string) =>

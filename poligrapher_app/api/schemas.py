@@ -1,7 +1,8 @@
 import uuid
 from datetime import date, datetime
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ProviderCreate(BaseModel):
@@ -168,6 +169,41 @@ class TaskOutput(BaseModel):
     status: str
     output: str
     truncated: bool = False
+
+
+class BulkSelection(BaseModel):
+    """A de-duplicated company cohort assembled from collections and direct picks."""
+
+    provider_ids: list[uuid.UUID] = []
+    collection_ids: list[uuid.UUID] = []
+
+
+class BulkActionRequest(BulkSelection):
+    operation: Literal["generate", "score"]
+
+
+class BulkActionPreview(BaseModel):
+    operation: Literal["generate", "score"]
+    provider_count: int
+    eligible_count: int
+    skipped_count: int
+    collection_count: int
+    providers: list[str]
+    skipped: list[str]
+
+
+class RetentionRequest(BaseModel):
+    older_than_days: int = Field(gt=0, le=36500)
+    confirmed: bool = False
+
+
+class RetentionPreview(BaseModel):
+    older_than_days: int
+    cutoff: datetime
+    policy_count: int
+    analysis_result_count: int
+    artifact_count: int
+    provider_count: int
 
 
 class ImportSummary(BaseModel):

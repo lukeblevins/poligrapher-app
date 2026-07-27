@@ -28,10 +28,10 @@ export function CompanyLogo({
 
   return (
     <span
-      className={`relative grid flex-shrink-0 place-items-center overflow-hidden rounded border border-slate-300 bg-white text-[10px] font-bold tracking-wide text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 ${className}`}
+      className={`m3-avatar relative grid flex-shrink-0 place-items-center overflow-hidden text-[10px] font-medium tracking-wide ${className}`}
       aria-hidden="true"
     >
-      <span>{initials(name)}</span>
+      {!loaded && <span>{initials(name)}</span>}
       {canLoad && (
         <img
           src={`https://${safeDomain}/favicon.ico`}
@@ -39,7 +39,7 @@ export function CompanyLogo({
           loading="lazy"
           decoding="async"
           referrerPolicy="no-referrer"
-          className={`absolute inset-0 h-full w-full object-contain p-1 transition-opacity ${loaded ? "opacity-100" : "opacity-0"}`}
+          className={`absolute inset-0 h-full w-full object-contain p-1.5 ${loaded ? "opacity-100" : "opacity-0"}`}
           onLoad={(event) => setLoaded(event.currentTarget.naturalWidth > 0 && event.currentTarget.naturalHeight > 0)}
           onError={() => {
             setLoaded(false);

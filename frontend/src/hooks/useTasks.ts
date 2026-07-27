@@ -33,3 +33,15 @@ export function useCancelTask() {
     },
   });
 }
+
+export function useRetryPendingTasks() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.refreshAll,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["providers"] });
+      qc.invalidateQueries({ queryKey: ["policies"] });
+    },
+  });
+}

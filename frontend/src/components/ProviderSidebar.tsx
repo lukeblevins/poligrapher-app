@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import filterIcon from "@material-symbols/svg-400/rounded/filter_alt.svg?url";
 
 import type { Provider } from "../api/types";
 import { useCollections, useDeleteProvider, useProviders } from "../hooks/queries";
@@ -6,7 +7,7 @@ import { CompanyLogo } from "./CompanyLogo";
 import { Modal } from "./Modal";
 import { OverflowMenu } from "./OverflowMenu";
 import { SelectMenu } from "./SelectMenu";
-import { Tooltip } from "./Tooltip";
+import { MdFilledButton, MdOutlinedButton } from "./MaterialControls";
 
 interface Props {
   selectedId: string | null;
@@ -16,6 +17,10 @@ interface Props {
 }
 
 const PROVIDER_BATCH_SIZE = 100;
+
+function MaterialSymbol({ src }: { src: string }) {
+  return <span className="m3-material-symbol" style={{ "--m3-symbol-url": `url("${src}")` } as CSSProperties} aria-hidden="true" />;
+}
 
 interface IndustryOption {
   key: string;
@@ -52,29 +57,6 @@ function getIndustryOptions(providers: Provider[]): IndustryOption[] {
     .sort((left, right) => left.label.localeCompare(right.label));
 }
 
-function companyHealth(p: Provider): { color: string; label: string; detail: string } {
-  const allFailed = p.policy_count > 0 && p.failed_count === p.policy_count;
-  const mixedResults = p.failed_count > 0 && p.succeeded_count > 0;
-  const sourceLabel = p.source_status === "available" ? `Available${p.source_http_status ? ` (HTTP ${p.source_http_status})` : ""}`
-    : p.source_status === "restricted" ? "Restricted"
-      : p.source_status === "broken" ? "Not found"
-        : p.source_status === "error" ? "Check failed"
-          : p.source_status === "missing" ? "Not configured"
-            : "Not checked";
-  const analysisLabel = p.policy_count === 0 ? "No analyses"
-    : `${p.succeeded_count} succeeded, ${p.failed_count} failed`;
-  if (["broken", "error"].includes(p.source_status) || allFailed) {
-    return { color: "bg-red-500", label: "Needs attention", detail: `Source: ${sourceLabel}. Analyses: ${analysisLabel}.` };
-  }
-  if (p.source_status === "restricted" || mixedResults || p.failed_count > 0) {
-    return { color: "bg-amber-400", label: "Attention recommended", detail: `Source: ${sourceLabel}. Analyses: ${analysisLabel}.` };
-  }
-  if (p.source_status === "available") {
-    return { color: "bg-teal-500", label: "Ready", detail: `Source: ${sourceLabel}. Analyses: ${analysisLabel}.` };
-  }
-  return { color: "bg-slate-500 dark:bg-slate-400", label: "Not ready", detail: `Source: ${sourceLabel}. Analyses: ${analysisLabel}.` };
-}
-
 function logoDomain(p: Provider): string | null {
   if (p.domain) return p.domain;
   if (!p.source_url) return null;
@@ -95,61 +77,33 @@ export function ProviderSidebar({ selectedId, onSelect, onDeleted, mobileHidden 
   const deleteProvider = useDeleteProvider();
   const [query, setQuery] = useState("");
   const [collectionId, setCollectionId] = useState("all");
-  const [selectedIndustries, setSelectedIndustries] = useState<string[]>([]);
-  const [industryMenuOpen, setIndustryMenuOpen] = useState(false);
+  const [selectedIndustry, setSelectedIndustry] = useState("all");
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Provider | null>(null);
   const [visibleCount, setVisibleCount] = useState(PROVIDER_BATCH_SIZE);
-  const industryMenuRef = useRef<HTMLDivElement>(null);
-  const industryButtonRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (!industryMenuOpen) return;
-
-    const closeOnOutsideInteraction = (event: PointerEvent | FocusEvent) => {
-      if (event.target instanceof Node && !industryMenuRef.current?.contains(event.target)) {
-        setIndustryMenuOpen(false);
-      }
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setIndustryMenuOpen(false);
-        industryButtonRef.current?.focus();
-      }
-    };
-
-    document.addEventListener("pointerdown", closeOnOutsideInteraction, true);
-    document.addEventListener("focusin", closeOnOutsideInteraction, true);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOnOutsideInteraction, true);
-      document.removeEventListener("focusin", closeOnOutsideInteraction, true);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [industryMenuOpen]);
-
   const industries = useMemo(() => getIndustryOptions(providers), [providers]);
-  const industryLabels = useMemo(() => new Map(industries.map((industry) => [industry.key, industry.label])), [industries]);
-  const selectedIndustrySet = useMemo(() => new Set(selectedIndustries), [selectedIndustries]);
-  const industryLabel = selectedIndustries.length === 0
-    ? "All industries"
-    : selectedIndustries.length === 1
-      ? industries.find((industry) => industry.key === selectedIndustries[0])?.label ?? selectedIndustries[0]
-      : `${selectedIndustries.length} industries`;
   const filtered = useMemo(() => {
     const selectedCollection = collections.find((collection) => collection.id === collectionId);
     const collectionMembers = selectedCollection ? new Set(selectedCollection.provider_ids) : null;
     const needle = query.toLowerCase();
     return providers.filter((provider) =>
       (!collectionMembers || collectionMembers.has(provider.id))
-      && (selectedIndustries.length === 0 || (!!provider.industry && selectedIndustrySet.has(normalizeIndustry(provider.industry))))
+      && (selectedIndustry === "all" || (!!provider.industry && selectedIndustry === normalizeIndustry(provider.industry)))
       && (provider.name.toLowerCase().includes(needle) || provider.tickers.some((ticker) => ticker.toLowerCase().includes(needle))),
     );
-  }, [collectionId, collections, providers, query, selectedIndustries.length, selectedIndustrySet]);
+  }, [collectionId, collections, providers, query, selectedIndustry]);
   const visibleProviders = filtered.slice(0, visibleCount);
+  const hasActiveFilters = collectionId !== "all" || selectedIndustry !== "all";
+
+  function clearFilters() {
+    setCollectionId("all");
+    setSelectedIndustry("all");
+    setFiltersOpen(false);
+  }
 
   useEffect(() => {
     setVisibleCount(PROVIDER_BATCH_SIZE);
-  }, [query, collectionId, selectedIndustries]);
+  }, [query, collectionId, selectedIndustry]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -159,22 +113,16 @@ export function ProviderSidebar({ selectedId, onSelect, onDeleted, mobileHidden 
     }
   }, [filtered, selectedId, visibleCount]);
 
-  const toggleIndustry = (industry: string) => {
-    setSelectedIndustries((current) => current.includes(industry)
-      ? current.filter((value) => value !== industry)
-      : [...current, industry]);
-  };
-
   return (
     <aside
       aria-label="Company browser"
-      className={`${mobileHidden ? "hidden md:flex" : "flex"} w-full flex-shrink-0 flex-col border-r border-slate-200/80 bg-white md:w-72 dark:border-slate-800 dark:bg-slate-950`}
+      className={`${mobileHidden ? "hidden lg:flex" : "flex"} m3-list-detail-pane ui-subtle w-full flex-shrink-0 flex-col lg:w-[clamp(20rem,26vw,24rem)]`}
     >
-      <div className="border-b border-slate-100 px-4 py-4 dark:border-slate-800">
+      <div className="px-4 py-4">
         <div className="mb-2.5 flex items-center justify-between px-0.5">
-          <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">Companies</span>
+          <span className="font-display text-lg font-semibold text-[var(--md-sys-color-on-surface)]">Companies</span>
           <span
-            className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+            className="m3-count-badge"
             aria-live="polite"
             aria-atomic="true"
             aria-label={`${filtered.length} companies shown`}
@@ -182,79 +130,39 @@ export function ProviderSidebar({ selectedId, onSelect, onDeleted, mobileHidden 
             {filtered.length}
           </span>
         </div>
-        <label className="sr-only" htmlFor="company-search">Search companies</label>
-        <input
-          id="company-search"
-          type="search"
-          className="form-input"
-          placeholder="Search companies…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        <div className="mt-2 grid grid-cols-2 gap-2">
-          <SelectMenu
-            label="Company collection"
-            heading="Collections"
-            value={collectionId}
-            options={[
-              { value: "all", label: "All collections" },
-              ...collections.map((collection) => ({ value: collection.id, label: collection.name })),
-            ]}
-            onChange={setCollectionId}
-          />
-          <div className="relative" ref={industryMenuRef}>
-            <button
-              ref={industryButtonRef}
-              type="button"
-              className="form-input flex items-center justify-between gap-2 py-1.5 text-left text-xs"
-              aria-label={`Filter by industries, ${industryLabel}`}
-              aria-haspopup="true"
-              aria-expanded={industryMenuOpen}
-              aria-controls="industry-filter-menu"
-              onClick={() => setIndustryMenuOpen((open) => !open)}
-            >
-              <span className="truncate">{industryLabel}</span>
-              <svg className={`h-3.5 w-3.5 flex-none text-slate-400 transition-transform ${industryMenuOpen ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                <path fillRule="evenodd" d="M5.22 7.22a.75.75 0 0 1 1.06 0L10 10.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 8.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
-              </svg>
-            </button>
-            {industryMenuOpen && (
-              <div
-                id="industry-filter-menu"
-                className="absolute right-0 z-30 mt-1 w-64 overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900"
-              >
-                <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2 dark:border-slate-800">
-                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">Industries</span>
-                  <button
-                    type="button"
-                    className="text-[11px] font-semibold text-teal-700 hover:text-teal-900 disabled:cursor-default disabled:text-slate-300 dark:text-teal-300 dark:hover:text-teal-100 dark:disabled:text-slate-600"
-                    disabled={selectedIndustries.length === 0}
-                    onClick={() => setSelectedIndustries([])}
-                  >
-                    Clear
-                  </button>
-                </div>
-                <fieldset className="max-h-64 overflow-y-auto p-1.5">
-                  <legend className="sr-only">Industries to show</legend>
-                  {industries.map((industry) => (
-                    <label key={industry.key} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800">
-                      <input
-                        type="checkbox"
-                        className="h-3.5 w-3.5 rounded border-slate-300 accent-teal-600 dark:border-slate-600"
-                        checked={selectedIndustrySet.has(industry.key)}
-                        onChange={() => toggleIndustry(industry.key)}
-                      />
-                      <span>{industry.label}</span>
-                    </label>
-                  ))}
-                </fieldset>
-              </div>
-            )}
+        <label className="m3-contained-search">
+          <svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z" /></svg>
+          <input id="company-search" type="search" value={query} placeholder="Search companies" aria-label="Search companies" onChange={(event) => setQuery(event.target.value)} />
+        </label>
+        <button type="button" className="m3-filter-button mt-2" aria-expanded={filtersOpen} aria-controls="company-filters" onClick={() => setFiltersOpen((open) => !open)}>
+          <MaterialSymbol src={filterIcon} />
+          <span>Filter</span>
+          {hasActiveFilters && <span className="m3-filter-active-dot" aria-label="Filters applied" />}
+        </button>
+        {filtersOpen && (
+          <div id="company-filters" className="m3-filter-disclosure">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-xs font-medium text-[var(--md-sys-color-on-surface-variant)]">Filter companies</p>
+              <button type="button" className="m3-filter-clear" disabled={!hasActiveFilters} onClick={clearFilters}>Clear all filters</button>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              <SelectMenu
+                label="Collection"
+                heading="Collections"
+                value={collectionId}
+                options={[
+                  { value: "all", label: "All" },
+                  ...collections.map((collection) => ({ value: collection.id, label: collection.name })),
+                ]}
+                onChange={setCollectionId}
+              />
+              <SelectMenu label="Industry" value={selectedIndustry} options={[{ value: "all", label: "All industries" }, ...industries.map((industry) => ({ value: industry.key, label: industry.label }))]} onChange={setSelectedIndustry} />
+            </div>
           </div>
-        </div>
+        )}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {isLoading && <p role="status" className="p-4 text-sm text-slate-500 dark:text-slate-400">Loading companies…</p>}
+        {isLoading && <p role="status" className="p-4 text-sm text-[var(--md-sys-color-on-surface-variant)]">Loading companies…</p>}
         {isError && (
           <div role="alert" className="m-4 status-error">
             Could not load companies. {error instanceof Error ? error.message : "Try refreshing the page."}
@@ -264,44 +172,29 @@ export function ProviderSidebar({ selectedId, onSelect, onDeleted, mobileHidden 
           <p className="m-4 quiet-state py-6">No companies match these filters.</p>
         )}
         {visibleProviders.map((p) => {
-          const health = companyHealth(p);
           return (
           <div
             key={p.id}
-            className={`group relative flex items-center border-l-2 pr-2 text-sm transition-colors ${
+            className={`m3-navigation-item group relative mx-2 my-1 flex min-h-14 items-center pr-1.5 text-sm ${
               selectedId === p.id
-                ? "border-teal-600 bg-teal-50/70 font-semibold text-slate-950 dark:border-teal-400 dark:bg-teal-950/30 dark:text-white"
-                : "border-transparent hover:bg-slate-50 dark:hover:bg-slate-900"
+                ? "m3-navigation-item-selected font-medium"
+                : ""
             }`}
           >
-            <Tooltip
-              side="right"
-              align="center"
-              content={(
-                <>
-                  <div className="font-semibold text-white">{health.label}</div>
-                  <div className="mt-1 text-slate-200">{health.detail}</div>
-                </>
-              )}
-            >
             <button
               type="button"
-              className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500"
+              className="flex min-w-0 flex-1 items-center gap-3 rounded-full px-2.5 py-2 text-left focus-visible:outline-none"
               onClick={() => onSelect(p)}
               aria-current={selectedId === p.id ? "true" : undefined}
             >
-              <span className="relative flex-shrink-0">
-                <CompanyLogo name={p.name} domain={logoDomain(p)} />
-                <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white dark:border-slate-950 ${health.color}`} aria-hidden="true" />
-              </span>
+              <span className="flex-shrink-0"><CompanyLogo name={p.name} domain={logoDomain(p)} /></span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate">{p.name}</span>
-                <span className="mt-0.5 block truncate text-xs font-normal text-slate-500 dark:text-slate-400">
-                  {p.ticker ? `${p.ticker} · ` : ""}{p.industry ? industryLabels.get(normalizeIndustry(p.industry)) ?? p.industry : "Uncategorized"} · {analysisCount(p.policy_count)}
+                <span className="mt-0.5 block truncate text-xs font-normal text-[var(--md-sys-color-on-surface-variant)]">
+                  {p.ticker ? `${p.ticker} · ` : ""}{p.industry ?? "Uncategorized"} · {analysisCount(p.policy_count)}
                 </span>
               </span>
             </button>
-            </Tooltip>
             <OverflowMenu
               label={`Actions for ${p.name}`}
               revealOnGroupHover
@@ -310,8 +203,8 @@ export function ProviderSidebar({ selectedId, onSelect, onDeleted, mobileHidden 
           </div>
         );})}
         {visibleProviders.length > 0 && (
-          <div className="border-t border-slate-100 px-4 py-3 text-center dark:border-slate-800">
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+          <div className="px-4 py-3 text-center">
+            <p className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
               Showing {visibleProviders.length} of {filtered.length} companies
             </p>
             {visibleProviders.length < filtered.length && (
@@ -337,10 +230,9 @@ export function ProviderSidebar({ selectedId, onSelect, onDeleted, mobileHidden 
             </p>
           )}
           <div className="mt-5 flex justify-end gap-2">
-            <button type="button" className="btn-secondary" onClick={() => setDeleteTarget(null)}>Cancel</button>
-            <button
-              type="button"
-              className="btn-danger"
+            <MdOutlinedButton onClick={() => setDeleteTarget(null)}>Cancel</MdOutlinedButton>
+            <MdFilledButton
+              className="material-error"
               disabled={deleteProvider.isPending}
               onClick={() => deleteProvider.mutate(deleteTarget.id, {
                 onSuccess: () => {
@@ -350,7 +242,7 @@ export function ProviderSidebar({ selectedId, onSelect, onDeleted, mobileHidden 
               })}
             >
               {deleteProvider.isPending ? "Deleting…" : "Delete"}
-            </button>
+            </MdFilledButton>
           </div>
         </Modal>
       )}

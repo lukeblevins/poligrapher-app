@@ -8,7 +8,7 @@ interface AttributionSource {
   secondaryLabel?: string;
 }
 
-const SOURCES: AttributionSource[] = [
+export const SOURCES: AttributionSource[] = [
   {
     name: "PoliGraph — original research and repository",
     href: "https://github.com/UCI-Networking-Group/PoliGraph",
@@ -58,11 +58,11 @@ const SOURCES: AttributionSource[] = [
 export function AttributionModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal title="Data sources & attribution" onClose={onClose} wide>
-      <p className="max-w-xl text-sm leading-6 text-slate-600 dark:text-slate-400">
+      <p className="ui-muted max-w-xl text-sm leading-6">
         This research application orchestrates independent open-source tools and public web services.
         Their names identify dependencies and data provenance; they are not the name of this research project.
       </p>
-      <div className="mt-5 divide-y divide-slate-200 rounded-md border border-slate-300 dark:divide-slate-800 dark:border-slate-700">
+      <div className="workspace-rule mt-5 divide-y overflow-hidden rounded-xl border">
         {SOURCES.map((source) => (
           <div key={source.name} className="p-4">
             <a
@@ -73,7 +73,7 @@ export function AttributionModal({ onClose }: { onClose: () => void }) {
             >
               {source.name}
             </a>
-            <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{source.description}</p>
+            <p className="ui-muted mt-1 text-xs leading-5">{source.description}</p>
             {source.secondaryHref && (
               <a href={source.secondaryHref} target="_blank" rel="noreferrer" className="mt-1.5 inline-block text-xs font-semibold text-teal-700 hover:underline dark:text-teal-400">
                 {source.secondaryLabel}
@@ -82,7 +82,7 @@ export function AttributionModal({ onClose }: { onClose: () => void }) {
           </div>
         ))}
       </div>
-      <p className="mt-4 text-xs leading-5 text-slate-500 dark:text-slate-400">
+      <p className="ui-muted mt-4 text-xs leading-5">
         Source availability and licensing remain governed by each upstream project or collection.
         When publishing results produced with PoliGraph, cite the original authors and USENIX Security 2023 paper.
         Company marks are requested from each company’s public website favicon and fall back to initials when unavailable.

@@ -37,10 +37,10 @@ export function Tooltip({
           avoidCollisions
           collisionPadding={12}
           sticky="always"
-          className="z-50 max-h-[min(20rem,calc(100dvh-2rem))] w-max max-w-[min(20rem,calc(100vw-2rem))] select-none overflow-y-auto rounded-lg border border-slate-500 bg-slate-950 px-3 py-2.5 text-left text-xs font-normal leading-5 tracking-normal text-slate-100 shadow-xl"
+          className="z-50 max-h-[min(16rem,calc(100dvh-2rem))] w-max max-w-[min(18rem,calc(100vw-2rem))] select-none overflow-y-auto rounded-[var(--md-sys-shape-corner-extra-small)] bg-[var(--md-sys-color-surface-container-high)] px-3 py-2 text-left text-xs font-normal leading-5 tracking-normal text-[var(--md-sys-color-on-surface)] shadow-[var(--md-sys-elevation-level2)]"
         >
           {content}
-          <TooltipPrimitive.Arrow className="fill-slate-950" width={10} height={5} />
+          <TooltipPrimitive.Arrow className="fill-[var(--md-sys-color-surface-container-high)]" width={10} height={5} />
         </TooltipPrimitive.Content>
       </TooltipPrimitive.Portal>
     </TooltipPrimitive.Root>

@@ -1,4 +1,5 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
+import moreIcon from "@material-symbols/svg-400/rounded/more_vert.svg?url";
 import { Tooltip } from "./Tooltip";
 
 export interface OverflowMenuItem {
@@ -6,6 +7,10 @@ export interface OverflowMenuItem {
   onSelect: () => void;
   disabled?: boolean;
   danger?: boolean;
+}
+
+function MaterialSymbol({ src }: { src: string }) {
+  return <span className="m3-material-symbol" style={{ "--m3-symbol-url": `url("${src}")` } as CSSProperties} aria-hidden="true" />;
 }
 
 export function OverflowMenu({
@@ -71,9 +76,7 @@ export function OverflowMenu({
         aria-controls={open ? id : undefined}
         onClick={() => setOpen((value) => !value)}
       >
-        <svg viewBox="0 0 20 20" className="h-4 w-4" fill="currentColor" aria-hidden="true">
-          <circle cx="4" cy="10" r="1.5" /><circle cx="10" cy="10" r="1.5" /><circle cx="16" cy="10" r="1.5" />
-        </svg>
+        <MaterialSymbol src={moreIcon} />
       </button>
       </Tooltip>
       {open && (
@@ -82,7 +85,7 @@ export function OverflowMenu({
           id={id}
           role="menu"
           aria-label={label}
-          className="absolute right-0 z-30 mt-1 min-w-40 rounded-md border border-slate-200 bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-900"
+          className="m3-menu absolute right-0 z-30 mt-1 min-w-40 overflow-hidden py-2"
           onKeyDown={moveFocus}
         >
           {items.map((item) => (
@@ -91,7 +94,7 @@ export function OverflowMenu({
               type="button"
               role="menuitem"
               disabled={item.disabled}
-              className={`block w-full rounded px-3 py-2 text-left text-xs font-medium disabled:opacity-45 ${item.danger ? "text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/50" : "text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"}`}
+              className={`m3-menu-item block w-full px-3 py-2 text-left text-sm disabled:opacity-45 ${item.danger ? "m3-menu-item-danger" : ""}`}
               onClick={() => {
                 setOpen(false);
                 item.onSelect();

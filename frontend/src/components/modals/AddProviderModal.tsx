@@ -5,6 +5,7 @@ import { api } from "../../api/client";
 import type { CompanyCatalogResult, Provider } from "../../api/types";
 import { useCreateProvider } from "../../hooks/queries";
 import { CompanyLogo } from "../CompanyLogo";
+import { materialValue, MdFilledButton, MdOutlinedButton, MdOutlinedTextField, MdTextButton } from "../MaterialControls";
 import { Modal } from "../Modal";
 
 type Mode = "search" | "manual";
@@ -113,10 +114,10 @@ export function AddProviderModal({
       {mode === "search" ? (
         selected ? (
           <form onSubmit={submitSelected} className="space-y-4">
-            <button type="button" className="text-xs font-semibold text-teal-700 hover:underline dark:text-teal-400" onClick={() => setSelected(null)}>
+            <MdTextButton type="button" onClick={() => setSelected(null)}>
               ← Back to results
-            </button>
-            <div className="rounded-md border border-teal-300 bg-teal-50/50 p-4 dark:border-teal-900 dark:bg-teal-950/25">
+            </MdTextButton>
+            <div className="rounded-[var(--md-sys-shape-corner-medium)] border border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-primary-container)] p-4 text-[var(--md-sys-color-on-primary-container)]">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <CompanyLogo name={selected.name} domain={selected.domain} className="h-10 w-10" />
@@ -125,21 +126,18 @@ export function AddProviderModal({
                   <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{selected.domain}</p>
                   </div>
                 </div>
-                <span className="bg-teal-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-teal-800 dark:bg-teal-900 dark:text-teal-200">Open Terms Archive</span>
+                <span className="rounded-full bg-[var(--md-sys-color-surface-container-highest)] px-3 py-1 text-[11px] font-medium text-[var(--md-sys-color-on-surface)]">Open Terms Archive</span>
               </div>
               <p className="mt-3 break-all text-xs leading-5 text-slate-600 dark:text-slate-300">{selected.source_url}</p>
               <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
                 The maintained policy URL and extraction metadata will be used as the starting source.
               </p>
             </div>
-            <div>
-              <label className="form-label" htmlFor="catalog-industry">Industry (optional)</label>
-              <input id="catalog-industry" className="form-input" value={industry} onChange={(event) => setIndustry(event.target.value)} placeholder="e.g. Healthcare" />
-            </div>
+            <MdOutlinedTextField id="catalog-industry" className="w-full" label="Industry (optional)" value={industry} onInput={(event) => setIndustry(materialValue(event))} placeholder="e.g. Healthcare" />
             {createProvider.isError && <p role="alert" className="status-error">{(createProvider.error as Error).message}</p>}
             <div className="flex justify-end gap-2 pt-1">
-              <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
-              <button type="submit" className="btn-primary" disabled={createProvider.isPending}>{createProvider.isPending ? "Adding…" : "Add company"}</button>
+              <MdOutlinedButton type="button" onClick={onClose}>Cancel</MdOutlinedButton>
+              <MdFilledButton type="submit" disabled={createProvider.isPending}>{createProvider.isPending ? "Adding…" : "Add company"}</MdFilledButton>
             </div>
           </form>
         ) : (
@@ -147,8 +145,7 @@ export function AddProviderModal({
             <p className="mb-4 text-sm leading-6 text-slate-600 dark:text-slate-400">
               Start with a company already tracked by Open Terms Archive. Matching records include a maintained privacy-policy source.
             </p>
-            <label className="form-label" htmlFor="company-catalog-search">Company or service name</label>
-            <input id="company-catalog-search" className="form-input" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search GitHub, Microsoft, YouTube…" autoFocus />
+            <MdOutlinedTextField id="company-catalog-search" type="search" className="w-full" label="Company or service name" value={query} onInput={(event) => setQuery(materialValue(event))} placeholder="Search GitHub, Microsoft, YouTube…" />
             <div className="mt-3 min-h-28">
               {catalog.isFetching && <p role="status" className="quiet-state py-6">Searching Open Terms Archive…</p>}
               {catalog.isError && !catalog.isFetching && (
@@ -184,19 +181,24 @@ export function AddProviderModal({
           <p className="text-sm leading-6 text-slate-600 dark:text-slate-400">
             Add any organization by its public website. The application can then look for a privacy-policy source on that domain.
           </p>
+          <MdOutlinedTextField
+              id="manual-company-name"
+              className="w-full"
+              label="Company name"
+              value={name}
+              onInput={(event) => setName(materialValue(event))}
+              required
+          />
           <div>
-            <label className="form-label" htmlFor="manual-company-name">Company name</label>
-            <input id="manual-company-name" className="form-input" value={name} onChange={(event) => setName(event.target.value)} required autoFocus />
-          </div>
-          <div>
-            <label className="form-label" htmlFor="manual-company-website">Company website</label>
-            <input
+            <MdOutlinedTextField
               id="manual-company-website"
-              className="form-input"
+              className="w-full"
+              label="Company website"
               value={website}
-              onChange={(event) => setWebsite(event.target.value)}
+              onInput={(event) => setWebsite(materialValue(event))}
               placeholder="example.com"
-              aria-invalid={websiteInvalid || undefined}
+              error={websiteInvalid}
+              errorText="Enter a valid website or domain."
               aria-describedby="manual-company-website-error"
               required
             />
@@ -206,19 +208,17 @@ export function AddProviderModal({
             <summary className="cursor-pointer text-xs font-semibold">Optional details</summary>
             <div className="mt-3 space-y-3">
               <div>
-                <label className="form-label" htmlFor="manual-policy-url">Known privacy-policy URL</label>
-                <input id="manual-policy-url" className="form-input" type="url" value={policyUrl} onChange={(event) => setPolicyUrl(event.target.value)} placeholder="https://example.com/privacy" />
+                <MdOutlinedTextField id="manual-policy-url" className="w-full" type="url" label="Known privacy-policy URL" value={policyUrl} onInput={(event) => setPolicyUrl(materialValue(event))} placeholder="https://example.com/privacy" />
               </div>
               <div>
-                <label className="form-label" htmlFor="manual-industry">Industry</label>
-                <input id="manual-industry" className="form-input" value={industry} onChange={(event) => setIndustry(event.target.value)} placeholder="e.g. Financial services" />
+                <MdOutlinedTextField id="manual-industry" className="w-full" label="Industry" value={industry} onInput={(event) => setIndustry(materialValue(event))} placeholder="e.g. Financial services" />
               </div>
             </div>
           </details>
           {createProvider.isError && <p role="alert" className="status-error">{(createProvider.error as Error).message}</p>}
           <div className="flex justify-end gap-2 pt-1">
-            <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn-primary" disabled={createProvider.isPending || !name.trim() || !domainFromWebsite(website)}>{createProvider.isPending ? "Adding…" : "Add company"}</button>
+            <MdOutlinedButton type="button" onClick={onClose}>Cancel</MdOutlinedButton>
+            <MdFilledButton type="submit" disabled={createProvider.isPending || !name.trim() || !domainFromWebsite(website)}>{createProvider.isPending ? "Adding…" : "Add company"}</MdFilledButton>
           </div>
         </form>
       )}
