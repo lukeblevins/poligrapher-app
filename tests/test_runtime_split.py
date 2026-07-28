@@ -220,6 +220,6 @@ def test_azure_deploy_uses_oidc_and_gated_migrations():
     assert "az containerapp job start" in workflow
     assert "Verify deployed application" in workflow
     assert "triggerType: 'Manual'" in infrastructure
-    assert "command: [ 'alembic', 'upgrade', 'head' ]" in infrastructure
+    assert "alembic upgrade head && python -m poligrapher_app.sync_source_catalog" in infrastructure
     assert "{ name: 'RUN_MIGRATIONS', value: 'false' }" in infrastructure
     assert "RUN_MIGRATIONS:-true" in entrypoint

@@ -13,6 +13,7 @@ import hashlib
 import logging
 import os
 import tempfile
+import urllib.parse
 import uuid
 import zipfile
 from datetime import date
@@ -86,6 +87,14 @@ def run_comparison(
             return "needs_source"
 
         url = provider.source_url
+        verified_fallback = provider.source_final_url or ""
+        if (
+            provider.source_status == "available"
+            and verified_fallback.startswith(
+                ("https://web.archive.org/", "https://r.jina.ai/")
+            )
+        ):
+            url = verified_fallback
         if not url:
             # Fall back to discovery so a run can proceed without a set source.
             cand = PolicySourceResolver().resolve_candidate(provider.name, provider.domain)
@@ -197,6 +206,71 @@ def run_upload(policy_id, *, registry=None, task_id=None) -> str:
                 raise
     finally:
         db.close()
+
+
+def run_remote_pdf(
+    provider_id, *, scheduled: bool, registry=None, task_id=None
+) -> str:
+    """Download an official policy PDF, store it durably, and analyze it."""
+    from poligrapher_app.api.database import SessionLocal
+    from poligrapher_app.api.models import Policy, Provider
+    from poligrapher_app.services.acquisition import open_client
+    from poligrapher_app.services.storage import get_storage, source_key
+
+    with SessionLocal() as db:
+        provider = db.get(Provider, provider_id)
+        if not provider or not provider.source_url:
+            return "needs_source"
+        url = provider.source_url
+        filename = Path(urllib.parse.urlparse(url).path).name or "privacy-policy.pdf"
+        if not filename.lower().endswith(".pdf"):
+            filename += ".pdf"
+        temp_root = os.getenv("TEMP_WORKSPACE_ROOT") or None
+        with tempfile.NamedTemporaryFile(
+            prefix="poligrapher-remote-", suffix=".pdf", dir=temp_root
+        ) as download:
+            with open_client(45.0) as client:
+                with client.stream("GET", url) as response:
+                    response.raise_for_status()
+                    size = 0
+                    for chunk in response.iter_bytes(1024 * 1024):
+                        size += len(chunk)
+                        if size > 50 * 1024 * 1024:
+                            raise ValueError("Remote policy PDF exceeds the 50 MB limit")
+                        download.write(chunk)
+            download.flush()
+            download.seek(0)
+            if download.read(4) != b"%PDF":
+                raise ValueError("Remote policy source did not return a PDF")
+            digest = file_hash(download.name)
+            existing = (
+                db.query(Policy)
+                .filter_by(provider_id=provider.id, method="pdf_upload", content_hash=digest)
+                .order_by(Policy.created_at.desc())
+                .first()
+            )
+            if existing and existing.has_results:
+                return "unchanged"
+            policy = Policy(
+                provider_id=provider.id,
+                url=filename,
+                source="pdf",
+                method="pdf_upload",
+                scheduled=scheduled,
+                capture_date=date.today(),
+                source_filename=filename,
+                content_hash=digest,
+            )
+            db.add(policy)
+            db.commit()
+            db.refresh(policy)
+            policy.source_blob_key = source_key(policy.id, filename)
+            get_storage().upload_file(
+                policy.source_blob_key, download.name, content_type="application/pdf"
+            )
+            db.commit()
+            policy_id = policy.id
+    return run_upload(policy_id, registry=registry, task_id=task_id)
 
 
 def run_archived_comparison(

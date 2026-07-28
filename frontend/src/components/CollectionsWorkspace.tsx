@@ -7,6 +7,7 @@ import analyzeIcon from "@material-symbols/svg-400/rounded/analytics.svg?url";
 import scoreIcon from "@material-symbols/svg-400/rounded/checklist.svg?url";
 import syncIcon from "@material-symbols/svg-400/rounded/sync.svg?url";
 import verifyIcon from "@material-symbols/svg-400/rounded/verified.svg?url";
+import closeIcon from "@material-symbols/svg-400/rounded/close.svg?url";
 
 import { api } from "../api/client";
 import type { BulkActionPreview, BulkOperation, CompanyCollection, Provider } from "../api/types";
@@ -28,6 +29,17 @@ type BulkConfirmation = {
   providerIds: string[];
   preview: BulkActionPreview | null;
 };
+
+export function SnackbarNotice({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+  return (
+    <div className="m3-snackbar" role="status" aria-live="polite">
+      <span>{message}</span>
+      <button type="button" className="m3-snackbar-dismiss" aria-label="Dismiss notification" onClick={onDismiss}>
+        <span className="m3-material-symbol" style={{ "--m3-symbol-url": `url("${closeIcon}")` } as CSSProperties} aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
 
 function sourceLabel(provider: Provider) {
   if (provider.source_status === "available") return "Ready";
@@ -186,6 +198,12 @@ export function CollectionsWorkspace() {
     setVisibleMemberCount(100);
   }, [query, selectedId]);
 
+  useEffect(() => {
+    if (!notice) return;
+    const timeoutId = window.setTimeout(() => setNotice(""), 6000);
+    return () => window.clearTimeout(timeoutId);
+  }, [notice]);
+
   function toggleDraftMember(id: string) {
     setDraft((current) => {
       const memberIds = new Set(current.memberIds);
@@ -330,7 +348,7 @@ export function CollectionsWorkspace() {
             </div>
           ) : selected ? (
             <>
-              <header className="p-0 sm:p-2">
+              <header>
                 <div className="grid gap-5">
                   <div>
                     <p className="section-kicker">{selected.kind === "system" ? "Managed index" : "Research collection"}</p>
@@ -352,10 +370,9 @@ export function CollectionsWorkspace() {
                 </dl>
               </header>
 
-              {notice && <p role="status" className="mt-5 status-success">{notice}</p>}
               {mutationError && <p role="alert" className="mt-5 status-error">{mutationError instanceof Error ? mutationError.message : "The action could not be completed."}</p>}
 
-              <section className="mt-6 p-0 sm:p-2" aria-labelledby="collection-members-heading">
+              <section className="mt-6" aria-labelledby="collection-members-heading">
                 <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
                   <div>
                     <h2 id="collection-members-heading" className="font-display text-2xl font-semibold">Companies</h2>
@@ -436,6 +453,8 @@ export function CollectionsWorkspace() {
           </div>
         </Modal>
       )}
+
+      {notice && <SnackbarNotice message={notice} onDismiss={() => setNotice("")} />}
     </main>
   );
 }

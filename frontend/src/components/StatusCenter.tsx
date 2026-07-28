@@ -6,6 +6,10 @@ import outputIcon from "@material-symbols/svg-400/rounded/article.svg?url";
 import retryIcon from "@material-symbols/svg-400/rounded/refresh.svg?url";
 import historyIcon from "@material-symbols/svg-400/rounded/history.svg?url";
 import expandIcon from "@material-symbols/svg-400/rounded/open_in_full.svg?url";
+import pendingIcon from "@material-symbols/svg-400/rounded/pending.svg?url";
+import cancelledIcon from "@material-symbols/svg-400/rounded/cancel.svg?url";
+import completedIcon from "@material-symbols/svg-400/rounded/check_circle.svg?url";
+import failedIcon from "@material-symbols/svg-400/rounded/error.svg?url";
 
 import type { TaskState, TaskStatus } from "../api/types";
 import { isRunTask, isTaskActive } from "../api/types";
@@ -30,6 +34,14 @@ const STATUS_LABEL: Record<TaskState, string> = {
   cancelled: "Cancelled",
   done: "Completed",
   failed: "Failed",
+};
+
+const STATUS_ICON: Record<TaskState, string | null> = {
+  running: null,
+  cancelling: pendingIcon,
+  cancelled: cancelledIcon,
+  done: completedIcon,
+  failed: failedIcon,
 };
 
 function taskTitle(task: TaskStatus): string {
@@ -66,9 +78,10 @@ export function TaskRow({
   const linksToHistory = !!task.provider_id && isRunTask(task) && !!onViewRun;
   const needsAttention = task.status === "failed" || task.failed > 0;
   const progress = task.total > 0 ? Math.min(100, Math.round((task.completed / task.total) * 100)) : null;
+  const statusIcon = STATUS_ICON[task.status];
 
   return (
-    <li className={`m3-task-banner ${needsAttention ? "m3-task-banner-error" : ""} ${onDismiss ? "m3-task-banner-dismissible" : ""}`}>
+    <li className={`m3-task-banner m3-task-banner-${task.status} ${needsAttention ? "m3-task-banner-error" : ""} ${onDismiss ? "m3-task-banner-dismissible" : ""}`}>
       {onDismiss ? (
         <button type="button" className="m3-task-dismiss-button" aria-label={`Dismiss ${title}`} title="Dismiss" onClick={onDismiss}>
           <MaterialIcon src={cancelIcon} />
@@ -78,7 +91,8 @@ export function TaskRow({
         <div className="min-w-0 flex-1">
           <div className="m3-task-title">{title}</div>
           <div className="m3-task-meta">
-            <span className={STATUS_PILL[task.status]}>
+            <span className={`m3-task-status ${STATUS_PILL[task.status]}`}>
+              {statusIcon ? <MaterialIcon src={statusIcon} /> : null}
               {STATUS_LABEL[task.status]}
             </span>
             {task.failed > 0 && <span className="m3-task-failure-count">{task.failed} failed</span>}
@@ -89,19 +103,19 @@ export function TaskRow({
           {task.error && <div className="mt-2 text-xs leading-5 text-[var(--md-sys-color-error)]">{task.error}</div>}
           {(cancel.isError || retryTask.isError) && <div role="alert" className="mt-1 text-xs leading-4 text-[var(--md-sys-color-error)]">{cancel.error instanceof Error ? cancel.error.message : retryTask.error instanceof Error ? retryTask.error.message : "Could not update this task."}</div>}
         </div>
-        <div className="m3-task-actions">
+        <div className="m3-task-actions" role="group" aria-label={`${title} actions`}>
+          {canRetryTask(task) && <MdFilledButton className="m3-task-action m3-task-action-primary" disabled={retryTask.isPending} onClick={() => retryTask.mutate()}><span className="m3-task-action-label"><MaterialIcon src={retryIcon} />{retryTask.isPending ? "Retrying…" : "Retry"}</span></MdFilledButton>}
           {linksToHistory ? (
-            <MdOutlinedButton className="m3-task-action min-h-9 text-xs" onClick={() => onViewRun?.(task)}><span className="m3-task-action-label"><MaterialIcon src={historyIcon} />View run</span></MdOutlinedButton>
+            <MdOutlinedButton className="m3-task-action" onClick={() => onViewRun?.(task)}><span className="m3-task-action-label"><MaterialIcon src={historyIcon} />View run</span></MdOutlinedButton>
           ) : canViewOutput ? (
             <MdOutlinedButton
-              className="m3-task-action min-h-9 text-xs"
+              className="m3-task-action"
               aria-expanded={expanded}
               onClick={onToggleOutput}
             ><span className="m3-task-action-label"><MaterialIcon src={outputIcon} />{expanded ? "Hide details" : "Details"}</span></MdOutlinedButton>
           ) : null}
-          {canRetryTask(task) && <MdFilledButton className="m3-task-action min-h-9 text-xs" disabled={retryTask.isPending} onClick={() => retryTask.mutate()}><span className="m3-task-action-label"><MaterialIcon src={retryIcon} />{retryTask.isPending ? "Retrying…" : "Retry"}</span></MdFilledButton>}
           {task.cancelable && (
-            <MdOutlinedButton className="m3-task-action min-h-9 text-xs" disabled={cancel.isPending} onClick={() => cancel.mutate(task.task_id)}><span className="m3-task-action-label"><MaterialIcon src={cancelIcon} />Cancel</span></MdOutlinedButton>
+            <MdOutlinedButton className="m3-task-action" disabled={cancel.isPending} onClick={() => cancel.mutate(task.task_id)}><span className="m3-task-action-label"><MaterialIcon src={cancelIcon} />Cancel</span></MdOutlinedButton>
           )}
         </div>
       </div>

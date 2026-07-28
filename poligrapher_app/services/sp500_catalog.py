@@ -17,6 +17,48 @@ DATA_URL = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/mai
 COLLECTION_NAME = "S&P 500"
 WIKIDATA_ENDPOINT = "https://query.wikidata.org/sparql"
 
+# Canonical sources confirmed on issuer-owned policy surfaces. These override
+# search results that are valid privacy documents but apply only to applicants,
+# employees, a subsidiary, or a single product.
+CURATED_SOURCE_URLS = {
+    "BF.B": "https://legal.brown-forman.com/privacy-policy/english",
+    "CCL": "https://www.carnivalcorporation.com/privacy-notice",
+    "CAH": "https://selfregistration.cardinalhealth.com/register/privacy",
+    "CMI": "https://www.cummins.com/en-la/privacy-and-legal",
+    "CSGP": "https://www.costar.com/about/privacy-notice",
+    "DG": "https://www.dollargeneral.com/privacy-policy",
+    "ECL": "https://www.ecolab.com/privacy-policy",
+    "EOG": "https://www.eogresources.com/privacy-policy",
+    "ESS": "https://www.essexapartmenthomes.com/privacy-policy",
+    "ETN": "https://www.eaton.com/us/en-us/company/policies-and-statements/privacy-cookies-and-data-protection.html",
+    "F": "https://www.ford.com/help/privacy/",
+    "FANG": "https://ir.diamondbackenergy.com/site-info/privacy-policy",
+    "FAST": "https://www.fastenal.com/fast/legal-information",
+    "FIS": "https://www.fisglobal.com/-/media/fisglobal/files/PDF/policy/Privacy/Online-Privacy-Notice.pdf",
+    "GOOGL": "https://policies.google.com/privacy",
+    "HONA": "https://www.honeywell.com/us/en/legal/privacy-statement",
+    "HRL": "https://www.hormelfoods.com/privacy-policy/",
+    "IFF": "https://www.iff.com/privacy-statement/",
+    "IR": "https://www.irco.com/en-si/terms",
+    "KHC": "https://www.kraftheinz.com/en-GB/privacy-notice",
+    "MMM": "https://www.3m.com/3M/en_US/company-us/privacy-policy/",
+    "MTD": "https://www.mt.com/us/en/home/site_content/legal/privacy_policy.html",
+    "MCHP": "https://www.microchip.com/en-us/about/legal-information/privacy-policy",
+    "AMT": "https://www.tide.americantower.com/proteccion_es/proteccion_es.php",
+    "NSC": "https://www.norfolksouthern.com/en/privacy-policy",
+    "PCAR": "https://www.paccar.com/privacy/",
+    "PCG": "https://www.pge.com/en/privacy-center.html",
+    "SNDK": "https://www.sandisk.com/en-us/legal/privacy-statement",
+    "SW": "https://www.smurfitwestrock.com/privacy-notice",
+    "TKO": "https://www.wwe.com/page/privacy-policy",
+    "UAL": "https://www.united.com/en/us/fly/privacy/online-privacy-policy",
+    "UPS": "https://www.ups.com/us/en/support/shipping-support/legal-terms-conditions/privacy-notice",
+    "VICI": "https://viciproperties.com/privacy-policy/",
+    "VRTX": "https://www.vrtx.com/privacy-policy/",
+    "WBD": "https://www.wbdprivacy.com/policycenter/b2c/",
+    "XOM": "https://corporate.exxonmobil.com/Global-legal-pages/privacy-policy",
+}
+
 
 def _name_key(value: str) -> str:
     value = re.sub(r"\([^)]*class[^)]*\)", "", value, flags=re.I)
@@ -117,6 +159,12 @@ def sync_sp500(
         provider.ticker = provider.ticker or symbol
         provider.cik = provider.cik or cik
         provider.industry = row["GICS Sector"].strip() or provider.industry
+        curated_source = CURATED_SOURCE_URLS.get(symbol)
+        if curated_source and provider.source_url != curated_source:
+            provider.source_url = curated_source
+            provider.source_status = "unchecked"
+            provider.source_http_status = None
+            provider.source_final_url = None
         if cik:
             by_cik[cik] = provider
         by_ticker[symbol] = provider

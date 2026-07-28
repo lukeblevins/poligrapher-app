@@ -7,7 +7,7 @@ import { isTaskActive, type Schedule, type TaskStatus } from "../api/types";
 import { useProviders } from "../hooks/queries";
 import { dismissTask, useDismissedTasks } from "../hooks/useDismissedTasks";
 import { useTasks } from "../hooks/useTasks";
-import { MdFilledButton } from "./MaterialControls";
+import { MdFilledTonalButton } from "./MaterialControls";
 import { BulkActionsModal } from "./modals/BulkActionsModal";
 import { TaskRow } from "./StatusCenter";
 
@@ -52,10 +52,10 @@ export function ScheduledWorkspace({ onViewRun }: { onViewRun?: (task: TaskStatu
             <h1 className="m3-workspace-title">Tasks</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--md-sys-color-on-surface-variant)]">Scheduled checks and task history.</p>
           </div>
-          <MdFilledButton className="m3-task-create-button" onClick={() => setShowBatchTasks(true)}>
+          <MdFilledTonalButton className="m3-task-create-button" onClick={() => setShowBatchTasks(true)}>
             <span slot="icon" className="m3-material-symbol" style={{ "--m3-symbol-url": `url("${addTaskIcon}")` } as CSSProperties} aria-hidden="true" />
             New task
-          </MdFilledButton>
+          </MdFilledTonalButton>
         </header>
 
         <section className="m3-scheduled-section" aria-labelledby="scheduled-checks-heading">

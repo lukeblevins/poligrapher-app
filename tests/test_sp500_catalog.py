@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from poligrapher_app.api.database import Base
 from poligrapher_app.api.models import CompanyCollection, Provider
-from poligrapher_app.services.sp500_catalog import sync_sp500
+from poligrapher_app.services.sp500_catalog import CURATED_SOURCE_URLS, sync_sp500
 
 
 def test_sp500_sync_deduplicates_share_classes_and_is_idempotent():
@@ -31,3 +31,23 @@ def test_sp500_sync_deduplicates_share_classes_and_is_idempotent():
         assert alphabet.tickers == ["GOOGL", "GOOG"]
         collection = db.query(CompanyCollection).filter_by(name="S&P 500").one()
         assert len(collection.providers) == 2
+
+
+def test_sp500_sync_applies_curated_canonical_source():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    rows = [
+        {
+            "Symbol": "MMM",
+            "Security": "3M",
+            "GICS Sector": "Industrials",
+            "CIK": "66740",
+        }
+    ]
+    with Session(engine) as db:
+        result = sync_sp500(db, rows, enrich_domains=False)
+        collection = db.get(CompanyCollection, result["collection_id"])
+        provider = collection.providers[0]
+
+        assert provider.source_url == CURATED_SOURCE_URLS["MMM"]
+        assert provider.source_status == "unchecked"

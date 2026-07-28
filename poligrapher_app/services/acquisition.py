@@ -66,6 +66,9 @@ BROWSER_HEADERS = {
 # live-site bot-blocking entirely and, as a bonus for a policy-comparison
 # research project, yields historical versions of the document.
 WAYBACK_AVAILABLE = "https://archive.org/wayback/available?url={url}"
+READER_PREFIX = "https://r.jina.ai/https://"
+DUCKDUCKGO_HTML = "https://html.duckduckgo.com/html/"
+YAHOO_SEARCH = "https://search.yahoo.com/search"
 
 
 # ── optional Tier-2 anti-bot: proxy + unblocker API (env-gated, off by default) ─
@@ -168,6 +171,11 @@ def fetch_via_unblocker(url: str, timeout: float = 60.0) -> str:
 AUTO_CONFIDENCE = 0.75
 
 _PRIVACY_PATH = re.compile(r"privacy[-_/]?(policy|notice|statement|center|centre)?", re.I)
+_NARROW_POLICY_RESULT = re.compile(
+    r"(applicant|candidate|recruit|employee|workday|pension|retiree|"
+    r"hipaa|health[-_ ]fund|benchmark|study|canadian[-_ ]residents?)",
+    re.I,
+)
 _COMPANY_SUFFIX = re.compile(
     r"[\s,]+(inc\.?|incorporated|corp\.?|corporation|co\.?|company|"
     r"plc|ltd\.?|llc|l\.?p\.?|holdings?|group|technologies|the)\b",
@@ -282,6 +290,64 @@ def discover_links(html: str, base_url: str, domain: str, top: int = 3) -> list[
         cands.append((sc, url))
     cands.sort(reverse=True)
     return cands[:top]
+
+
+def search_result_links(html: str) -> list[tuple[str, str]]:
+    """Extract de-redirected result links from supported HTML search pages."""
+    soup = BeautifulSoup(html, "html.parser")
+    results: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for anchor in soup.find_all("a", href=True):
+        href = str(anchor.get("href") or "")
+        parsed = urllib.parse.urlparse(href)
+        if "duckduckgo.com" in parsed.netloc:
+            href = urllib.parse.parse_qs(parsed.query).get("uddg", [href])[0]
+        elif "r.search.yahoo.com" in parsed.netloc:
+            match = re.search(r"/RU=([^/]+?)/RK=", parsed.path)
+            if not match:
+                continue
+            href = urllib.parse.unquote(match.group(1))
+        elif "result__a" not in (anchor.get("class") or []):
+            continue
+        href = urllib.parse.unquote(href)
+        if not href.startswith(("http://", "https://")) or href in seen:
+            continue
+        seen.add(href)
+        results.append((anchor.get_text(" ", strip=True), href))
+    return results
+
+
+def _company_tokens(name: str) -> set[str]:
+    stripped = _COMPANY_SUFFIX.sub("", name).casefold()
+    return {
+        token for token in re.findall(r"[a-z0-9]+", stripped)
+        if len(token) >= 3 and token not in {"class", "global"}
+    }
+
+
+def privacy_document_text(data: bytes, content_type: str, url: str) -> str:
+    """Extract enough text to validate an HTML or PDF privacy document."""
+    if data.startswith(b"%PDF") or "pdf" in content_type.casefold() or url.lower().endswith(".pdf"):
+        try:
+            from io import BytesIO
+            from pypdf import PdfReader
+
+            reader = PdfReader(BytesIO(data))
+            return _normalize_ws(" ".join((page.extract_text() or "") for page in reader.pages[:12]))
+        except Exception:  # noqa: BLE001
+            return ""
+    return extract_text(data.decode("utf-8", "ignore"))
+
+
+def is_privacy_document(text: str, provider_name: str, *, same_domain: bool) -> bool:
+    """Reject search noise while permitting branded or parent-company policies."""
+    normalized = text.casefold()
+    if len(normalized) < 500 or "privacy" not in normalized:
+        return False
+    if same_domain:
+        return True
+    tokens = _company_tokens(provider_name)
+    return bool(tokens and any(token in normalized for token in tokens))
 
 
 def extract_text(html: str, select: list[str] | str | None = None) -> str:
@@ -410,6 +476,22 @@ def wayback_snapshot_url(url: str, timeout: float = 15.0, raw: bool = True) -> s
         return None
 
 
+def reader_snapshot_url(
+    url: str, provider_name: str, timeout: float = 20.0
+) -> str | None:
+    """Return a readable text mirror when an origin and Wayback both refuse access."""
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return None
+    reader_url = f"{READER_PREFIX}{parsed.netloc}{parsed.path}"
+    if parsed.query:
+        reader_url = f"{reader_url}?{parsed.query}"
+    status, body = fetch_static(reader_url, timeout=timeout, use_proxy=False)
+    if status != 200 or not is_privacy_document(body, provider_name, same_domain=True):
+        return None
+    return reader_url
+
+
 def fetch_wayback(url: str, timeout: float = 20.0) -> str:
     """Return archived HTML from the closest Wayback Machine snapshot, or ''."""
     snap_url = wayback_snapshot_url(url, timeout=timeout)
@@ -493,17 +575,36 @@ class PolicySourceResolver:
         self.allow_headless = allow_headless
 
     def resolve_candidate(
-        self, provider_name: str, domain: str | None, override_url: str | None = None
+        self,
+        provider_name: str,
+        domain: str | None,
+        override_url: str | None = None,
+        *,
+        exclude_urls: set[str] | None = None,
+        prefer_pdf: bool = False,
+        require_validation: bool = False,
     ) -> SourceCandidate | None:
         """Pick the best source URL for a provider without fetching its text."""
         if override_url:
             return SourceCandidate(override_url, "override", 1.0, notes="user-confirmed")
 
-        pp = ota_declaration(provider_name)
+        pp = ota_declaration(provider_name) if not exclude_urls else None
         if pp:
             conf = 0.9 if not pp.get("executeClientScripts") else 0.88
             return SourceCandidate(pp["fetch"], "ota", conf, select=pp.get("select"),
                                    notes="Open Terms Archive declaration")
+
+        searched = self._search_candidate(
+            provider_name,
+            domain,
+            exclude_urls=exclude_urls,
+            prefer_pdf=prefer_pdf,
+            require_validation=require_validation,
+        )
+        if searched:
+            return searched
+        if prefer_pdf:
+            return None
 
         if domain:
             html = fetch_html(f"https://www.{domain}", self.allow_headless)
@@ -519,6 +620,128 @@ class PolicySourceResolver:
             sm = self._sitemap_candidate(domain)
             if sm:
                 return sm
+        return None
+
+    def _search_candidate(
+        self,
+        provider_name: str,
+        domain: str | None,
+        *,
+        exclude_urls: set[str] | None = None,
+        prefer_pdf: bool = False,
+        require_validation: bool = False,
+    ) -> SourceCandidate | None:
+        """Find and validate an official privacy page when site discovery fails."""
+        expected_domain = registrable_domain(domain or "")
+        excluded = {value.rstrip("/") for value in (exclude_urls or set())}
+        ranked: list[tuple[int, str]] = []
+        queries = [
+            f"site:{domain} privacy" if domain else "",
+            f'"{provider_name}" "privacy policy"',
+            f'"{provider_name}" "privacy notice" filetype:pdf',
+        ]
+        seen: set[str] = set()
+        for query in filter(None, queries):
+            try:
+                with httpx.Client(headers=BROWSER_HEADERS, follow_redirects=True, timeout=20.0) as client:
+                    response = client.get(YAHOO_SEARCH, params={"p": query})
+                if response.status_code != 200:
+                    continue
+            except httpx.HTTPError:
+                continue
+            for title, url in search_result_links(response.text):
+                if url in seen or url.rstrip("/") in excluded:
+                    continue
+                seen.add(url)
+                candidate_domain = registrable_domain(url)
+                same_domain = bool(expected_domain and candidate_domain == expected_domain)
+                combined = f"{title} {url}".casefold()
+                if "privacy" not in combined:
+                    continue
+                if _NARROW_POLICY_RESULT.search(combined):
+                    continue
+                brand_match = any(token in combined for token in _company_tokens(provider_name))
+                if not same_domain and not brand_match:
+                    continue
+                score = (8 if same_domain else 0) + (3 if "privacy policy" in combined else 1)
+                is_pdf = url.lower().split("?", 1)[0].endswith(".pdf")
+                if prefer_pdf and not is_pdf:
+                    continue
+                if prefer_pdf and not same_domain:
+                    continue
+                if is_pdf:
+                    score += 6 if prefer_pdf else 1
+                ranked.append((score, url))
+
+        ordered = sorted(ranked, reverse=True)
+        for score, url in ordered:
+            is_pdf = url.lower().split("?", 1)[0].endswith(".pdf")
+            if (
+                expected_domain
+                and registrable_domain(url) == expected_domain
+                and score >= 9
+                and _PRIVACY_PATH.search(url)
+                and not is_pdf
+                and not require_validation
+            ):
+                return SourceCandidate(
+                    url,
+                    "search",
+                    0.8,
+                    notes="official-domain indexed privacy document",
+                )
+        if ordered and not prefer_pdf and not require_validation:
+            score, url = ordered[0]
+            if score >= 3 and _PRIVACY_PATH.search(url):
+                return SourceCandidate(
+                    url,
+                    "search",
+                    0.75,
+                    notes="brand-matched indexed privacy document",
+                )
+
+        for score, url in ordered[:5]:
+            try:
+                with open_client(25.0) as client:
+                    with client.stream("GET", url) as response:
+                        content_length = int(response.headers.get("content-length") or 0)
+                        if content_length > 10 * 1024 * 1024:
+                            continue
+                        body = bytearray()
+                        for chunk in response.iter_bytes(256 * 1024):
+                            body.extend(chunk)
+                            if len(body) > 10 * 1024 * 1024:
+                                break
+                        content = bytes(body)
+            except httpx.HTTPError:
+                continue
+            same_domain = bool(expected_domain and registrable_domain(url) == expected_domain)
+            if (
+                not require_validation
+                and response.status_code in (401, 403, 429, 451)
+                and same_domain
+                and _PRIVACY_PATH.search(url)
+            ):
+                return SourceCandidate(
+                    url,
+                    "search",
+                    0.8,
+                    notes=f"official-domain privacy result; live access restricted (HTTP {response.status_code})",
+                )
+            if response.status_code >= 400 or len(content) < 500 or len(content) > 10 * 1024 * 1024:
+                continue
+            text = privacy_document_text(
+                content, response.headers.get("content-type", ""), str(response.url)
+            )
+            if not is_privacy_document(text, provider_name, same_domain=same_domain):
+                continue
+            confidence = 0.84 if same_domain else 0.76
+            return SourceCandidate(
+                str(response.url),
+                "search",
+                confidence,
+                notes=f"validated public search result (score {score})",
+            )
         return None
 
     def _sitemap_candidate(self, domain: str) -> SourceCandidate | None:
@@ -541,12 +764,25 @@ class PolicySourceResolver:
         cand = self.resolve_candidate(provider_name, domain, override_url)
         if not cand:
             return None
-        html = fetch_html(cand.url, self.allow_headless)
-        if not html:
+        try:
+            with open_client(30.0) as client:
+                response = client.get(cand.url)
+        except httpx.HTTPError:
+            response = None
+        if response is not None and response.status_code < 400:
+            text = privacy_document_text(
+                response.content, response.headers.get("content-type", ""), str(response.url)
+            )
+            resolved_url = str(response.url)
+        else:
+            html = fetch_html(cand.url, self.allow_headless)
+            text = extract_text(html, cand.select) if html else ""
+            resolved_url = cand.url
+        same_domain = bool(domain and registrable_domain(resolved_url) == registrable_domain(domain))
+        if not is_privacy_document(text, provider_name, same_domain=same_domain):
             return None
-        text = extract_text(html, cand.select)
         return ResolvedSource(
-            url=cand.url,
+            url=resolved_url,
             text=text,
             content_hash=content_hash(text),
             confidence=cand.confidence,

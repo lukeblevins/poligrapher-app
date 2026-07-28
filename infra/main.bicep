@@ -237,7 +237,8 @@ resource migrations 'Microsoft.App/jobs@2024-03-01' = {
         {
           name: 'migrations'
           image: webImage
-          command: [ 'alembic', 'upgrade', 'head' ]
+          // Schema and non-secret verified source metadata advance together.
+          command: [ 'bash', '-c', 'alembic upgrade head && python -m poligrapher_app.sync_source_catalog' ]
           resources: { cpu: json('0.25'), memory: '0.5Gi' }
           env: [
             { name: 'APP_ENV', value: 'production' }

@@ -15,12 +15,13 @@ export function ExpressiveProgressIndicator({ label, value }: ExpressiveProgress
 
   return (
     <div
-      className={`m3-expressive-progress ${normalizedValue === undefined ? "m3-expressive-progress-indeterminate" : ""}`}
+      className={`m3-expressive-progress ${normalizedValue === undefined ? "m3-expressive-progress-indeterminate" : "m3-expressive-progress-determinate"}`}
       role="progressbar"
       aria-label={label}
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={normalizedValue === undefined ? undefined : Math.round(normalizedValue * 100)}
+      aria-valuetext={normalizedValue === undefined ? "In progress" : `${Math.round(normalizedValue * 100)}%`}
     >
       <svg viewBox="0 0 600 16" preserveAspectRatio="none" aria-hidden="true">
         <defs>

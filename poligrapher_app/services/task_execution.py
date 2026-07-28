@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import logging
+import urllib.parse
 import uuid
 
 from poligrapher_app.services.task_output import capture_task_output
 
 logger = logging.getLogger(__name__)
+
+
+def _is_pdf_source(url: str | None) -> bool:
+    return bool(url and urllib.parse.urlparse(url).path.casefold().endswith(".pdf"))
 
 
 def execute_task(task_id: str, registry) -> None:
@@ -280,15 +285,44 @@ def _verify_sources(task_id: str, payload: dict, registry) -> None:
 
 
 def _analyze_collection(task_id: str, payload: dict, registry) -> None:
-    from poligrapher_app.services.runs import run_comparison
+    from poligrapher_app.api.database import SessionLocal
+    from poligrapher_app.api.models import Provider
+    from poligrapher_app.services.acquisition import PolicySourceResolver, wayback_snapshot_url
+    from poligrapher_app.services.runs import run_comparison, run_remote_pdf
 
     for raw_id in payload.get("provider_ids", []):
         if registry.is_cancelled(task_id):
             registry.set_cancelled(task_id)
             return
         try:
-            result = run_comparison(
-                uuid.UUID(raw_id), scheduled=False, registry=registry,
+            provider_id = uuid.UUID(raw_id)
+            with SessionLocal() as db:
+                provider = db.get(Provider, provider_id)
+                source_url = provider.source_url if provider else None
+                if (
+                    provider
+                    and source_url
+                    and provider.source_status not in ("available", "unchecked")
+                    and not _is_pdf_source(source_url)
+                    and not wayback_snapshot_url(source_url, timeout=8.0, raw=False)
+                ):
+                    fallback = PolicySourceResolver(allow_headless=False).resolve_candidate(
+                        provider.name,
+                        provider.domain,
+                        exclude_urls={source_url},
+                        require_validation=True,
+                    )
+                    if fallback:
+                        source_url = fallback.url
+                        provider.source_url = fallback.url
+                        provider.source_status = "unchecked"
+                        db.commit()
+            is_pdf = _is_pdf_source(source_url)
+            runner = run_remote_pdf if is_pdf else run_comparison
+            result = runner(
+                provider_id, scheduled=False, registry=registry, task_id=task_id
+            ) if is_pdf else runner(
+                provider_id, scheduled=False, registry=registry,
                 task_id=task_id, link_task=False,
             )
             if result not in ("ok", "unchanged"):
