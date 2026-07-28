@@ -1,4 +1,4 @@
-import { useQueries } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useState, type CSSProperties } from "react";
 import addTaskIcon from "@material-symbols/svg-400/rounded/add_task.svg?url";
 
@@ -17,16 +17,15 @@ export function ScheduledWorkspace({ onViewRun }: { onViewRun?: (task: TaskStatu
   const [showBatchTasks, setShowBatchTasks] = useState(false);
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const dismissedTaskIds = useDismissedTasks();
-  const scheduleQueries = useQueries({
-    queries: providers.map((provider) => ({
-      queryKey: ["schedules", provider.id],
-      queryFn: () => api.listSchedules(provider.id),
-      staleTime: 30_000,
-    })),
+  const { data: schedules = [] } = useQuery({
+    queryKey: ["schedules"],
+    queryFn: api.listAllSchedules,
+    staleTime: 30_000,
   });
-  const scheduledChecks = scheduleQueries.flatMap((query, index) => (query.data ?? [])
+  const providerNames = new Map(providers.map((provider) => [provider.id, provider.name]));
+  const scheduledChecks = schedules
     .filter((schedule) => schedule.enabled)
-    .map((schedule) => ({ schedule, providerName: providers[index]?.name ?? "Company" })));
+    .map((schedule) => ({ schedule, providerName: providerNames.get(schedule.provider_id) ?? "Company" }));
   const queuedTasks = tasks.filter((task) => isTaskActive(task.status));
   const recentTasks = tasks.filter((task) => !isTaskActive(task.status) && !dismissedTaskIds.has(task.task_id));
   const taskList = (items: TaskStatus[], dismissible = false) => (

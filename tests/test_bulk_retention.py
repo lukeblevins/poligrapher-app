@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
 from poligrapher_app.api import database
@@ -44,6 +44,42 @@ def test_bulk_targets_merge_collection_and_direct_selection():
         assert [provider.name for provider in providers] == ["First", "Second", "Third"]
         assert len(policies) == 2
         assert skipped == ["Third has no analysis to generate"]
+
+
+def test_bulk_targets_use_a_bounded_number_of_queries_for_collections():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        providers = [Provider(name=f"Provider {index:03}") for index in range(30)]
+        cohort = CompanyCollection(name="Large cohort", providers=providers)
+        db.add(cohort)
+        db.flush()
+        db.add_all([
+            Policy(provider_id=provider.id, url=f"https://example.test/{index}", source="webpage")
+            for index, provider in enumerate(providers)
+        ])
+        db.commit()
+        collection_id = cohort.id
+        db.expire_all()
+
+        selects = 0
+
+        def count_selects(_conn, _cursor, statement, _parameters, _context, _executemany):
+            nonlocal selects
+            if statement.lstrip().upper().startswith("SELECT"):
+                selects += 1
+
+        event.listen(engine, "before_cursor_execute", count_selects)
+        try:
+            _, policies, skipped = _bulk_targets(
+                BulkActionRequest(operation="generate", collection_ids=[collection_id]), db,
+            )
+        finally:
+            event.remove(engine, "before_cursor_execute", count_selects)
+
+        assert len(policies) == 30
+        assert skipped == []
+        assert selects <= 4
 
 
 def test_bulk_selection_rejects_empty_cohort():

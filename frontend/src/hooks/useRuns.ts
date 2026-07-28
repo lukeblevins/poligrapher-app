@@ -20,10 +20,14 @@ export function useRuns(providerId: string | null, pollForTasks = false) {
 /** Mutations for a provider's source, runs, uploads, and schedule toggle. */
 export function useRunActions(providerId: string) {
   const qc = useQueryClient();
+  const invalidateSchedules = () => {
+    qc.invalidateQueries({ queryKey: ["schedules", providerId] });
+    qc.invalidateQueries({ queryKey: ["schedules"] });
+  };
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["runs", providerId] });
     qc.invalidateQueries({ queryKey: ["providers"] });
-    qc.invalidateQueries({ queryKey: ["schedules", providerId] });
+    invalidateSchedules();
     qc.invalidateQueries({ queryKey: ["tasks"] });
   };
   const registerTask = (task: import("../api/types").TaskStatus) => {
@@ -64,7 +68,7 @@ export function useRunActions(providerId: string) {
     toggle: useMutation({
       mutationFn: ({ enabled, cadence }: { enabled: boolean; cadence?: string }) =>
         api.toggleSchedule(providerId, enabled, cadence),
-      onSuccess: invalidate,
+      onSuccess: invalidateSchedules,
     }),
   };
 }

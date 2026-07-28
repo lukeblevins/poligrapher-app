@@ -5,6 +5,7 @@ import urllib.parse
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import selectinload
 
 from poligrapher_app.api.deps import get_db
 from poligrapher_app.api.models import Provider
@@ -52,7 +53,12 @@ def _provider_read(provider: Provider) -> ProviderRead:
 
 @router.get("", response_model=list[ProviderRead])
 def list_providers(db: Db):
-    providers = db.query(Provider).order_by(Provider.name).all()
+    providers = (
+        db.query(Provider)
+        .options(selectinload(Provider.policies), selectinload(Provider.collections))
+        .order_by(Provider.name)
+        .all()
+    )
     return [_provider_read(p) for p in providers]
 
 

@@ -148,6 +148,7 @@ export const api = {
     }),
 
   // Schedules
+  listAllSchedules: () => request<Schedule[]>("/api/schedules"),
   listSchedules: (providerId: string) =>
     request<Schedule[]>(`/api/providers/${providerId}/schedules`),
   sourcePreview: (providerId: string) =>

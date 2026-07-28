@@ -34,6 +34,12 @@ def list_schedules(provider_id: uuid.UUID, db: Db):
     return provider.schedules
 
 
+@router.get("/api/schedules", response_model=list[ScheduleRead])
+def list_all_schedules(db: Db):
+    """Return scheduled work in one request for the Tasks workspace."""
+    return db.query(Schedule).order_by(Schedule.created_at.desc()).all()
+
+
 @router.post(
     "/api/providers/{provider_id}/schedules",
     response_model=ScheduleRead,

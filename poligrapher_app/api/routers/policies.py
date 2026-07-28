@@ -53,13 +53,19 @@ def _selected_providers(selection: BulkSelection, db: Session) -> list[Provider]
 
 def _bulk_targets(body: BulkActionRequest, db: Session) -> tuple[list[Provider], list[Policy], list[str]]:
     providers = _selected_providers(body, db)
+    provider_ids = [provider.id for provider in providers]
+    query = db.query(Policy).filter(Policy.provider_id.in_(provider_ids))
+    if body.operation == "score":
+        query = query.filter(Policy.pipeline_status == "succeeded")
+    candidates = query.order_by(Policy.provider_id, Policy.created_at.desc()).all()
+    latest_by_provider: dict[uuid.UUID, Policy] = {}
+    for policy in candidates:
+        latest_by_provider.setdefault(policy.provider_id, policy)
+
     policies: list[Policy] = []
     skipped: list[str] = []
     for provider in providers:
-        query = db.query(Policy).filter(Policy.provider_id == provider.id)
-        if body.operation == "score":
-            query = query.filter(Policy.pipeline_status == "succeeded")
-        policy = query.order_by(Policy.created_at.desc()).first()
+        policy = latest_by_provider.get(provider.id)
         if policy is None:
             reason = "no completed analysis to score" if body.operation == "score" else "no analysis to generate"
             skipped.append(f"{provider.name} has {reason}")
