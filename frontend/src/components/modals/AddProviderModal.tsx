@@ -184,7 +184,7 @@ export function AddProviderModal({
                       <CompanyLogo name={result.name} domain={result.domain} />
                       <span className="min-w-0 flex-1">
                         <span className="block text-sm font-semibold">{result.name}</span>
-                        <span className="add-company-domain block truncate">{result.domain} · Policy tracked</span>
+                        <span className="add-company-domain block truncate">{result.domain} — policy tracked</span>
                       </span>
                       <span className="add-company-result-arrow"><MaterialIcon src={arrowForwardIcon} /></span>
                     </button>

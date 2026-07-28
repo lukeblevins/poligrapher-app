@@ -44,7 +44,7 @@ export function TaskOutputPanel({
       <div className="m3-task-output-header">
         <span className="flex min-w-0 items-center gap-2">
           <MaterialIcon src={descriptionIcon} />
-          <span className="truncate">Task details · {label}</span>
+          <span className="truncate">Task details: {label}</span>
         </span>
         <span className="ml-3 shrink-0">{isTaskActive(status) ? "Live" : "Captured"}</span>
       </div>

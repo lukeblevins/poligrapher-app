@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import arrowBackIcon from "@material-symbols/svg-400/rounded/arrow_back.svg?url";
 
 import { api } from "../api/client";
 import type { Policy, Provider, RunGroup, TaskStatus } from "../api/types";
@@ -21,6 +22,7 @@ interface Props {
   onSelectPolicy: (policy: Policy | null) => void;
   historyTargetTaskId?: string | null;
   historyTargetNonce?: number;
+  onBackToCompanies?: () => void;
 }
 
 const CADENCES = ["daily", "weekly", "monthly"];
@@ -109,11 +111,14 @@ function RunMethodRow({
   const methodLabel = legacy
     ? "Unknown analysis method"
     : METHOD_LABEL[run.method] ?? "Imported analysis method";
+  const reportAvailable = run.pipeline_status === "succeeded";
   return (
     <button
-      onClick={onSelect}
+      type="button"
+      onClick={reportAvailable ? onSelect : undefined}
+      disabled={!reportAvailable}
       aria-current={selected ? "true" : undefined}
-      aria-label={`Open ${methodLabel.toLowerCase()} results`}
+      aria-label={reportAvailable ? `Open ${methodLabel.toLowerCase()} results` : `${methodLabel} report unavailable`}
       className={`m3-run-method group flex min-h-14 w-full items-center px-3 py-2.5 text-left text-sm sm:px-4 ${
         selected
           ? "m3-run-method-selected"
@@ -121,6 +126,7 @@ function RunMethodRow({
       }`}
     >
       <span className="min-w-0 truncate font-semibold">{methodLabel}</span>
+      {!reportAvailable && <span className="ml-auto shrink-0 text-xs font-normal text-[var(--md-sys-color-on-surface-variant)]">No report</span>}
     </button>
   );
 }
@@ -168,7 +174,7 @@ function RunCard({
   const tooltipContent = (
     <>
       <div className="font-semibold text-white">{group.scheduled ? "Automatic" : "Manual"} {title.toLowerCase()}</div>
-      <div className="mt-1 text-[var(--md-sys-color-on-surface-variant)]">{group.runs.length} {group.runs.length === 1 ? "method" : "methods"} · Started {date.toLocaleString()}</div>
+      <div className="mt-1 text-[var(--md-sys-color-on-surface-variant)]">{group.runs.length} {group.runs.length === 1 ? "method" : "methods"}, started {date.toLocaleString()}</div>
       <div className="text-[var(--md-sys-color-on-surface-variant)]">Source captured {captureText}</div>
       <div className="mt-1 font-mono text-[var(--md-sys-color-on-surface-variant)]">Run {group.run_id.slice(0, 8)}</div>
     </>
@@ -191,8 +197,8 @@ function RunCard({
             <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLES[status] ?? ""}`}>{titleCase(status)}</span>
           </div>
           <p className="mt-0.5 text-xs text-[var(--md-sys-color-on-surface-variant)]">
-            {group.scheduled ? "Automatic" : "Manual"} · <time dateTime={date.toISOString()}>{date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</time>
-            {task && task.total > 0 && ["running", "cancelling"].includes(task.status) ? ` · ${task.completed}/${task.total}` : ""}
+            {group.scheduled ? "Automatic" : "Manual"} <span aria-hidden="true">—</span> <time dateTime={date.toISOString()}>{date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</time>
+            {task && task.total > 0 && ["running", "cancelling"].includes(task.status) ? ` (${task.completed}/${task.total})` : ""}
           </p>
         </div>
         {canShowOutput && (
@@ -244,7 +250,7 @@ function PendingRunCard({
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-sm font-semibold">{task.title ?? "Analysis run"}</h3>
           <p className="mt-0.5 text-xs text-[var(--md-sys-color-on-surface-variant)]">
-            {titleCase(task.status)} · {progress}
+            {titleCase(task.status)} ({progress})
           </p>
           {task.error && <p className="mt-1 line-clamp-2 text-xs text-[var(--md-sys-color-error)]">{task.error}</p>}
         </div>
@@ -259,7 +265,7 @@ function PendingRunCard({
 
 // ── Provider page ─────────────────────────────────────────────────────────────
 
-export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, historyTargetTaskId, historyTargetNonce }: Props) {
+export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, historyTargetTaskId, historyTargetNonce, onBackToCompanies }: Props) {
   const qc = useQueryClient();
   const { tasks } = useTasks();
   const taskCanAffectSelectedProvider = tasks.some((task) =>
@@ -366,6 +372,12 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, history
   return (
     <div className="m3-company-record min-w-0 flex-1 overflow-auto px-4 py-3 sm:px-5 lg:px-6">
       <div className="mx-auto w-full max-w-5xl">
+      {onBackToCompanies ? (
+        <button type="button" className="m3-compact-pane-back" onClick={onBackToCompanies}>
+          <span className="m3-material-symbol" style={{ "--m3-symbol-url": `url("${arrowBackIcon}")` } as CSSProperties} aria-hidden="true" />
+          <span>Back to companies</span>
+        </button>
+      ) : null}
       {/* Provider heading */}
       <header className="overflow-hidden py-2">
         <div className="flex items-center gap-3 sm:gap-4">
@@ -417,7 +429,7 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, history
                 <div className="m3-source-summary mt-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className={`text-xs font-semibold ${SOURCE_STATUS_STYLE[provider.source_status] ?? SOURCE_STATUS_STYLE.unchecked}`}>
-                      {SOURCE_STATUS_LABEL[provider.source_status] ?? "Not checked"}{provider.source_http_status ? ` · HTTP ${provider.source_http_status}` : ""}
+                      {SOURCE_STATUS_LABEL[provider.source_status] ?? "Not checked"}{provider.source_http_status ? ` (HTTP ${provider.source_http_status})` : ""}
                     </span>
                   </div>
                   <p className="m3-source-url mt-2 break-all">{savedSourceUrl}</p>
@@ -514,7 +526,7 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, history
             </p>
             {scheduleOn && schedule && (
               <p className="mt-2 text-xs text-[var(--md-sys-color-on-surface-variant)]">
-                {schedule.last_status !== "idle" ? `${titleCase(schedule.last_status)} · ` : ""}
+                {schedule.last_status !== "idle" ? `${titleCase(schedule.last_status)}. ` : ""}
                 Next check {schedule.next_run_at ? new Date(schedule.next_run_at).toLocaleString() : "not scheduled"}
               </p>
             )}

@@ -305,7 +305,7 @@ export function CollectionsWorkspace() {
                 <div className="m3-collection-member-heading">
                   <div>
                     <legend className="font-display text-xl font-medium">Companies</legend>
-                    <p className="mt-1 text-sm text-[var(--md-sys-color-on-surface-variant)]"><span className="data-value">{draft.memberIds.size}</span> selected · <span className="data-value">{filteredDraftProviders.length}</span> shown</p>
+                    <p className="mt-1 text-sm text-[var(--md-sys-color-on-surface-variant)]"><span className="data-value">{draft.memberIds.size}</span> selected, <span className="data-value">{filteredDraftProviders.length}</span> shown</p>
                   </div>
                   <div className="m3-collection-selection-actions">
                     <MdTextButton onClick={() => setDraft((current) => ({ ...current, memberIds: new Set([...current.memberIds, ...filteredDraftProviders.map((provider) => provider.id)]) }))}>Select all</MdTextButton>
@@ -426,7 +426,7 @@ export function CollectionsWorkspace() {
       </section>
 
       {bulk && (
-        <Modal title={`${bulk.operation === "generate" ? "Generate analyses" : "Score analyses"} · ${bulk.collection.name}`} onClose={() => setBulk(null)}>
+        <Modal title={`${bulk.operation === "generate" ? "Generate analyses" : "Score analyses"}: ${bulk.collection.name}`} onClose={() => setBulk(null)}>
           {!bulk.preview ? (
             <p role="status" className="quiet-state">Calculating eligible work…</p>
           ) : (

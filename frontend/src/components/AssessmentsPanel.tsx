@@ -13,7 +13,7 @@ export function AssessmentsPanel({ policyId }: { policyId: string }) {
 }
 
 function ScoreHeader({ title, score, badge, tone }: { title: string; score: string; badge: string; tone: "primary" | "success" | "warning" | "error" | "neutral" }) {
-  return <header className="m3-score-header"><div><h3>{title}</h3><p>Score out of 100</p></div><strong className="data-value">{score}</strong><span className={`m3-score-badge m3-score-badge-${tone}`}>{badge}</span></header>;
+  return <header className="m3-score-header"><div><h3>{title}</h3><p>Score out of 100</p></div><strong className={`m3-assessment-score m3-assessment-score-${tone} data-value`}><span>{score}</span><small>/100</small></strong><span className={`m3-score-badge m3-score-badge-${tone}`}>{badge}</span></header>;
 }
 
 function PrivacySection({ privacy }: { privacy: PrivacyAssessment }) {

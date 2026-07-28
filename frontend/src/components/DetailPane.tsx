@@ -74,7 +74,7 @@ export function DetailPane({ policy, providerName, onClose }: Props) {
         <div className="min-w-0">
           <p className="section-kicker">Policy analysis report</p>
           <h2 className="truncate">{providerName}</h2>
-          <p>{analysisMethod(policy)} · Snapshot {snapshotDate(policy)}</p>
+          <p>{analysisMethod(policy)} <span aria-hidden="true">—</span> snapshot {snapshotDate(policy)}</p>
         </div>
         <div className="flex flex-none items-center gap-2">
           <span className={`m3-analysis-run-status m3-status-${status.tone}`}>{status.label}</span>

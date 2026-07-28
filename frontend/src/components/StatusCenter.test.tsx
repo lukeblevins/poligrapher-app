@@ -38,7 +38,7 @@ describe("TaskRow", () => {
     expect(screen.getByText("In progress")).toBeInTheDocument();
     expect(screen.getByText("In progress").querySelector(".m3-material-symbol")).not.toBeInTheDocument();
     expect(screen.getByRole("progressbar", { name: "Score all progress" })).toHaveAttribute("aria-valuenow", "42");
-    expect(screen.getByText("42 of 100 · 42%")).toBeInTheDocument();
+    expect(screen.getByText("42 of 100 (42%)")).toBeInTheDocument();
     expect(container.querySelector("md-outlined-button")?.textContent?.trim()).toBe("Details");
     expect(Array.from(container.querySelectorAll("md-outlined-button")).map((action) => action.textContent?.trim())).toEqual(["Details", "Cancel"]);
   });
@@ -57,10 +57,11 @@ describe("TaskRow", () => {
   });
 
   it("keeps completed work quiet and does not offer retry", () => {
-    render(<TaskRow task={task({ status: "done", has_output: false })} expanded={false} onToggleOutput={vi.fn()} />);
+    render(<TaskRow task={task({ status: "done", has_output: false })} expanded={false} onToggleOutput={vi.fn()} onDismiss={vi.fn()} />);
 
     expect(screen.getByText("Completed")).toBeInTheDocument();
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Dismiss Score all" })).toBeInTheDocument();
   });
 });

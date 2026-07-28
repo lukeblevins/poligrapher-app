@@ -14,7 +14,7 @@ import failedIcon from "@material-symbols/svg-400/rounded/error.svg?url";
 import type { TaskState, TaskStatus } from "../api/types";
 import { isRunTask, isTaskActive } from "../api/types";
 import { canRetryTask, useCancelTask, useRetryTask, useTasks } from "../hooks/useTasks";
-import { useDismissedTasks } from "../hooks/useDismissedTasks";
+import { dismissTask, useDismissedTasks } from "../hooks/useDismissedTasks";
 import { ExpressiveProgressIndicator } from "./ExpressiveProgressIndicator";
 import { TaskOutputPanel } from "./TaskOutputPanel";
 import { Tooltip } from "./Tooltip";
@@ -48,14 +48,14 @@ function taskTitle(task: TaskStatus): string {
   return task.title ?? task.label ?? task.kind ?? "Task";
 }
 
-function MaterialIcon({ src }: { src: string }) {
-  return <span className="m3-material-symbol" style={{ "--m3-symbol-url": `url("${src}")` } as CSSProperties} aria-hidden="true" />;
+function MaterialIcon({ src, slot }: { src: string; slot?: string }) {
+  return <span slot={slot} className="m3-material-symbol" style={{ "--m3-symbol-url": `url("${src}")` } as CSSProperties} aria-hidden="true" />;
 }
 
 function progressText(task: TaskStatus): string {
   if (task.total <= 0 || !isTaskActive(task.status)) return "";
   const percentage = Math.round((task.completed / task.total) * 100);
-  return `${task.completed} of ${task.total} · ${percentage}%`;
+  return `${task.completed} of ${task.total} (${percentage}%)`;
 }
 
 export function TaskRow({
@@ -104,18 +104,18 @@ export function TaskRow({
           {(cancel.isError || retryTask.isError) && <div role="alert" className="mt-1 text-xs leading-4 text-[var(--md-sys-color-error)]">{cancel.error instanceof Error ? cancel.error.message : retryTask.error instanceof Error ? retryTask.error.message : "Could not update this task."}</div>}
         </div>
         <div className="m3-task-actions" role="group" aria-label={`${title} actions`}>
-          {canRetryTask(task) && <MdFilledButton className="m3-task-action m3-task-action-primary" disabled={retryTask.isPending} onClick={() => retryTask.mutate()}><span className="m3-task-action-label"><MaterialIcon src={retryIcon} />{retryTask.isPending ? "Retrying…" : "Retry"}</span></MdFilledButton>}
+          {canRetryTask(task) && <MdFilledButton className="m3-task-action m3-task-action-primary" disabled={retryTask.isPending} onClick={() => retryTask.mutate()}><MaterialIcon slot="icon" src={retryIcon} />{retryTask.isPending ? "Retrying…" : "Retry"}</MdFilledButton>}
           {linksToHistory ? (
-            <MdOutlinedButton className="m3-task-action" onClick={() => onViewRun?.(task)}><span className="m3-task-action-label"><MaterialIcon src={historyIcon} />View run</span></MdOutlinedButton>
+            <MdOutlinedButton className="m3-task-action" onClick={() => onViewRun?.(task)}><MaterialIcon slot="icon" src={historyIcon} />View run</MdOutlinedButton>
           ) : canViewOutput ? (
             <MdOutlinedButton
               className="m3-task-action"
               aria-expanded={expanded}
               onClick={onToggleOutput}
-            ><span className="m3-task-action-label"><MaterialIcon src={outputIcon} />{expanded ? "Hide details" : "Details"}</span></MdOutlinedButton>
+            ><MaterialIcon slot="icon" src={outputIcon} />{expanded ? "Hide details" : "Details"}</MdOutlinedButton>
           ) : null}
           {task.cancelable && (
-            <MdOutlinedButton className="m3-task-action" disabled={cancel.isPending} onClick={() => cancel.mutate(task.task_id)}><span className="m3-task-action-label"><MaterialIcon src={cancelIcon} />Cancel</span></MdOutlinedButton>
+            <MdOutlinedButton className="m3-task-action" disabled={cancel.isPending} onClick={() => cancel.mutate(task.task_id)}><MaterialIcon slot="icon" src={cancelIcon} />Cancel</MdOutlinedButton>
           )}
         </div>
       </div>
@@ -183,7 +183,7 @@ export function StatusCenter({ onViewRun, onOpenWorkspace, variant = "topbar" }:
             id="task-status-panel"
             role="region"
             aria-label="Task status center"
-            className={`m3-menu z-50 max-h-[calc(100dvh-5rem)] overflow-hidden ${variant === "rail" ? `absolute bottom-0 left-[calc(100%+0.5rem)] w-[min(28rem,calc(100vw-8rem))] ${expandedTaskId ? "sm:w-[min(44rem,calc(100vw-8rem))]" : ""}` : `fixed inset-x-3 top-[4.25rem] w-auto sm:absolute sm:inset-x-auto sm:right-0 sm:top-auto sm:z-20 sm:mt-2 sm:max-h-none sm:w-[min(28rem,calc(100vw-2rem))] ${expandedTaskId ? "sm:w-[min(44rem,calc(100vw-2rem))]" : ""}`}`}
+            className={`m3-menu m3-task-mini-panel z-50 overflow-hidden ${variant === "rail" ? `absolute bottom-[calc(100%+0.5rem)] left-0 w-[min(28rem,calc(100vw-6rem))] ${expandedTaskId ? "sm:w-[min(44rem,calc(100vw-6rem))]" : ""}` : `fixed inset-x-3 top-[4.25rem] w-auto sm:absolute sm:inset-x-auto sm:right-0 sm:top-auto sm:z-20 sm:mt-2 sm:w-[min(28rem,calc(100vw-2rem))] ${expandedTaskId ? "sm:w-[min(44rem,calc(100vw-2rem))]" : ""}`}`}
           >
             <div className="m3-task-status-header flex items-center gap-3 px-4 py-3">
               <div className="min-w-0 flex-1">
@@ -207,6 +207,7 @@ export function StatusCenter({ onViewRun, onOpenWorkspace, variant = "topbar" }:
                     expanded={expandedTaskId === task.task_id}
                     onToggleOutput={() => setExpandedTaskId((current) => current === task.task_id ? null : task.task_id)}
                     onViewRun={onViewRun ? (selected) => { close(); onViewRun(selected); } : undefined}
+                    onDismiss={!isTaskActive(task.status) ? () => dismissTask(task.task_id) : undefined}
                   />
                 ))}
               </ul>

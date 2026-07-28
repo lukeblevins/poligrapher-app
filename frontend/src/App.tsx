@@ -11,10 +11,12 @@ import { AddProviderModal } from "./components/modals/AddProviderModal";
 import { AboutWorkspace } from "./components/AboutWorkspace";
 import type { Policy, Provider, TaskStatus } from "./api/types";
 import { useProviders } from "./hooks/queries";
+import { useExpressivePress } from "./hooks/useExpressivePress";
 
 const DetailPane = lazy(() => import("./components/DetailPane").then((module) => ({ default: module.DetailPane })));
 
 export default function App() {
+  useExpressivePress();
   const [workspace, setWorkspace] = useState<"companies" | "collections" | "scheduled" | "about">("companies");
   const { data: providers = [] } = useProviders();
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
@@ -80,9 +82,10 @@ export default function App() {
               onSelectPolicy={setSelectedPolicy}
               historyTargetTaskId={historyTarget?.taskId ?? null}
               historyTargetNonce={historyTarget?.nonce}
+              onBackToCompanies={handleBackToCompanies}
             />
             {selectedPolicy && <>
-              <button type="button" className="m3-analysis-scrim" aria-label="Close analysis details" onClick={() => setSelectedPolicy(null)} />
+              <button type="button" data-no-ripple className="m3-analysis-scrim" aria-label="Close analysis details" onClick={() => setSelectedPolicy(null)} />
               <Suspense fallback={<div role="dialog" aria-modal="true" aria-label="Analysis details" className="m3-analysis-sheet flex items-center justify-center p-6 text-sm text-[var(--md-sys-color-on-surface-variant)]">Loading analysis details…</div>}>
                 <DetailPane
                   policy={selectedPolicy}

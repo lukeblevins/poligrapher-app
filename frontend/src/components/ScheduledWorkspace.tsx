@@ -99,5 +99,5 @@ export function ScheduledWorkspace({ onViewRun }: { onViewRun?: (task: TaskStatu
 
 function ScheduledCheck({ providerName, schedule }: { providerName: string; schedule: Schedule }) {
   const nextRun = schedule.next_run_at ? new Date(schedule.next_run_at).toLocaleString() : "Awaiting schedule";
-  return <li className="m3-scheduled-task"><div className="min-w-0"><p className="truncate text-sm font-semibold">{providerName}</p><p className="mt-1 text-xs text-[var(--md-sys-color-on-surface-variant)]">{schedule.cadence} · Next check {nextRun}</p></div><span className="m3-status-primary">Scheduled</span></li>;
+  return <li className="m3-scheduled-task"><div className="min-w-0"><p className="truncate text-sm font-semibold">{providerName}</p><p className="mt-1 text-xs text-[var(--md-sys-color-on-surface-variant)]">{schedule.cadence}. Next check {nextRun}</p></div><span className="m3-status-primary">Scheduled</span></li>;
 }

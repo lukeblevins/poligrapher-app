@@ -26,7 +26,7 @@ export function ExpressiveProgressIndicator({ label, value }: ExpressiveProgress
       <svg viewBox="0 0 600 16" preserveAspectRatio="none" aria-hidden="true">
         <defs>
           <clipPath id={clipId}>
-            <rect x="0" y="0" width={normalizedValue === undefined ? 600 : normalizedValue * 600} height="16" />
+            <rect className="m3-expressive-progress-clip" x="0" y="0" width={normalizedValue === undefined ? 600 : normalizedValue * 600} height="16" />
           </clipPath>
         </defs>
         <line

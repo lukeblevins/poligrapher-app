@@ -25,7 +25,7 @@ export function StatsPanel({ policyId }: { policyId: string }) {
         <Metric label="Transitivity" value={stats.transitivity.toFixed(4)} />
         <Metric label="Isolated nodes" value={stats.isolated_nodes} />
         <Metric label="Self-loops" value={stats.self_loop_count} />
-        <Metric label="Largest component" value={`${stats.largest_component_size} · ${(stats.largest_component_ratio * 100).toFixed(0)}%`} />
+        <Metric label="Largest component" value={`${stats.largest_component_size} (${(stats.largest_component_ratio * 100).toFixed(0)}%)`} />
       </section>
       <ResultSection title="Graph composition">
         <CountList title="Node types" counts={stats.node_type_counts} />

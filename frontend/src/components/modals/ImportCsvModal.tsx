@@ -66,7 +66,7 @@ export function ImportCsvModal({ onClose }: { onClose: () => void }) {
           <span className="import-csv-picker-icon"><MaterialIcon src={file ? csvIcon : uploadIcon} /></span>
           <span className="import-csv-picker-copy">
             <strong>{file ? file.name : "Choose a CSV file"}</strong>
-            <span>{file ? `${Math.max(1, Math.round(file.size / 1024))} KB · Choose another file` : "or drag and drop it here"}</span>
+            <span>{file ? `${Math.max(1, Math.round(file.size / 1024))} KB. Choose another file` : "or drag and drop it here"}</span>
           </span>
         </button>
 
@@ -86,7 +86,7 @@ export function ImportCsvModal({ onClose }: { onClose: () => void }) {
             <span className="import-csv-summary-icon"><MaterialIcon src={checkIcon} /></span>
             <div>
               <strong>Import complete</strong>
-              <p>{summary.created} added · {summary.skipped} already existed · {summary.errors} failed</p>
+              <p>{summary.created} added, {summary.skipped} already existed, {summary.errors} failed</p>
             </div>
           </div>
         )}
