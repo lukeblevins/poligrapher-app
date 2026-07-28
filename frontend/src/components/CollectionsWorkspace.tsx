@@ -150,7 +150,7 @@ export function CollectionsWorkspace() {
     );
   }, [providers, query, selected]);
   const readyCount = selected ? providers.filter((provider) => selected.provider_ids.includes(provider.id) && provider.source_status === "available").length : 0;
-  const analyzedCount = selected ? providers.filter((provider) => selected.provider_ids.includes(provider.id) && provider.policy_count > 0).length : 0;
+  const analyzedCount = selected ? providers.filter((provider) => selected.provider_ids.includes(provider.id) && provider.analyzed_count > 0).length : 0;
   const renderedMembers = members.slice(0, visibleMemberCount);
   const pending = create.isPending || update.isPending;
   const mutationError = create.error || update.error || remove.error || sync.error || verify.error;
@@ -432,8 +432,10 @@ export function CollectionsWorkspace() {
           ) : (
             <>
               <p className="text-sm leading-6 text-[var(--md-sys-color-on-surface-variant)]">
-                Queue {bulk.preview.eligible_count} eligible {bulk.preview.eligible_count === 1 ? "policy" : "policies"} across {bulk.preview.provider_count} {bulk.preview.provider_count === 1 ? "company" : "companies"}.
-                {bulk.preview.skipped_count > 0 ? ` ${bulk.preview.skipped_count} companies without eligible work will be skipped.` : ""}
+                {bulk.operation === "generate"
+                  ? `Analyze ${bulk.preview.eligible_count} ${bulk.preview.eligible_count === 1 ? "company" : "companies"} that do not have completed graph output.`
+                  : `Score ${bulk.preview.eligible_count} eligible ${bulk.preview.eligible_count === 1 ? "policy" : "policies"} across ${bulk.preview.provider_count} ${bulk.preview.provider_count === 1 ? "company" : "companies"}.`}
+                {bulk.preview.skipped_count > 0 ? ` ${bulk.preview.skipped_count} companies are already complete or do not have a policy source.` : ""}
               </p>
               <div className="mt-5 flex justify-end gap-2">
                 <MdOutlinedButton onClick={() => setBulk(null)}>Cancel</MdOutlinedButton>

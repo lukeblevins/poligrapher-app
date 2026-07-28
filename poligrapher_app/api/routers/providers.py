@@ -27,6 +27,11 @@ Db = Annotated[Session, Depends(get_db)]
 def _provider_read(provider: Provider) -> ProviderRead:
     succeeded = sum(1 for p in provider.policies if p.pipeline_status == "succeeded")
     failed = sum(1 for p in provider.policies if p.pipeline_status == "failed")
+    analyzed = sum(
+        1
+        for policy in provider.policies
+        if isinstance(policy.graph_data, dict) and policy.graph_data.get("elements")
+    )
     source_checked_at = provider.source_checked_at
     if source_checked_at is not None and source_checked_at.tzinfo is None:
         source_checked_at = source_checked_at.replace(tzinfo=timezone.utc)
@@ -46,6 +51,7 @@ def _provider_read(provider: Provider) -> ProviderRead:
         collection_ids=[collection.id for collection in provider.collections],
         created_at=provider.created_at,
         policy_count=len(provider.policies),
+        analyzed_count=analyzed,
         succeeded_count=succeeded,
         failed_count=failed,
     )

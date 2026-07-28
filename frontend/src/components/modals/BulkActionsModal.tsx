@@ -84,7 +84,7 @@ export function BulkActionsModal({ onClose }: { onClose: () => void }) {
               {(["generate", "score"] as BulkOperation[]).map((kind) => (
                 <label key={kind} className={`m3-bulk-operation ${operation === kind ? "m3-bulk-operation-selected" : ""}`}>
                   <MdRadio name="bulk-operation" value={kind} checked={operation === kind} onChange={() => { setOperation(kind); resetPipelinePreview(); }} />
-                  <span><span className="block font-semibold">{kind === "generate" ? "Analyze policies" : "Score analyses"}</span><span className="m3-bulk-operation-description mt-0.5 block text-xs leading-5">{kind === "generate" ? "Analyze each company’s latest policy." : "Add missing privacy and GDPR scores."}</span></span>
+                  <span><span className="block font-semibold">{kind === "generate" ? "Analyze policies" : "Score analyses"}</span><span className="m3-bulk-operation-description mt-0.5 block text-xs leading-5">{kind === "generate" ? "Create graph output for companies that are not analyzed yet." : "Add missing privacy and GDPR scores."}</span></span>
                 </label>
               ))}
             </div>
@@ -110,7 +110,7 @@ export function BulkActionsModal({ onClose }: { onClose: () => void }) {
             </section>
           </div>
 
-          {preview && <div className="m3-bulk-preview mt-5"><p className="font-semibold">Ready to queue {preview.eligible_count} {preview.eligible_count === 1 ? "policy" : "policies"} across {preview.provider_count} {preview.provider_count === 1 ? "company" : "companies"}.</p><p className="mt-1">{preview.skipped_count ? `${preview.skipped_count} selected companies have no eligible policy and will be skipped.` : "Every selected company has eligible work."}</p></div>}
+          {preview && <div className="m3-bulk-preview mt-5"><p className="font-semibold">{operation === "generate" ? `Ready to analyze ${preview.eligible_count} ${preview.eligible_count === 1 ? "company" : "companies"}.` : `Ready to score ${preview.eligible_count} ${preview.eligible_count === 1 ? "policy" : "policies"}.`}</p><p className="mt-1">{preview.skipped_count ? `${preview.skipped_count} selected companies are already complete or do not have a policy source.` : "Every selected company has eligible work."}</p></div>}
           {error && <p role="alert" className="mt-4 status-error">{error}</p>}
           <div className="m3-dialog-actions mt-5 flex justify-end gap-2"><MdOutlinedButton onClick={onClose}>Cancel</MdOutlinedButton>{preview ? <MdFilledButton disabled={pending !== null || preview.eligible_count === 0} onClick={queuePipeline}>{pending === "run" ? "Queueing…" : "Queue task"}</MdFilledButton> : <MdFilledButton disabled={pending !== null} onClick={previewPipeline}>{pending === "preview" ? "Previewing…" : "Preview"}</MdFilledButton>}</div>
         </section>

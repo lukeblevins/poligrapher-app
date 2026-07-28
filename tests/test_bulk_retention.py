@@ -9,7 +9,13 @@ from sqlalchemy.orm import Session, sessionmaker
 from poligrapher_app.api import database
 from poligrapher_app.api.database import Base
 from poligrapher_app.api.models import AnalysisResult, CompanyCollection, Policy, Provider
-from poligrapher_app.api.routers.policies import _bulk_targets, _selected_providers, run_bulk_action, start_retention_cleanup
+from poligrapher_app.api.routers.policies import (
+    _bulk_analysis_targets,
+    _bulk_targets,
+    _selected_providers,
+    run_bulk_action,
+    start_retention_cleanup,
+)
 from poligrapher_app.api.schemas import BulkActionRequest, BulkSelection, RetentionRequest
 from poligrapher_app.services.retention import cleanup_retention, preview_retention
 from poligrapher_app.services.storage import LocalObjectStorage
@@ -44,6 +50,59 @@ def test_bulk_targets_merge_collection_and_direct_selection():
         assert [provider.name for provider in providers] == ["First", "Second", "Third"]
         assert len(policies) == 2
         assert skipped == ["Third has no analysis to generate"]
+
+
+def test_bulk_analysis_targets_use_sources_and_skip_existing_graphs():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        complete = Provider(name="Complete", source_url="https://complete.test/privacy")
+        ready = Provider(name="Ready", source_url="https://ready.test/privacy")
+        missing = Provider(name="Missing")
+        cohort = CompanyCollection(name="Cohort", providers=[complete, ready, missing])
+        db.add(cohort)
+        db.flush()
+        db.add(Policy(
+            provider_id=complete.id,
+            url=complete.source_url,
+            source="webpage",
+            graph_data={"elements": [{"data": {"id": "node"}}]},
+        ))
+        db.commit()
+
+        providers, eligible, skipped = _bulk_analysis_targets(
+            BulkActionRequest(operation="generate", collection_ids=[cohort.id]), db,
+        )
+
+        assert [provider.name for provider in providers] == ["Complete", "Missing", "Ready"]
+        assert [provider.name for provider in eligible] == ["Ready"]
+        assert skipped == [
+            "Complete already has an analysis",
+            "Missing has no policy source",
+        ]
+
+
+def test_bulk_analysis_targets_do_not_count_empty_graph_payloads():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        provider = Provider(name="Ready", source_url="https://ready.test/privacy")
+        db.add(provider)
+        db.flush()
+        db.add(Policy(
+            provider_id=provider.id,
+            url=provider.source_url,
+            source="webpage",
+            graph_data={"elements": []},
+        ))
+        db.commit()
+
+        _, eligible, skipped = _bulk_analysis_targets(
+            BulkActionRequest(operation="generate", provider_ids=[provider.id]), db,
+        )
+
+        assert [item.name for item in eligible] == ["Ready"]
+        assert skipped == []
 
 
 def test_bulk_targets_use_a_bounded_number_of_queries_for_collections():
@@ -113,11 +172,8 @@ def test_bulk_action_queues_a_durable_task_with_selection_summary():
     Base.metadata.create_all(engine)
     registry = Registry()
     with Session(engine) as db:
-        provider = Provider(name="Example")
+        provider = Provider(name="Example", source_url="https://example.test/privacy")
         db.add(provider)
-        db.flush()
-        policy = Policy(provider_id=provider.id, url="https://example.test/privacy", source="webpage")
-        db.add(policy)
         db.commit()
 
         task = run_bulk_action(
@@ -127,11 +183,11 @@ def test_bulk_action_queues_a_durable_task_with_selection_summary():
         )
 
     assert task.kind is None
-    assert registry.created == {"kind": "bulk-generate", "title": "Bulk generate · 1 policies", "total": 1}
+    assert registry.created == {"kind": "collection-analysis", "title": "Analyze · 1 companies", "total": 1}
     assert registry.payload == ("00000000-0000-0000-0000-000000000001", {
-        "kind": "bulk-generate", "policy_ids": [str(policy.id)], "provider_ids": [str(provider.id)], "skipped": [],
+        "kind": "collection-analysis", "provider_ids": [str(provider.id)], "skipped": [],
     })
-    assert "1 policies are eligible" in registry.output[0][1]
+    assert "1 companies are eligible" in registry.output[0][1]
 
 
 def test_retention_cleanup_requires_explicit_confirmation():

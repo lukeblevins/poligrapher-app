@@ -74,44 +74,86 @@ def _bulk_targets(body: BulkActionRequest, db: Session) -> tuple[list[Provider],
     return providers, policies, skipped
 
 
+def _bulk_analysis_targets(body: BulkActionRequest, db: Session) -> tuple[list[Provider], list[Provider], list[str]]:
+    providers = _selected_providers(body, db)
+    provider_ids = [provider.id for provider in providers]
+    analyzed_ids = {
+        provider_id
+        for provider_id, graph_data in (
+            db.query(Policy.provider_id, Policy.graph_data)
+            .filter(Policy.provider_id.in_(provider_ids))
+            .all()
+        )
+        if isinstance(graph_data, dict) and graph_data.get("elements")
+    }
+
+    eligible: list[Provider] = []
+    skipped: list[str] = []
+    for provider in providers:
+        if provider.id in analyzed_ids:
+            skipped.append(f"{provider.name} already has an analysis")
+        elif provider.source_url:
+            eligible.append(provider)
+        else:
+            skipped.append(f"{provider.name} has no policy source")
+    return providers, eligible, skipped
+
+
 @router.post("/api/bulk/preview", response_model=BulkActionPreview)
 def preview_bulk_action(body: BulkActionRequest, db: Db):
-    providers, policies, skipped = _bulk_targets(body, db)
+    if body.operation == "generate":
+        providers, eligible, skipped = _bulk_analysis_targets(body, db)
+        eligible_names = [provider.name for provider in eligible]
+    else:
+        providers, policies, skipped = _bulk_targets(body, db)
+        eligible = policies
+        eligible_names = [policy.provider.name for policy in policies]
     return BulkActionPreview(
         operation=body.operation,
         provider_count=len(providers),
-        eligible_count=len(policies),
+        eligible_count=len(eligible),
         skipped_count=len(skipped),
         collection_count=len(body.collection_ids),
-        providers=[provider.name for provider in providers],
+        providers=eligible_names,
         skipped=skipped,
     )
 
 
 @router.post("/api/bulk/run", response_model=TaskStatus)
 def run_bulk_action(body: BulkActionRequest, request: Request, db: Db):
-    providers, policies, skipped = _bulk_targets(body, db)
-    if not policies:
+    if body.operation == "generate":
+        providers, eligible_providers, skipped = _bulk_analysis_targets(body, db)
+        eligible_count = len(eligible_providers)
+    else:
+        providers, policies, skipped = _bulk_targets(body, db)
+        eligible_count = len(policies)
+    if not eligible_count:
         raise HTTPException(status_code=422, detail="None of the selected companies has an eligible analysis")
     registry = request.app.state.tasks
-    kind = "bulk-generate" if body.operation == "generate" else "bulk-score"
+    kind = "collection-analysis" if body.operation == "generate" else "bulk-score"
+    unit = "companies" if body.operation == "generate" else "policies"
     task_id = registry.create(
         kind=kind,
-        title=f"Bulk {body.operation} · {len(policies)} policies",
-        total=len(policies),
+        title=f"{'Analyze' if body.operation == 'generate' else 'Score'} · {eligible_count} {unit}",
+        total=eligible_count,
     )
     registry.append_output(
         task_id,
-        f"Selected {len(providers)} companies; {len(policies)} policies are eligible for {body.operation}.\n",
+        f"Selected {len(providers)} companies; {eligible_count} {unit} are eligible for {body.operation}.\n",
     )
     if skipped:
         registry.append_output(task_id, "Skipped: " + "; ".join(skipped) + "\n")
-    registry.enqueue(task_id, {
+    payload = {
         "kind": kind,
-        "policy_ids": [str(policy.id) for policy in policies],
-        "provider_ids": [str(provider.id) for provider in providers],
+        "provider_ids": [
+            str(provider.id)
+            for provider in (eligible_providers if body.operation == "generate" else providers)
+        ],
         "skipped": skipped,
-    })
+    }
+    if body.operation == "score":
+        payload["policy_ids"] = [str(policy.id) for policy in policies]
+    registry.enqueue(task_id, payload)
     return _task_status(registry, task_id)
 
 

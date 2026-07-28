@@ -45,6 +45,7 @@ class ProviderRead(BaseModel):
     collection_ids: list[uuid.UUID] = []
     created_at: datetime
     policy_count: int = 0
+    analyzed_count: int = 0
     succeeded_count: int = 0
     failed_count: int = 0
 

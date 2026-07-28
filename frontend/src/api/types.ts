@@ -16,6 +16,7 @@ export interface Provider {
   collection_ids: string[];
   created_at: string;
   policy_count: number;
+  analyzed_count: number;
   succeeded_count: number;
   failed_count: number;
 }
