@@ -13,7 +13,6 @@ export function StatsPanel({ policyId }: { policyId: string }) {
   return (
     <div className="m3-results-panel">
       <header className="m3-results-heading">
-        <p className="section-kicker">Policy graph</p>
         <h2>Graph overview</h2>
         <p>Structure and connectivity for this policy snapshot.</p>
       </header>

@@ -11,13 +11,13 @@ vi.mock("./StatusCenter", () => ({
   StatusCenter: () => <button type="button" aria-label="Task activity">Activity</button>,
 }));
 
-function renderTopBar(workspace: "companies" | "collections" = "companies") {
+function renderTopBar(workspace: "companies" | "collections" = "companies", options: { onBack?: () => void; showAddCompany?: boolean } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const onAddCompany = vi.fn();
   const result = render(
     <QueryClientProvider client={client}>
       <TooltipProvider>
-        <TopBar workspace={workspace} onAddCompany={onAddCompany} />
+        <TopBar workspace={workspace} onAddCompany={onAddCompany} onBack={options.onBack} showAddCompany={options.showAddCompany} />
       </TooltipProvider>
     </QueryClientProvider>,
   );
@@ -40,18 +40,29 @@ describe("TopBar contextual actions", () => {
   it("keeps company creation available from the compact toolbar", async () => {
     const user = userEvent.setup();
     const { onAddCompany } = renderTopBar();
-    await user.click(screen.getByRole("button", { name: "Add company" }));
+    const addButton = screen.getByRole("button", { name: "Add company" });
+    expect(addButton).toHaveTextContent("Add");
+    expect(screen.queryByRole("button", { name: "More ways to add companies" })).not.toBeInTheDocument();
+    await user.click(addButton);
     expect(onAddCompany).toHaveBeenCalledOnce();
   });
 
-  it("applies explicit light and dark themes without relying on the OS media query", async () => {
+  it("keeps the company action contextual to the companies workspace", () => {
+    renderTopBar("collections");
+    expect(screen.queryByRole("button", { name: "Add company" })).not.toBeInTheDocument();
+  });
+
+  it("uses the mobile app bar for back navigation and hides creation in company detail", async () => {
     const user = userEvent.setup();
+    const onBack = vi.fn();
+    renderTopBar("companies", { onBack, showAddCompany: false });
+    expect(screen.queryByRole("button", { name: "Add company" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Back to companies" }));
+    expect(onBack).toHaveBeenCalledOnce();
+  });
+
+  it("leaves appearance preferences to app settings", () => {
     renderTopBar();
-
-    await user.click(screen.getByRole("button", { name: /system theme.*switch to light/i }));
-    expect(document.documentElement).toHaveAttribute("data-theme", "light");
-
-    await user.click(screen.getByRole("button", { name: /light theme.*switch to dark/i }));
-    expect(document.documentElement).toHaveAttribute("data-theme", "dark");
+    expect(screen.queryByRole("button", { name: /theme/i })).not.toBeInTheDocument();
   });
 });

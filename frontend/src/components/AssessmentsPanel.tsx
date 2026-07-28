@@ -9,7 +9,7 @@ export function AssessmentsPanel({ policyId }: { policyId: string }) {
   const { privacy, gdpr, readability } = data;
   if (!privacy && !gdpr) return <p className="quiet-state">No assessment scores yet. Score this analysis to generate privacy and GDPR results.</p>;
 
-  return <div className="m3-results-panel"><header className="m3-results-heading"><p className="section-kicker">Policy assessment</p><h2>Assessment results</h2><p>Privacy, GDPR, and readability results for this policy snapshot.</p></header>{privacy && <PrivacySection privacy={privacy} />}{gdpr && <GdprSection gdpr={gdpr} />}{readability && <ReadabilitySection readability={readability} />}</div>;
+  return <div className="m3-results-panel"><header className="m3-results-heading"><h2>Assessment results</h2><p>Privacy, GDPR, and readability results for this policy snapshot.</p></header>{privacy && <PrivacySection privacy={privacy} />}{gdpr && <GdprSection gdpr={gdpr} />}{readability && <ReadabilitySection readability={readability} />}</div>;
 }
 
 function ScoreHeader({ title, score, badge, tone }: { title: string; score: string; badge: string; tone: "primary" | "success" | "warning" | "error" | "neutral" }) {

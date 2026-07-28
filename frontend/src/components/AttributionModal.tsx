@@ -62,7 +62,7 @@ export function AttributionModal({ onClose }: { onClose: () => void }) {
         This research application orchestrates independent open-source tools and public web services.
         Their names identify dependencies and data provenance; they are not the name of this research project.
       </p>
-      <div className="workspace-rule mt-5 divide-y overflow-hidden rounded-xl border">
+      <div className="workspace-rule mt-5 divide-y overflow-hidden rounded-[var(--md-sys-shape-corner-medium)] border">
         {SOURCES.map((source) => (
           <div key={source.name} className="p-4">
             <a

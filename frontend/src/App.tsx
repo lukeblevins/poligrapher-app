@@ -43,6 +43,7 @@ export default function App() {
 
   function handleViewRun(task: TaskStatus) {
     if (!task.provider_id || !providers.some((provider) => provider.id === task.provider_id)) return;
+    setWorkspace("companies");
     setSelectedProviderId(task.provider_id);
     setSelectedPolicy(null);
     setHistoryTarget({ taskId: task.task_id, nonce: Date.now() });
@@ -55,14 +56,16 @@ export default function App() {
           workspace={workspace}
           onWorkspaceChange={setWorkspace}
           onAddCompany={() => setShowAddProvider(true)}
+          onViewRun={handleViewRun}
         />
         <div className="m3-app-content flex min-w-0 flex-1 flex-col overflow-hidden pb-16 sm:pb-0">
         <TopBar
           workspace={workspace}
           onAddCompany={() => setShowAddProvider(true)}
-          onViewRun={handleViewRun}
+          onBack={workspace === "companies" && selectedProvider ? handleBackToCompanies : undefined}
+          showAddCompany={workspace === "companies" && !selectedProvider}
         />
-        {workspace === "about" ? <AboutWorkspace /> : workspace === "collections" ? <CollectionsWorkspace /> : workspace === "scheduled" ? <ScheduledWorkspace /> : (
+        {workspace === "about" ? <AboutWorkspace /> : workspace === "collections" ? <CollectionsWorkspace /> : workspace === "scheduled" ? <ScheduledWorkspace onViewRun={handleViewRun} /> : (
         <div className="flex min-h-0 flex-1 overflow-hidden">
           <ProviderSidebar
             selectedId={selectedProviderId}
@@ -75,7 +78,6 @@ export default function App() {
               provider={selectedProvider}
               selectedPolicyId={selectedPolicy?.id ?? null}
               onSelectPolicy={setSelectedPolicy}
-              onBack={handleBackToCompanies}
               historyTargetTaskId={historyTarget?.taskId ?? null}
               historyTargetNonce={historyTarget?.nonce}
             />

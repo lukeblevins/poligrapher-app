@@ -67,10 +67,6 @@ function logoDomain(p: Provider): string | null {
   }
 }
 
-function analysisCount(count: number): string {
-  return `${count} ${count === 1 ? "analysis" : "analyses"}`;
-}
-
 export function ProviderSidebar({ selectedId, onSelect, onDeleted, mobileHidden = false }: Props) {
   const { data: providers = [], isLoading, isError, error } = useProviders();
   const { data: collections = [] } = useCollections();
@@ -116,11 +112,11 @@ export function ProviderSidebar({ selectedId, onSelect, onDeleted, mobileHidden 
   return (
     <aside
       aria-label="Company browser"
-      className={`${mobileHidden ? "hidden lg:flex" : "flex"} m3-list-detail-pane ui-subtle w-full flex-shrink-0 flex-col lg:w-[clamp(20rem,26vw,24rem)]`}
+      className={`${mobileHidden ? "hidden lg:flex" : "flex"} m3-list-detail-pane ui-subtle w-full flex-shrink-0 flex-col sm:w-[calc(100%-1rem)] lg:w-[clamp(20rem,26vw,24rem)]`}
     >
-      <div className="px-4 py-4">
-        <div className="mb-2.5 flex items-center justify-between px-0.5">
-          <span className="font-display text-lg font-semibold text-[var(--md-sys-color-on-surface)]">Companies</span>
+      <div className="px-4 pt-4">
+        <div className="m3-company-list-heading mb-2.5 flex items-center justify-between">
+          <span className="m3-workspace-title">Companies</span>
           <span
             className="m3-count-badge"
             aria-live="polite"
@@ -133,6 +129,7 @@ export function ProviderSidebar({ selectedId, onSelect, onDeleted, mobileHidden 
         <label className="m3-contained-search">
           <svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z" /></svg>
           <input id="company-search" type="search" value={query} placeholder="Search companies" aria-label="Search companies" onChange={(event) => setQuery(event.target.value)} />
+          <span className="m3-mobile-company-count m3-count-badge" aria-hidden="true">{filtered.length}</span>
         </label>
         <button type="button" className="m3-filter-button mt-2" aria-expanded={filtersOpen} aria-controls="company-filters" onClick={() => setFiltersOpen((open) => !open)}>
           <MaterialSymbol src={filterIcon} />
@@ -175,7 +172,7 @@ export function ProviderSidebar({ selectedId, onSelect, onDeleted, mobileHidden 
           return (
           <div
             key={p.id}
-            className={`m3-navigation-item group relative mx-2 my-1 flex min-h-14 items-center pr-1.5 text-sm ${
+            className={`m3-navigation-item group relative mx-2 my-1 flex min-h-16 items-center pr-1.5 text-sm ${
               selectedId === p.id
                 ? "m3-navigation-item-selected font-medium"
                 : ""
@@ -183,15 +180,18 @@ export function ProviderSidebar({ selectedId, onSelect, onDeleted, mobileHidden 
           >
             <button
               type="button"
-              className="flex min-w-0 flex-1 items-center gap-3 rounded-full px-2.5 py-2 text-left focus-visible:outline-none"
+              className="m3-company-list-content"
               onClick={() => onSelect(p)}
               aria-current={selectedId === p.id ? "true" : undefined}
             >
               <span className="flex-shrink-0"><CompanyLogo name={p.name} domain={logoDomain(p)} /></span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate">{p.name}</span>
-                <span className="mt-0.5 block truncate text-xs font-normal text-[var(--md-sys-color-on-surface-variant)]">
-                  {p.ticker ? `${p.ticker} · ` : ""}{p.industry ?? "Uncategorized"} · {analysisCount(p.policy_count)}
+                <span className="m3-company-list-name">{p.name}</span>
+                <span className="m3-company-list-meta">
+                  {p.ticker && <span className="m3-company-ticker">{p.ticker}</span>}
+                  <span className={`m3-industry-chip ${p.industry ? "" : "m3-industry-chip-neutral"}`}>
+                    {p.industry ?? "Uncategorized"}
+                  </span>
                 </span>
               </span>
             </button>
@@ -210,10 +210,10 @@ export function ProviderSidebar({ selectedId, onSelect, onDeleted, mobileHidden 
             {visibleProviders.length < filtered.length && (
               <button
                 type="button"
-                className="mt-1 min-h-10 text-xs font-semibold text-teal-700 hover:underline dark:text-teal-400"
+                className="m3-show-more-button mt-2"
                 onClick={() => setVisibleCount((count) => count + PROVIDER_BATCH_SIZE)}
               >
-                Show {Math.min(PROVIDER_BATCH_SIZE, filtered.length - visibleProviders.length)} more
+                Show {Math.min(PROVIDER_BATCH_SIZE, filtered.length - visibleProviders.length)} more companies
               </button>
             )}
           </div>

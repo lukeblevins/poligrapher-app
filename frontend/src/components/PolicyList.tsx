@@ -19,7 +19,6 @@ interface Props {
   provider: Provider | null;
   selectedPolicyId: string | null;
   onSelectPolicy: (policy: Policy | null) => void;
-  onBack?: () => void;
   historyTargetTaskId?: string | null;
   historyTargetNonce?: number;
 }
@@ -40,12 +39,6 @@ const METHOD_LABEL: Record<string, string> = {
   website: "Live policy page",
   pdf_from_page: "Policy page PDF",
   pdf_upload: "Uploaded policy PDF",
-};
-
-const METHOD_DESCRIPTION: Record<string, string> = {
-  website: "Analyzed from the saved live policy page",
-  pdf_from_page: "Analyzed from a PDF published with the policy page",
-  pdf_upload: "Analyzed from a policy PDF supplied by the researcher",
 };
 
 const SOURCE_STATUS_LABEL: Record<string, string> = {
@@ -77,10 +70,6 @@ function companyHealth(provider: Provider): { label: string; tone: "ready" | "at
 
 function titleCase(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
-}
-
-function score(n: number | null): string {
-  return n === null || n === undefined ? "—" : n.toFixed(1);
 }
 
 function isValidWebUrl(value: string): boolean {
@@ -120,31 +109,18 @@ function RunMethodRow({
   const methodLabel = legacy
     ? "Unknown analysis method"
     : METHOD_LABEL[run.method] ?? "Imported analysis method";
-  const methodDescription = legacy
-    ? "Imported without recorded processing metadata"
-    : METHOD_DESCRIPTION[run.method] ?? "No processing metadata recorded";
-
   return (
     <button
       onClick={onSelect}
       aria-current={selected ? "true" : undefined}
-      aria-label={`${methodLabel}. Privacy score ${score(run.privacy_score)}. GDPR score ${score(run.gdpr_score)}. ${titleCase(run.pipeline_status)}. ${methodDescription}`}
-      className={`m3-run-method group grid min-h-14 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-3 py-2.5 text-left text-sm sm:gap-3 sm:px-4 ${
+      aria-label={`Open ${methodLabel.toLowerCase()} results`}
+      className={`m3-run-method group flex min-h-14 w-full items-center px-3 py-2.5 text-left text-sm sm:px-4 ${
         selected
           ? "m3-run-method-selected"
           : ""
       }`}
     >
-      <span className="min-w-0 truncate font-semibold">
-        {methodLabel}
-      </span>
-      <span className="flex flex-wrap items-center justify-end gap-2" aria-hidden="true">
-        <span className="data-value text-xs text-[var(--md-sys-color-on-surface-variant)]">P {score(run.privacy_score)}</span>
-        <span className="data-value text-xs text-[var(--md-sys-color-on-surface-variant)]">G {score(run.gdpr_score)}</span>
-        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLES[run.pipeline_status] ?? ""}`}>
-          {titleCase(run.pipeline_status)}
-        </span>
-      </span>
+      <span className="min-w-0 truncate font-semibold">{methodLabel}</span>
     </button>
   );
 }
@@ -283,7 +259,7 @@ function PendingRunCard({
 
 // ── Provider page ─────────────────────────────────────────────────────────────
 
-export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, onBack, historyTargetTaskId, historyTargetNonce }: Props) {
+export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, historyTargetTaskId, historyTargetNonce }: Props) {
   const qc = useQueryClient();
   const { tasks } = useTasks();
   const taskCanAffectSelectedProvider = tasks.some((task) =>
@@ -392,17 +368,10 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, onBack,
       <div className="mx-auto w-full max-w-5xl">
       {/* Provider heading */}
       <header className="overflow-hidden py-2">
-        {onBack && (
-          <button type="button" className="mb-2 inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-[var(--md-sys-color-primary)] hover:underline sm:mb-4 lg:hidden" onClick={onBack}>
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4" aria-hidden="true"><path d="m12 5-5 5 5 5" strokeLinecap="round" strokeLinejoin="round" /></svg>
-            Companies
-          </button>
-        )}
         <div className="flex items-center gap-3 sm:gap-4">
           <CompanyLogo name={provider.name} domain={provider.domain} className="h-11 w-11 sm:h-12 sm:w-12" />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="section-kicker">Company research record</p>
               <span className={`m3-company-health m3-company-health-${health.tone}`}><span aria-hidden="true" />{health.label}</span>
             </div>
             <h1 className="mt-0.5 truncate font-display text-3xl font-normal tracking-normal text-[var(--md-sys-color-on-surface)] sm:text-4xl sm:leading-tight">{provider.name}</h1>
@@ -412,7 +381,7 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, onBack,
           <div><dt className="section-kicker">Industry</dt><dd className="mt-1 truncate text-sm font-semibold text-[var(--md-sys-color-on-surface)]">{provider.industry ?? "Uncategorized"}</dd></div>
           <div><dt className="section-kicker">Ticker</dt><dd className="data-value mt-1 text-sm font-semibold text-[var(--md-sys-color-on-surface)]">{provider.tickers.join(", ") || "—"}</dd></div>
           <div><dt className="section-kicker">Analyses</dt><dd className="data-value mt-1 text-sm font-semibold text-[var(--md-sys-color-on-surface)]">{provider.policy_count}</dd></div>
-          <div><dt className="section-kicker">Website source</dt><dd className="mt-1 text-sm font-semibold text-[var(--md-sys-color-on-surface)]">{SOURCE_STATUS_LABEL[provider.source_status] ?? "Not checked"}</dd></div>
+          <div><dt className="section-kicker">Policy source</dt><dd className="mt-1 text-sm font-semibold text-[var(--md-sys-color-on-surface)]">{SOURCE_STATUS_LABEL[provider.source_status] ?? "Not checked"}</dd></div>
         </dl>
       </header>
 
@@ -426,25 +395,24 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, onBack,
       <section ref={newAnalysisRef} tabIndex={-1} aria-labelledby="new-analysis-heading" className="py-2 focus-visible:outline-none sm:py-3">
         <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-end sm:gap-5">
           <div>
-            <p className="section-kicker">New analysis</p>
             <h2 id="new-analysis-heading" className="mt-1 font-display text-2xl font-normal">Start an analysis</h2>
             <p className="mt-1 text-sm leading-6 text-[var(--md-sys-color-on-surface-variant)]">
-              Analyze the saved policy page or provide a policy PDF.
+              Choose the saved website or a policy PDF.
             </p>
           </div>
         </div>
         <div className="mt-4 grid items-stretch gap-3 md:grid-cols-[minmax(0,1.25fr)_minmax(16rem,0.75fr)]">
-          <article className="research-panel flex min-w-0 flex-col rounded-[var(--md-sys-shape-corner-large)] p-3 sm:p-4">
+          <article className="research-panel m3-analysis-choice m3-analysis-choice-recommended flex min-w-0 flex-col rounded-[var(--md-sys-shape-corner-large)] p-3 sm:p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="m3-recommended-label">Recommended</p>
-                <h3 className="mt-1 text-lg font-medium text-[var(--md-sys-color-on-surface)]">Analyze the live policy page</h3>
-                <p className="mt-1 text-sm leading-5 text-[var(--md-sys-color-on-surface-variant)]">Use the saved, maintained privacy-policy page.</p>
+                <h3 className="text-lg font-medium text-[var(--md-sys-color-on-surface)]">Website analysis</h3>
+                <p className="mt-1 text-sm leading-5 text-[var(--md-sys-color-on-surface-variant)]">Analyze the privacy policy at the saved URL.</p>
               </div>
               {schedule?.needs_attention && <span className="text-xs font-semibold text-[var(--md-sys-color-tertiary)]">Source needs confirmation</span>}
             </div>
             <div className="mt-4 flex-1">
-              <p className="m3-source-field-label">Website source</p>
+              <p className="m3-source-field-label">Privacy policy source</p>
               {savedSourceUrl && !editingSource ? (
                 <div className="m3-source-summary mt-2">
                   <div className="flex flex-wrap items-center gap-2">
@@ -485,22 +453,20 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, onBack,
                 </div>
               )}
             </div>
-            {(!savedSourceUrl || sourceHasUnsavedChanges) && <p id="website-analysis-status" className="mt-3 text-xs leading-5 text-[var(--md-sys-color-tertiary)]">{!savedSourceUrl ? "Save a website source to enable this analysis." : "Save the edited website source before continuing."}</p>}
+            {(!savedSourceUrl || sourceHasUnsavedChanges) && <p id="website-analysis-status" className="mt-3 text-xs leading-5 text-[var(--md-sys-color-tertiary)]">{!savedSourceUrl ? "Add and save a privacy policy URL to continue." : "Save the URL changes to continue."}</p>}
             <MdFilledButton className="mt-3 w-full" disabled={busy || !savedSourceUrl || sourceHasUnsavedChanges} aria-describedby={!savedSourceUrl || sourceHasUnsavedChanges ? "website-analysis-status" : undefined} onClick={() => actions.runNow.mutate()}>
-              {actions.runNow.isPending ? "Starting analysis…" : "Analyze policy page"}
+              {actions.runNow.isPending ? "Starting analysis…" : "Analyze website"}
             </MdFilledButton>
           </article>
-          <article className="ui-subtle flex flex-col rounded-[var(--md-sys-shape-corner-large)] p-3 sm:p-4">
-            <p className="section-kicker">Use a policy PDF instead</p>
-            <h3 className="mt-1 text-lg font-medium text-[var(--md-sys-color-on-surface)]">Analyze a policy PDF</h3>
-            <p className="mt-2 flex-1 text-sm leading-6 text-[var(--md-sys-color-on-surface-variant)]">Use a policy document when the live page is unavailable or when you need to review a specific edition.</p>
-            <p className="text-xs leading-5 text-[var(--md-sys-color-on-surface-variant)]">PDF analyses appear alongside live-page analyses in analysis history.</p>
+          <article className="ui-subtle m3-analysis-choice flex flex-col rounded-[var(--md-sys-shape-corner-large)] p-3 sm:p-4">
+            <h3 className="text-lg font-medium text-[var(--md-sys-color-on-surface)]">PDF analysis</h3>
+            <p className="mt-2 flex-1 text-sm leading-6 text-[var(--md-sys-color-on-surface-variant)]">Upload a specific policy edition when the website is unavailable or has changed.</p>
             <MdOutlinedButton
             className="mt-4 w-full"
             disabled={busy}
             onClick={() => fileRef.current?.click()}
           >
-              {actions.upload.isPending ? "Uploading PDF…" : "Choose PDF to analyze"}
+              {actions.upload.isPending ? "Uploading PDF…" : "Choose PDF"}
           </MdOutlinedButton>
           </article>
           <input
@@ -519,7 +485,7 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, onBack,
       </section>
 
       {/* Automatic monitoring */}
-      <div className="ui-subtle mb-4 rounded-xl p-4 sm:mb-5">
+      <div className="ui-subtle mb-4 rounded-[var(--md-sys-shape-corner-large)] p-4 sm:mb-5">
         <div className="flex items-start gap-2 sm:gap-3">
           <Toggle
             label="Monitor for policy changes"
@@ -560,10 +526,9 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, onBack,
       {/* Analysis history */}
       <section className="mt-5">
         <div className="mb-3">
-          <p className="section-kicker">Past analysis runs</p>
-          <h2 className="mt-1 font-display text-2xl font-semibold">Analysis history</h2>
+          <h2 className="font-display text-2xl font-semibold">Analysis history</h2>
           <p className="mt-1 text-xs text-[var(--md-sys-color-on-surface-variant)]">
-            Select a method to inspect its results.
+            Review completed and in-progress analyses.
           </p>
           {historyActionError && <p role="alert" className="mt-2 status-error">{historyActionError}</p>}
         </div>
@@ -573,7 +538,7 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, onBack,
           <p role="alert" className="status-error">Could not load analysis history. {error instanceof Error ? error.message : "Try refreshing the page."}</p>
         ) : runs.length === 0 && provisionalTasks.length === 0 ? (
           <p className="quiet-state py-6">
-            No analyses yet. Analyze the saved policy page or choose a policy PDF to get started.
+            No analyses yet. Analyze the website or upload a PDF to get started.
           </p>
         ) : (
           <div className="m3-analysis-history">

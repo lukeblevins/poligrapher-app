@@ -7,10 +7,14 @@ function initials(name: string): string {
   return `${words[0][0]}${words[1][0]}`.toUpperCase();
 }
 
+function avatarTone(name: string): number {
+  return [...name].reduce((total, character) => total + character.charCodeAt(0), 0) % 3;
+}
+
 export function CompanyLogo({
   name,
   domain,
-  className = "h-8 w-8",
+  className = "h-10 w-10",
 }: {
   name: string;
   domain?: string | null;
@@ -28,7 +32,7 @@ export function CompanyLogo({
 
   return (
     <span
-      className={`m3-avatar relative grid flex-shrink-0 place-items-center overflow-hidden text-[10px] font-medium tracking-wide ${className}`}
+      className={`m3-avatar m3-avatar-tone-${avatarTone(name)} relative grid flex-shrink-0 place-items-center overflow-hidden ${className}`}
       aria-hidden="true"
     >
       {!loaded && <span>{initials(name)}</span>}
@@ -39,7 +43,7 @@ export function CompanyLogo({
           loading="lazy"
           decoding="async"
           referrerPolicy="no-referrer"
-          className={`absolute inset-0 h-full w-full object-contain p-1.5 ${loaded ? "opacity-100" : "opacity-0"}`}
+          className={`m3-avatar-image absolute inset-0 h-full w-full object-contain ${loaded ? "opacity-100" : "opacity-0"}`}
           onLoad={(event) => setLoaded(event.currentTarget.naturalWidth > 0 && event.currentTarget.naturalHeight > 0)}
           onError={() => {
             setLoaded(false);
