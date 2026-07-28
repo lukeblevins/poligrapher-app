@@ -302,7 +302,7 @@ resource analysisWorker 'Microsoft.App/jobs@2024-03-01' = {
     workloadProfileName: 'Consumption'
     configuration: {
       triggerType: 'Event'
-      replicaTimeout: 7200
+      replicaTimeout: 43200
       replicaRetryLimit: 0
       eventTriggerConfig: {
         parallelism: 1
@@ -347,6 +347,9 @@ resource analysisWorker 'Microsoft.App/jobs@2024-03-01' = {
             { name: 'AZURE_STORAGE_CONTAINER', value: blobs.name }
             { name: 'AZURE_STORAGE_QUEUE_NAME', value: analysisQueue.name }
             { name: 'TASK_BACKEND', value: 'azure_queue' }
+            { name: 'AZURE_QUEUE_VISIBILITY_TIMEOUT_SECONDS', value: '900' }
+            { name: 'TASK_CLAIM_RECOVERY_SECONDS', value: '1200' }
+            { name: 'COLLECTION_SUBTASK_TIMEOUT_SECONDS', value: '900' }
           ], proxyEnvironment)
         }
       ]

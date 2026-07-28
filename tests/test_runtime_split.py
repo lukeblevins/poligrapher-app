@@ -1,14 +1,20 @@
 import json
+import io
 import logging
 import sys
 import tomllib
+import uuid
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from poligrapher_app.api.database import Base
+from poligrapher_app.api.models import TaskRecord
 from poligrapher_app.api.routers.analysis import get_task_output
+from poligrapher_app.services import task_execution
 from poligrapher_app.services import tasks as task_module
 from poligrapher_app.services.task_execution import execute_task
 from poligrapher_app.services.task_output import _TaskLogSink, capture_task_output
@@ -191,6 +197,156 @@ def test_failed_task_captures_traceback(tmp_path, monkeypatch):
     assert "Unknown task kind: unknown" in output
 
 
+def test_collection_analysis_resumes_and_settles_with_subtask_failures(monkeypatch):
+    provider_ids = [str(uuid.uuid4()) for _ in range(3)]
+
+    class Registry:
+        state = {
+            "completed": 1,
+            "failed": 0,
+            "status": "running",
+            "error": None,
+        }
+        output = ""
+
+        def get(self, _task_id):
+            return dict(self.state)
+
+        @staticmethod
+        def is_cancelled(_task_id):
+            return False
+
+        def incr(self, _task_id, field, by=1):
+            self.state[field] += by
+
+        def append_output(self, _task_id, chunk):
+            self.output += chunk
+
+        def update(self, _task_id, **fields):
+            self.state.update(fields)
+
+        def set_done(self, _task_id):
+            self.state["status"] = "done"
+
+        def set_cancelled(self, _task_id):
+            self.state["status"] = "cancelled"
+
+    calls = []
+
+    def run_subtask(_task_id, provider_id, _registry):
+        calls.append(str(provider_id))
+        if len(calls) == 1:
+            raise task_execution.CollectionSubtaskTimeoutError(
+                "Provider analysis exceeded 900 seconds"
+            )
+        return "ok"
+
+    monkeypatch.setattr(task_execution, "_run_collection_subtask", run_subtask)
+    marked_failures = []
+    monkeypatch.setattr(
+        task_execution,
+        "_mark_collection_provider_failed",
+        lambda provider_id, message: marked_failures.append((str(provider_id), message)),
+    )
+    registry = Registry()
+
+    task_execution._analyze_collection(
+        "parent-task",
+        {"provider_ids": provider_ids},
+        registry,
+    )
+
+    assert calls == provider_ids[1:]
+    assert registry.state == {
+        "completed": 3,
+        "failed": 1,
+        "status": "done",
+        "error": "Completed with 1 subtask failure.",
+    }
+    assert "SUBTASK FAILED" in registry.output
+    assert provider_ids[1] in registry.output
+    assert marked_failures == [
+        (provider_ids[1], "Provider analysis exceeded 900 seconds"),
+    ]
+
+
+def test_collection_subtask_timeout_terminates_process(monkeypatch):
+    class Process:
+        stdout = io.StringIO("")
+        returncode = None
+        terminated = False
+
+        def poll(self):
+            return self.returncode
+
+        def terminate(self):
+            self.terminated = True
+            self.returncode = -15
+
+        def wait(self, timeout=None):
+            return self.returncode
+
+        def kill(self):
+            self.returncode = -9
+
+    class Registry:
+        @staticmethod
+        def is_cancelled(_task_id):
+            return False
+
+        @staticmethod
+        def append_output(_task_id, _chunk):
+            return None
+
+    process = Process()
+    monkeypatch.setattr(task_execution.subprocess, "Popen", lambda *args, **kwargs: process)
+    monotonic_values = iter((0.0, 2.0))
+    monkeypatch.setattr(task_execution.time, "monotonic", lambda: next(monotonic_values))
+    monkeypatch.setattr(task_execution.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(
+        task_execution.CollectionSubtaskTimeoutError,
+        match="exceeded 1 seconds",
+    ):
+        task_execution._run_collection_subtask(
+            "parent-task",
+            uuid.uuid4(),
+            Registry(),
+            timeout_seconds=1,
+        )
+
+    assert process.terminated
+
+
+def test_stale_task_claim_resumes_after_recovery_grace(tmp_path, monkeypatch):
+    engine = create_engine(f"sqlite:///{tmp_path / 'recovery.db'}")
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine, expire_on_commit=False)
+    monkeypatch.setattr(task_module, "SessionLocal", session)
+    monkeypatch.setenv("TASK_CLAIM_RECOVERY_SECONDS", "1200")
+
+    registry = task_module.TaskRegistry()
+    task_id = registry.create(kind="collection-analysis", title="Analyze", total=3)
+    registry.update(
+        task_id,
+        payload={"kind": "collection-analysis", "provider_ids": ["a", "b", "c"]},
+    )
+    assert registry.claim(task_id) is not None
+
+    with session() as db:
+        task = db.get(TaskRecord, uuid.UUID(task_id))
+        task.started_at = datetime.now(timezone.utc) - timedelta(minutes=21)
+        task.completed = 1
+        db.commit()
+
+    payload = registry.claim(task_id)
+    assert payload == {
+        "kind": "collection-analysis",
+        "provider_ids": ["a", "b", "c"],
+    }
+    assert registry.get(task_id)["completed"] == 1
+
+
 def test_web_dependencies_exclude_analysis_stack():
     with open("pyproject.toml", "rb") as file:
         project = tomllib.load(file)["project"]
@@ -220,6 +376,9 @@ def test_azure_deploy_uses_oidc_and_gated_migrations():
     assert "az containerapp job start" in workflow
     assert "Verify deployed application" in workflow
     assert "triggerType: 'Manual'" in infrastructure
+    assert "replicaTimeout: 43200" in infrastructure
+    assert "AZURE_QUEUE_VISIBILITY_TIMEOUT_SECONDS" in infrastructure
+    assert "COLLECTION_SUBTASK_TIMEOUT_SECONDS" in infrastructure
     assert "alembic upgrade head && python -m poligrapher_app.sync_source_catalog" in infrastructure
     assert "{ name: 'RUN_MIGRATIONS', value: 'false' }" in infrastructure
     assert "RUN_MIGRATIONS:-true" in entrypoint

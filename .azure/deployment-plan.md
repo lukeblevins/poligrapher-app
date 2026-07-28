@@ -6,7 +6,9 @@ Generated: 2026-07-28
 
 ## 1. Project Overview
 
-**Goal:** Deploy the verified S&P 500 source catalog with the application and apply it idempotently to the existing production PostgreSQL database.
+**Goal:** Deploy the verified S&P 500 source catalog and harden long-running
+collection analysis so an individual provider timeout becomes a recoverable
+subtask failure instead of stalling the parent task.
 
 **Path:** Modify existing production deployment
 
@@ -125,6 +127,11 @@ Container App revisions and the existing migration-job template.
 | ARM validation | `az deployment group validate` | Succeeded | 2026-07-28 02:17 EDT |
 | ARM what-if | `az deployment group what-if --result-format ResourceIdOnly` | Succeeded | 2026-07-28 02:17 EDT |
 | Diff validation | `git diff --check` | Passed | 2026-07-28 02:18 EDT |
+| Backend suite, collection recovery | `./.venv/bin/pytest -q` | 55 passed | 2026-07-28 16:07 EDT |
+| Frontend suite, collection recovery | `npm --prefix frontend test -- --run` | 22 passed | 2026-07-28 16:07 EDT |
+| Frontend type check and build, collection recovery | `npm --prefix frontend run typecheck && npm --prefix frontend run build` | Passed | 2026-07-28 16:07 EDT |
+| Bicep compilation, collection recovery | `az bicep build --file infra/main.bicep --stdout` | Passed | 2026-07-28 16:08 EDT |
+| Diff validation, collection recovery | `git diff --check` | Passed | 2026-07-28 16:08 EDT |
 
 **Validated by:** azure-validate workflow
 

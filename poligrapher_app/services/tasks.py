@@ -25,6 +25,7 @@ _FAILED_RECENT = timedelta(days=7)
 _MAX_OUTPUT_CHARS = 250_000
 _TRUNCATION_NOTICE = "[Earlier terminal output was truncated.]\n"
 _REDACTION = "[REDACTED]"
+_DEFAULT_CLAIM_RECOVERY_SECONDS = 20 * 60
 _SENSITIVE_ENV_NAMES = (
     "DATABASE_URL",
     "AZURE_STORAGE_CONNECTION_STRING",
@@ -262,9 +263,14 @@ class TaskRegistry:
                 started_at = task.started_at
                 if started_at.tzinfo is None:
                     started_at = started_at.replace(tzinfo=timezone.utc)
-                # A visible queue message after the worker's two-hour lease is
-                # a crash recovery, not a concurrent duplicate delivery.
-                if _now() - started_at < timedelta(hours=2):
+                # Production renews the queue lease while work is healthy. A
+                # message that remains visible past this shorter grace period
+                # is a crash recovery, not a concurrent duplicate delivery.
+                recovery_seconds = int(os.getenv(
+                    "TASK_CLAIM_RECOVERY_SECONDS",
+                    str(_DEFAULT_CLAIM_RECOVERY_SECONDS),
+                ))
+                if _now() - started_at < timedelta(seconds=recovery_seconds):
                     return None
             if task.cancel_requested:
                 task.status = "cancelled"

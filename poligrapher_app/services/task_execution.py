@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 import logging
+import os
+import subprocess
+import sys
+import threading
+import time
 import urllib.parse
 import uuid
 
@@ -10,15 +15,109 @@ from poligrapher_app.services.task_output import capture_task_output
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_COLLECTION_SUBTASK_TIMEOUT_SECONDS = 15 * 60
+_SUBTASK_CANCEL_POLL_SECONDS = 1.0
+_SUBTASK_TERMINATE_GRACE_SECONDS = 10.0
+
+
+class CollectionSubtaskTimeoutError(TimeoutError):
+    """Raised when one provider exceeds the collection-analysis time budget."""
+
 
 def _is_pdf_source(url: str | None) -> bool:
     return bool(url and urllib.parse.urlparse(url).path.casefold().endswith(".pdf"))
 
 
-def execute_task(task_id: str, registry) -> None:
+def _collection_subtask_timeout_seconds() -> float:
+    raw = os.getenv(
+        "COLLECTION_SUBTASK_TIMEOUT_SECONDS",
+        str(_DEFAULT_COLLECTION_SUBTASK_TIMEOUT_SECONDS),
+    )
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise ValueError("COLLECTION_SUBTASK_TIMEOUT_SECONDS must be a number") from exc
+    if value <= 0:
+        raise ValueError("COLLECTION_SUBTASK_TIMEOUT_SECONDS must be greater than zero")
+    return value
+
+
+def _stop_subtask(process: subprocess.Popen[str]) -> None:
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=_SUBTASK_TERMINATE_GRACE_SECONDS)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+
+
+def _capture_subtask_output(process: subprocess.Popen[str], task_id: str, registry) -> None:
+    if process.stdout is None:
+        return
+    for chunk in iter(process.stdout.readline, ""):
+        registry.append_output(task_id, chunk)
+
+
+def _run_collection_subtask(
+    task_id: str,
+    provider_id: uuid.UUID,
+    registry,
+    *,
+    timeout_seconds: float | None = None,
+) -> str:
+    """Run one provider in an isolated process so a hung NLP stage is killable."""
+
+    timeout_seconds = timeout_seconds or _collection_subtask_timeout_seconds()
+    command = [
+        sys.executable,
+        "-m",
+        "poligrapher_app.collection_subtask",
+        str(provider_id),
+        task_id,
+    ]
+    process = subprocess.Popen(  # noqa: S603
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    output_thread = threading.Thread(
+        target=_capture_subtask_output,
+        args=(process, task_id, registry),
+        daemon=True,
+    )
+    output_thread.start()
+    deadline = time.monotonic() + timeout_seconds
+    try:
+        while process.poll() is None:
+            if registry.is_cancelled(task_id):
+                _stop_subtask(process)
+                return "cancelled"
+            if time.monotonic() >= deadline:
+                _stop_subtask(process)
+                raise CollectionSubtaskTimeoutError(
+                    f"Provider analysis exceeded {timeout_seconds:g} seconds"
+                )
+            time.sleep(_SUBTASK_CANCEL_POLL_SECONDS)
+    finally:
+        output_thread.join(timeout=_SUBTASK_TERMINATE_GRACE_SECONDS)
+
+    if process.returncode == 0:
+        return "ok"
+    if process.returncode == 3:
+        return "cancelled"
+    if process.returncode == 2:
+        return "needs_source"
+    raise RuntimeError(f"Provider analysis subprocess exited with code {process.returncode}")
+
+
+def execute_task(task_id: str, registry) -> bool:
     payload = registry.claim(task_id)
     if payload is None:
-        return
+        return False
     with capture_task_output(task_id, registry):
         try:
             kind = payload.get("kind")
@@ -57,6 +156,7 @@ def execute_task(task_id: str, registry) -> None:
         except Exception as exc:  # noqa: BLE001
             logger.exception("Task %s failed", task_id)
             registry.set_failed(task_id, str(exc))
+    return True
 
 
 def _settle_result(task_id: str, result: str, registry) -> None:
@@ -284,53 +384,123 @@ def _verify_sources(task_id: str, payload: dict, registry) -> None:
     registry.set_cancelled(task_id) if registry.is_cancelled(task_id) else registry.set_done(task_id)
 
 
-def _analyze_collection(task_id: str, payload: dict, registry) -> None:
+def analyze_collection_provider(provider_id: uuid.UUID, task_id: str, registry) -> str:
     from poligrapher_app.api.database import SessionLocal
     from poligrapher_app.api.models import Provider
     from poligrapher_app.services.acquisition import PolicySourceResolver, wayback_snapshot_url
     from poligrapher_app.services.runs import run_comparison, run_remote_pdf
 
-    for raw_id in payload.get("provider_ids", []):
+    with SessionLocal() as db:
+        provider = db.get(Provider, provider_id)
+        source_url = provider.source_url if provider else None
+        if (
+            provider
+            and source_url
+            and provider.source_status not in ("available", "unchecked")
+            and not _is_pdf_source(source_url)
+            and not wayback_snapshot_url(source_url, timeout=8.0, raw=False)
+        ):
+            fallback = PolicySourceResolver(allow_headless=False).resolve_candidate(
+                provider.name,
+                provider.domain,
+                exclude_urls={source_url},
+                require_validation=True,
+            )
+            if fallback:
+                source_url = fallback.url
+                provider.source_url = fallback.url
+                provider.source_status = "unchecked"
+                db.commit()
+    is_pdf = _is_pdf_source(source_url)
+    runner = run_remote_pdf if is_pdf else run_comparison
+    if is_pdf:
+        return runner(provider_id, scheduled=False, registry=registry, task_id=task_id)
+    return runner(
+        provider_id,
+        scheduled=False,
+        registry=registry,
+        task_id=task_id,
+        link_task=False,
+    )
+
+
+def _mark_collection_provider_failed(provider_id: uuid.UUID, message: str) -> None:
+    """Set any policies abandoned by a killed subtask to a terminal state."""
+
+    from poligrapher_app.api.database import SessionLocal
+    from poligrapher_app.api.models import Policy
+
+    with SessionLocal() as db:
+        pending = (
+            db.query(Policy)
+            .filter(
+                Policy.provider_id == provider_id,
+                Policy.pipeline_status == "pending",
+            )
+            .all()
+        )
+        for policy in pending:
+            policy.pipeline_status = "failed"
+            policy.pipeline_errors = list(policy.pipeline_errors or []) + [
+                {"message": message}
+            ]
+        if pending:
+            db.commit()
+
+
+def _analyze_collection(task_id: str, payload: dict, registry) -> None:
+    provider_ids = payload.get("provider_ids", [])
+    task = registry.get(task_id) or {}
+    # completed is a durable cursor because every attempted provider increments
+    # it exactly once. A queue lease/job restart therefore resumes at the next
+    # provider instead of repeating the batch from the beginning.
+    start_index = min(int(task.get("completed") or 0), len(provider_ids))
+    if start_index:
+        logger.info(
+            "Resuming collection analysis at provider %d of %d",
+            start_index + 1,
+            len(provider_ids),
+        )
+
+    for raw_id in provider_ids[start_index:]:
         if registry.is_cancelled(task_id):
             registry.set_cancelled(task_id)
             return
+        provider_id = None
         try:
             provider_id = uuid.UUID(raw_id)
-            with SessionLocal() as db:
-                provider = db.get(Provider, provider_id)
-                source_url = provider.source_url if provider else None
-                if (
-                    provider
-                    and source_url
-                    and provider.source_status not in ("available", "unchecked")
-                    and not _is_pdf_source(source_url)
-                    and not wayback_snapshot_url(source_url, timeout=8.0, raw=False)
-                ):
-                    fallback = PolicySourceResolver(allow_headless=False).resolve_candidate(
-                        provider.name,
-                        provider.domain,
-                        exclude_urls={source_url},
-                        require_validation=True,
-                    )
-                    if fallback:
-                        source_url = fallback.url
-                        provider.source_url = fallback.url
-                        provider.source_status = "unchecked"
-                        db.commit()
-            is_pdf = _is_pdf_source(source_url)
-            runner = run_remote_pdf if is_pdf else run_comparison
-            result = runner(
-                provider_id, scheduled=False, registry=registry, task_id=task_id
-            ) if is_pdf else runner(
-                provider_id, scheduled=False, registry=registry,
-                task_id=task_id, link_task=False,
+            registry.append_output(
+                task_id,
+                f"SUBTASK STARTED: provider {provider_id}\n",
             )
+            result = _run_collection_subtask(task_id, provider_id, registry)
+            if result == "cancelled":
+                registry.set_cancelled(task_id)
+                return
             if result not in ("ok", "unchanged"):
                 registry.incr(task_id, "failed")
-        except Exception:
+                logger.warning(
+                    "Collection analysis did not complete for provider %s: %s",
+                    raw_id,
+                    result,
+                )
+        except Exception as exc:
             logger.exception("Collection analysis failed for provider %s", raw_id)
+            if provider_id is not None:
+                _mark_collection_provider_failed(provider_id, str(exc))
+            registry.append_output(
+                task_id,
+                f"SUBTASK FAILED: provider {raw_id}: {exc}\n",
+            )
             registry.incr(task_id, "failed")
         registry.incr(task_id, "completed")
+    settled = registry.get(task_id) or {}
+    failed = int(settled.get("failed") or 0)
+    if failed:
+        registry.update(
+            task_id,
+            error=f"Completed with {failed} subtask failure{'s' if failed != 1 else ''}.",
+        )
     registry.set_done(task_id)
 
 
