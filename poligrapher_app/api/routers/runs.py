@@ -182,7 +182,7 @@ def rerun(provider_id: uuid.UUID, run_id: uuid.UUID, request: Request, db: Db):
         db.refresh(policy)
         task_id = registry.create(
             kind="rerun-upload",
-            title=f"Re-run PDF · {provider.name}",
+            title=f"Analyze PDF for {provider.name}",
             provider_id=provider.id,
             provider_name=provider.name,
             policy_id=policy.id,
@@ -225,7 +225,7 @@ def rerun(provider_id: uuid.UUID, run_id: uuid.UUID, request: Request, db: Db):
     db.refresh(new_pdf)
     task_id = registry.create(
         kind="rerun-comparison",
-        title=f"Re-run comparison · {provider.name}",
+        title=f"Analyze website for {provider.name}",
         provider_id=provider.id,
         provider_name=provider.name,
         run_id=group_id,
@@ -270,13 +270,13 @@ def delete_run(provider_id: uuid.UUID, run_id: uuid.UUID, db: Db):
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-# ── Trigger a comparison run now ──────────────────────────────────────────────
+# ── Trigger a company analysis run now ───────────────────────────────────────
 
 @router.post("/api/providers/{provider_id}/runs", response_model=TaskStatus)
 def run_now(provider_id: uuid.UUID, request: Request, db: Db):
     provider = _provider_or_404(provider_id, db)
     registry = request.app.state.tasks
-    task_id = registry.create(kind="comparison", title=f"Compare · {provider.name}",
+    task_id = registry.create(kind="comparison", title=f"Analyze company {provider.name}",
                               provider_id=provider.id, provider_name=provider.name, total=1)
     registry.enqueue(task_id, {
         "kind": "comparison", "provider_id": str(provider.id), "scheduled": False
@@ -322,7 +322,7 @@ async def upload_pdf(provider_id: uuid.UUID, request: Request, db: Db,
         raise
 
     registry = request.app.state.tasks
-    task_id = registry.create(kind="upload", title=f"Upload · {provider.name}",
+    task_id = registry.create(kind="upload", title=f"Analyze PDF for {provider.name}",
                               provider_id=provider.id, provider_name=provider.name,
                               policy_id=str(policy.id), run_id=policy.id, total=1)
     registry.enqueue(task_id, {"kind": "upload", "policy_id": str(policy.id)})

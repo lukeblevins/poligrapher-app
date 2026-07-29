@@ -45,11 +45,11 @@ export function ScheduledWorkspace({ onViewRun }: { onViewRun?: (task: TaskStatu
 
   return (
     <main className="m3-page-pane m3-scheduled-workspace min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-[76rem] px-4 py-4 sm:px-5 sm:py-5 lg:px-4 lg:py-4">
+      <div className="m3-scheduled-content mx-auto w-full max-w-[76rem] px-4 py-4 sm:px-5 sm:py-5 lg:px-4 lg:py-4">
         <header className="m3-scheduled-header m3-mobile-page-intro">
           <div>
             <h1 className="m3-workspace-title">Tasks</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--md-sys-color-on-surface-variant)]">Scheduled checks and task history.</p>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-[var(--md-sys-color-on-surface-variant)]">Scheduled checks and task history.</p>
           </div>
           <MdFilledTonalButton className="m3-task-create-button" onClick={() => setShowBatchTasks(true)}>
             <span slot="icon" className="m3-material-symbol" style={{ "--m3-symbol-url": `url("${addTaskIcon}")` } as CSSProperties} aria-hidden="true" />

@@ -183,7 +183,7 @@ def test_bulk_action_queues_a_durable_task_with_selection_summary():
         )
 
     assert task.kind is None
-    assert registry.created == {"kind": "collection-analysis", "title": "Analyze · 1 companies", "total": 1}
+    assert registry.created == {"kind": "collection-analysis", "title": "Analyze 1 companies", "total": 1}
     assert registry.payload == ("00000000-0000-0000-0000-000000000001", {
         "kind": "collection-analysis", "provider_ids": [str(provider.id)], "skipped": [],
     })

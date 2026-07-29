@@ -134,7 +134,7 @@ def run_bulk_action(body: BulkActionRequest, request: Request, db: Db):
     unit = "companies" if body.operation == "generate" else "policies"
     task_id = registry.create(
         kind=kind,
-        title=f"{'Analyze' if body.operation == 'generate' else 'Score'} · {eligible_count} {unit}",
+        title=f"{'Analyze' if body.operation == 'generate' else 'Score'} {eligible_count} {unit}",
         total=eligible_count,
     )
     registry.append_output(
@@ -170,7 +170,7 @@ def start_retention_cleanup(body: RetentionRequest, request: Request, db: Db):
     registry = request.app.state.tasks
     task_id = registry.create(
         kind="retention-cleanup",
-        title=f"Retention cleanup · {body.older_than_days} days",
+        title=f"Retention cleanup after {body.older_than_days} days",
         total=preview["policy_count"],
     )
     registry.append_output(
@@ -291,7 +291,7 @@ def trigger_generate(policy_id: uuid.UUID, request: Request, db: Db):
     registry = request.app.state.tasks
     task_id = registry.create(
         kind="generate",
-        title=f"Generate · {policy.provider.name}",
+        title=f"Analyze policy for {policy.provider.name}",
         provider_id=policy.provider_id,
         provider_name=policy.provider.name,
         policy_id=str(policy_id),
@@ -311,7 +311,7 @@ def trigger_score(policy_id: uuid.UUID, request: Request, db: Db):
     registry = request.app.state.tasks
     task_id = registry.create(
         kind="score",
-        title=f"Score · {policy.provider.name}",
+        title=f"Score analysis for {policy.provider.name}",
         provider_id=policy.provider_id,
         provider_name=policy.provider.name,
         policy_id=str(policy_id),

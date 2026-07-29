@@ -116,7 +116,7 @@ def verify_collection_sources(collection_id: uuid.UUID, request: Request, db: Db
     registry = request.app.state.tasks
     task_id = registry.create(
         kind="source-verification",
-        title=f"Verify sources · {collection.name}",
+        title=f"Verify sources for {collection.name}",
         total=len(provider_ids),
     )
 
@@ -136,7 +136,7 @@ def analyze_collection(collection_id: uuid.UUID, request: Request, db: Db):
     registry = request.app.state.tasks
     task_id = registry.create(
         kind="collection-analysis",
-        title=f"Analyze collection · {collection.name}",
+        title=f"Analyze collection {collection.name}",
         total=len(provider_ids),
     )
 

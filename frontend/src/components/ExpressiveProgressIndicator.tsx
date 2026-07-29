@@ -9,7 +9,7 @@ const WAVE_PATH = "M0 8 Q6 0 12 8 T24 8 T36 8 T48 8 T60 8 T72 8 T84 8 T96 8 T108
 
 export function ExpressiveProgressIndicator({ label, value }: ExpressiveProgressIndicatorProps) {
   const clipId = useId().replace(/:/g, "");
-  const normalizedValue = value === undefined ? undefined : Math.max(0, Math.min(1, value));
+  const normalizedValue = value === undefined || !Number.isFinite(value) ? undefined : Math.max(0, Math.min(1, value));
   const progressX = (normalizedValue ?? 0) * 600;
   const trackStart = Math.min(594, progressX + 12);
 
@@ -36,7 +36,7 @@ export function ExpressiveProgressIndicator({ label, value }: ExpressiveProgress
           x2="594"
           y2="8"
         />
-        <circle className="m3-expressive-progress-stop" cx="594" cy="8" r="3" />
+        {normalizedValue === undefined ? null : <circle className="m3-expressive-progress-stop" cx="594" cy="8" r="3" />}
         <g clipPath={`url(#${clipId})`}>
           <path className="m3-expressive-progress-wave" d={WAVE_PATH} pathLength="600" />
         </g>

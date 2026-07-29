@@ -25,4 +25,20 @@ describe("ExpressiveProgressIndicator", () => {
 
     expect(screen.getByRole("progressbar", { name: "Completed analysis" })).toHaveAttribute("aria-valuenow", "100");
   });
+
+  it("renders zero as determinate without a misleading active stop", () => {
+    const { container } = render(<ExpressiveProgressIndicator label="Starting analysis" value={0} />);
+
+    expect(screen.getByRole("progressbar", { name: "Starting analysis" })).toHaveAttribute("aria-valuenow", "0");
+    expect(container.querySelector(".m3-expressive-progress-clip")).toHaveAttribute("width", "0");
+    expect(container.querySelector(".m3-expressive-progress-stop")).toBeInTheDocument();
+  });
+
+  it("treats non-finite values as unknown progress", () => {
+    render(<ExpressiveProgressIndicator label="Unknown analysis" value={Number.NaN} />);
+
+    const indicator = screen.getByRole("progressbar", { name: "Unknown analysis" });
+    expect(indicator).not.toHaveAttribute("aria-valuenow");
+    expect(indicator).toHaveAttribute("aria-valuetext", "In progress");
+  });
 });

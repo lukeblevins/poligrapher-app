@@ -138,11 +138,11 @@ def run_schedule_job(schedule_id: str, task_id: str | None = None, registry=None
             task_id,
             provider_id=str(provider_id),
             provider_name=provider_name,
-            title=f"Scheduled · {provider_name}",
+            title=f"Scheduled analysis for {provider_name}",
         )
     own_task = task_id is None and registry is not None
     if own_task:
-        task_id = registry.create(kind="schedule", title=f"Scheduled · {provider_name}",
+        task_id = registry.create(kind="schedule", title=f"Scheduled analysis for {provider_name}",
                                   provider_id=provider_id, provider_name=provider_name,
                                   total=1, schedule_id=schedule_id)
 

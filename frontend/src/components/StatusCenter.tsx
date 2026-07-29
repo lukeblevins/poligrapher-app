@@ -18,7 +18,8 @@ import { dismissTask, useDismissedTasks } from "../hooks/useDismissedTasks";
 import { ExpressiveProgressIndicator } from "./ExpressiveProgressIndicator";
 import { TaskOutputPanel } from "./TaskOutputPanel";
 import { Tooltip } from "./Tooltip";
-import { MdFilledButton, MdOutlinedButton } from "./MaterialControls";
+import { MdFilledButton, MdFilledTonalButton, MdTextButton } from "./MaterialControls";
+import { taskPresentation, taskProgress } from "./taskPresentation";
 
 const STATUS_PILL: Record<TaskState, string> = {
   running: "m3-status-primary",
@@ -44,18 +45,8 @@ const STATUS_ICON: Record<TaskState, string | null> = {
   failed: failedIcon,
 };
 
-function taskTitle(task: TaskStatus): string {
-  return task.title ?? task.label ?? task.kind ?? "Task";
-}
-
 function MaterialIcon({ src, slot }: { src: string; slot?: string }) {
   return <span slot={slot} className="m3-material-symbol" style={{ "--m3-symbol-url": `url("${src}")` } as CSSProperties} aria-hidden="true" />;
-}
-
-function progressText(task: TaskStatus): string {
-  if (task.total <= 0 || !isTaskActive(task.status)) return "";
-  const percentage = Math.round((task.completed / task.total) * 100);
-  return `${task.completed} of ${task.total} (${percentage}%)`;
 }
 
 export function TaskRow({
@@ -73,53 +64,65 @@ export function TaskRow({
 }) {
   const cancel = useCancelTask();
   const retryTask = useRetryTask(task);
-  const title = taskTitle(task);
+  const { operation, target } = taskPresentation(task);
+  const accessibleName = target ? `${operation}: ${target}` : operation;
   const canViewOutput = isTaskActive(task.status) || task.status === "failed" || task.failed > 0 || task.has_output;
   const linksToHistory = !!task.provider_id && isRunTask(task) && !!onViewRun;
   const needsAttention = task.status === "failed" || task.failed > 0;
-  const progress = task.total > 0 ? Math.min(100, Math.round((task.completed / task.total) * 100)) : null;
+  const progress = taskProgress(task);
   const statusIcon = STATUS_ICON[task.status];
 
   return (
     <li className={`m3-task-banner m3-task-banner-${task.status} ${needsAttention ? "m3-task-banner-error" : ""} ${onDismiss ? "m3-task-banner-dismissible" : ""}`}>
       {onDismiss ? (
-        <button type="button" className="m3-task-dismiss-button" aria-label={`Dismiss ${title}`} title="Dismiss" onClick={onDismiss}>
+        <button type="button" className="m3-task-dismiss-button" aria-label={`Dismiss ${accessibleName}`} title="Dismiss" onClick={onDismiss}>
           <MaterialIcon src={cancelIcon} />
         </button>
       ) : null}
       <div className="m3-task-banner-content">
-        <div className="min-w-0 flex-1">
-          <div className="m3-task-title">{title}</div>
-          <div className="m3-task-meta">
+        <div className="m3-task-main">
+          <header className="m3-task-heading">
+            <div className="min-w-0">
+              {target ? <p className="m3-task-eyebrow">{operation}</p> : null}
+              {target ? <h3 className="m3-task-title">{target}</h3> : <h3 className="m3-task-title">{operation}</h3>}
+            </div>
+            <div className="m3-task-meta">
             <span className={`m3-task-status ${STATUS_PILL[task.status]}`}>
               {statusIcon ? <MaterialIcon src={statusIcon} /> : null}
               {STATUS_LABEL[task.status]}
             </span>
-            {task.failed > 0 && <span className="m3-task-failure-count">{task.failed} failed</span>}
-          </div>
-          {isTaskActive(task.status) && progress !== null && <ExpressiveProgressIndicator label={`${title} progress`} value={progress / 100} />}
-          {isTaskActive(task.status) && progress === null && <ExpressiveProgressIndicator label={`${title} progress`} />}
-          {progressText(task) && <p className="data-value mt-1.5 text-xs text-[var(--md-sys-color-on-surface-variant)]">{progressText(task)}</p>}
+              {task.failed > 0 && <span className="m3-task-failure-count"><MaterialIcon src={failedIcon} />{task.failed} failed</span>}
+            </div>
+          </header>
+          {isTaskActive(task.status) && (
+            <div className="m3-task-progress-block">
+              <div className="m3-task-progress-summary">
+                <span>Progress</span>
+                <span className="data-value">{progress?.text ?? "Starting"}</span>
+              </div>
+              <ExpressiveProgressIndicator label={`${accessibleName} progress`} value={progress?.value} />
+            </div>
+          )}
           {task.error && <div className="mt-2 text-xs leading-5 text-[var(--md-sys-color-error)]">{task.error}</div>}
           {(cancel.isError || retryTask.isError) && <div role="alert" className="mt-1 text-xs leading-4 text-[var(--md-sys-color-error)]">{cancel.error instanceof Error ? cancel.error.message : retryTask.error instanceof Error ? retryTask.error.message : "Could not update this task."}</div>}
         </div>
-        <div className="m3-task-actions" role="group" aria-label={`${title} actions`}>
+        <div className="m3-task-actions" role="group" aria-label={`${accessibleName} actions`}>
           {canRetryTask(task) && <MdFilledButton className="m3-task-action m3-task-action-primary" disabled={retryTask.isPending} onClick={() => retryTask.mutate()}><MaterialIcon slot="icon" src={retryIcon} />{retryTask.isPending ? "Retrying…" : "Retry"}</MdFilledButton>}
           {linksToHistory ? (
-            <MdOutlinedButton className="m3-task-action" onClick={() => onViewRun?.(task)}><MaterialIcon slot="icon" src={historyIcon} />View run</MdOutlinedButton>
+            <MdFilledTonalButton className="m3-task-action m3-task-action-primary" onClick={() => onViewRun?.(task)}><MaterialIcon slot="icon" src={historyIcon} />View run</MdFilledTonalButton>
           ) : canViewOutput ? (
-            <MdOutlinedButton
+            <MdTextButton
               className="m3-task-action"
               aria-expanded={expanded}
               onClick={onToggleOutput}
-            ><MaterialIcon slot="icon" src={outputIcon} />{expanded ? "Hide details" : "Details"}</MdOutlinedButton>
+            ><MaterialIcon slot="icon" src={outputIcon} />{expanded ? "Collapse details" : "Details"}</MdTextButton>
           ) : null}
           {task.cancelable && (
-            <MdOutlinedButton className="m3-task-action" disabled={cancel.isPending} onClick={() => cancel.mutate(task.task_id)}><MaterialIcon slot="icon" src={cancelIcon} />Cancel</MdOutlinedButton>
+            <MdTextButton className="m3-task-action m3-task-action-danger" disabled={cancel.isPending} onClick={() => cancel.mutate(task.task_id)}><MaterialIcon slot="icon" src={cancelIcon} />Cancel</MdTextButton>
           )}
         </div>
       </div>
-      {expanded && <TaskOutputPanel task={task} context={title} compact />}
+      {expanded && <TaskOutputPanel task={task} context={accessibleName} compact />}
     </li>
   );
 }
