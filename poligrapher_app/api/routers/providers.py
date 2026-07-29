@@ -15,6 +15,7 @@ from poligrapher_app.api.schemas import (
     ProviderCreate,
     ProviderRead,
 )
+from poligrapher_app.domain.industries import INDUSTRIES
 from poligrapher_app.services.importer import import_policies, read_policy_csv
 from poligrapher_app.services.company_catalog import search_open_terms
 from poligrapher_app.services.source_verification import verify_provider_sources
@@ -74,6 +75,11 @@ def search_company_catalog(q: Annotated[str, Query(min_length=2, max_length=100)
     return CompanyCatalogSearch(results=results, source_available=available)
 
 
+@router.get("/industries", response_model=list[str])
+def list_industries():
+    return list(INDUSTRIES)
+
+
 def _normalize_domain(value: str | None) -> str | None:
     if not value:
         return None
@@ -92,7 +98,7 @@ def create_provider(body: ProviderCreate, db: Db):
         raise HTTPException(status_code=409, detail="Provider already exists")
     provider = Provider(
         name=name,
-        industry=body.industry.strip() if body.industry else None,
+        industry=body.industry,
         domain=_normalize_domain(body.domain),
         source_url=body.source_url.strip() if body.source_url else None,
     )

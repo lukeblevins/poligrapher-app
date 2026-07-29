@@ -2,7 +2,9 @@ import uuid
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from poligrapher_app.domain.industries import normalize_industry
 
 
 class ProviderCreate(BaseModel):
@@ -10,6 +12,11 @@ class ProviderCreate(BaseModel):
     industry: str | None = None
     domain: str | None = None
     source_url: str | None = None
+
+    @field_validator("industry")
+    @classmethod
+    def validate_industry(cls, value: str | None) -> str | None:
+        return normalize_industry(value)
 
 
 class CompanyCatalogResult(BaseModel):

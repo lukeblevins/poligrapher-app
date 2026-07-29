@@ -11,6 +11,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from poligrapher_app.api.models import CompanyCollection, Provider
+from poligrapher_app.domain.industries import normalize_industry
 from poligrapher_app.services.acquisition import registrable_domain
 
 DATA_URL = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/main/data/constituents.csv"
@@ -146,7 +147,7 @@ def sync_sp500(
             or by_name.get(_name_key(name))
         )
         if provider is None:
-            provider = Provider(name=name, industry=row["GICS Sector"].strip() or None)
+            provider = Provider(name=name, industry=normalize_industry(row["GICS Sector"]))
             db.add(provider)
             db.flush()
             providers.append(provider)
@@ -158,7 +159,7 @@ def sync_sp500(
         provider.tickers = symbols
         provider.ticker = provider.ticker or symbol
         provider.cik = provider.cik or cik
-        provider.industry = row["GICS Sector"].strip() or provider.industry
+        provider.industry = normalize_industry(row["GICS Sector"]) or provider.industry
         curated_source = CURATED_SOURCE_URLS.get(symbol)
         if curated_source and provider.source_url != curated_source:
             provider.source_url = curated_source

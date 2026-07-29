@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 from poligrapher_app.api.models import Policy, Provider
 from poligrapher_app.api.utils import best_website_url, parse_date, parse_pipeline_errors
+from poligrapher_app.domain.industries import normalize_industry
 
 
 def read_policy_csv(content: bytes) -> list[dict[str, str]]:
@@ -42,7 +43,7 @@ def import_policies(rows: list[dict[str, str]], db: Session) -> dict:
         try:
             provider = db.query(Provider).filter_by(name=provider_name).first()
             if provider is None:
-                industry = group[0].get("Industry") or None
+                industry = normalize_industry(group[0].get("Industry"))
                 provider = Provider(name=provider_name, industry=industry)
                 db.add(provider)
                 db.flush()

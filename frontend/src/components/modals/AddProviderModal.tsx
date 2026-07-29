@@ -12,6 +12,7 @@ import { useCreateProvider } from "../../hooks/queries";
 import { CompanyLogo } from "../CompanyLogo";
 import { materialValue, MdFilledButton, MdFilledTextField, MdTextButton } from "../MaterialControls";
 import { Modal } from "../Modal";
+import { SelectMenu } from "../SelectMenu";
 
 type Mode = "search" | "manual";
 
@@ -47,6 +48,15 @@ export function AddProviderModal({
   const [industry, setIndustry] = useState("");
   const createProvider = useCreateProvider();
   const websiteInvalid = Boolean(website) && !domainFromWebsite(website);
+  const industries = useQuery({
+    queryKey: ["industries"],
+    queryFn: api.listIndustries,
+    staleTime: Infinity,
+  });
+  const industryOptions = [
+    { value: "", label: "Uncategorized" },
+    ...(industries.data ?? []).map((value) => ({ value, label: value })),
+  ];
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 300);
@@ -156,11 +166,19 @@ export function AddProviderModal({
                 We’ll use this tracked policy as the starting point for analysis.
               </p>
             </div>
-            <MdFilledTextField id="catalog-industry" className="w-full" label="Industry (optional)" value={industry} onInput={(event) => setIndustry(materialValue(event))} placeholder="e.g. Healthcare" />
+            <SelectMenu
+              className="w-full"
+              label="Industry (optional)"
+              value={industry}
+              onChange={setIndustry}
+              options={industryOptions}
+              disabled={industries.isPending}
+            />
+            {industries.isError && <p role="alert" className="status-error">Industries could not be loaded. Try again before adding this company.</p>}
             {createProvider.isError && <p role="alert" className="status-error">{(createProvider.error as Error).message}</p>}
             <div className="add-company-actions">
               <MdTextButton type="button" onClick={onClose}>Cancel</MdTextButton>
-              <MdFilledButton type="submit" disabled={createProvider.isPending}>{createProvider.isPending ? "Adding…" : "Add company"}</MdFilledButton>
+              <MdFilledButton type="submit" disabled={createProvider.isPending || industries.isError}>{createProvider.isPending ? "Adding…" : "Add company"}</MdFilledButton>
             </div>
           </form>
         ) : (
@@ -224,13 +242,21 @@ export function AddProviderModal({
             </summary>
             <div className="add-company-details-fields">
               <MdFilledTextField id="manual-policy-url" className="w-full" type="url" label="Privacy policy URL" value={policyUrl} onInput={(event) => setPolicyUrl(materialValue(event))} placeholder="https://example.com/privacy" />
-              <MdFilledTextField id="manual-industry" className="w-full" label="Industry" value={industry} onInput={(event) => setIndustry(materialValue(event))} placeholder="e.g. Financial services" />
+              <SelectMenu
+                className="w-full"
+                label="Industry"
+                value={industry}
+                onChange={setIndustry}
+                options={industryOptions}
+                disabled={industries.isPending}
+              />
             </div>
           </details>
+          {industries.isError && <p role="alert" className="status-error">Industries could not be loaded. Try again before adding this company.</p>}
           {createProvider.isError && <p role="alert" className="status-error">{(createProvider.error as Error).message}</p>}
           <div className="add-company-actions">
             <MdTextButton type="button" onClick={onClose}>Cancel</MdTextButton>
-            <MdFilledButton type="submit" disabled={createProvider.isPending || !name.trim() || !domainFromWebsite(website)}>{createProvider.isPending ? "Adding…" : "Add company"}</MdFilledButton>
+            <MdFilledButton type="submit" disabled={createProvider.isPending || industries.isError || !name.trim() || !domainFromWebsite(website)}>{createProvider.isPending ? "Adding…" : "Add company"}</MdFilledButton>
           </div>
         </form>
       )}

@@ -37,6 +37,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 export const api = {
   // Providers
   listProviders: () => request<Provider[]>("/api/providers"),
+  listIndustries: () => request<string[]>("/api/providers/industries"),
   searchCompanyCatalog: (query: string) =>
     request<CompanyCatalogSearch>(`/api/providers/catalog/search?q=${encodeURIComponent(query)}`),
   createProvider: (body: {
