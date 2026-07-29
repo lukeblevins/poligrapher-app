@@ -10,6 +10,7 @@ vi.mock("../hooks/useTasks", () => ({
   canRetryTask: (task: TaskStatus) => task.status === "failed" && task.kind === "score-all",
   useCancelTask: () => ({ isError: false, isPending: false, mutate }),
   useRetryTask: () => ({ error: null, isError: false, isPending: false, mutate }),
+  useRetryFailedSubtasks: () => ({ error: null, isError: false, isPending: false, mutate }),
   useTasks: () => ({ activeCount: 0, tasks: [] }),
 }));
 
@@ -84,5 +85,33 @@ describe("TaskRow", () => {
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Dismiss Score all" })).toBeInTheDocument();
+  });
+
+  it("shows standardized next steps and retries only transient collection failures", () => {
+    const { container } = render(<TaskRow task={task({
+      status: "done",
+      outcome: "partially_succeeded",
+      kind: "collection-analysis",
+      failed: 2,
+      issues: [
+        {
+          issue_id: "issue-1",
+          code: "crawl.navigation_failed",
+          stage: "acquisition",
+          severity: "error",
+          retryability: "transient",
+          summary: "The policy page could not be loaded.",
+          technical_detail: "net::ERR_TIMED_OUT",
+          provider_id: "provider-1",
+          policy_id: null,
+          actions: [{ action: "retry", label: "Retry failed companies" }],
+          occurred_at: null,
+        },
+      ],
+    })} expanded={false} onToggleOutput={vi.fn()} />);
+
+    expect(screen.getByText("Completed with issues")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Recommended next steps" })).toHaveTextContent("The policy page could not be loaded.");
+    expect(Array.from(container.querySelectorAll("md-filled-button")).map((action) => action.textContent?.trim())).toEqual(["Retry failed"]);
   });
 });

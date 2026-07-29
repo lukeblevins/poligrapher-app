@@ -163,6 +163,7 @@ class TaskRecord(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     status: Mapped[str] = mapped_column(String(20), default="running", index=True)
+    outcome: Mapped[str | None] = mapped_column(String(24), index=True)
     error: Mapped[str | None] = mapped_column(String)
     label: Mapped[str | None] = mapped_column(String(255))
     title: Mapped[str | None] = mapped_column(String(255))
@@ -180,3 +181,33 @@ class TaskRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    issues: Mapped[list["TaskIssue"]] = relationship(
+        "TaskIssue",
+        back_populates="task",
+        cascade="all, delete-orphan",
+        order_by="TaskIssue.occurred_at",
+    )
+
+
+class TaskIssue(Base):
+    """A durable, actionable failure or degradation attached to a task."""
+
+    __tablename__ = "task_issues"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    code: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    stage: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False, default="error")
+    retryability: Mapped[str] = mapped_column(String(20), nullable=False, default="manual")
+    summary: Mapped[str] = mapped_column(String(255), nullable=False)
+    technical_detail: Mapped[str | None] = mapped_column(Text)
+    provider_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    policy_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    actions: Mapped[list] = mapped_column(JSON, default=list)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    task: Mapped[TaskRecord] = relationship("TaskRecord", back_populates="issues")

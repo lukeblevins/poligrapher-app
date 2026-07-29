@@ -231,6 +231,9 @@ def test_collection_analysis_resumes_and_settles_with_subtask_failures(monkeypat
         def set_cancelled(self, _task_id):
             self.state["status"] = "cancelled"
 
+        def record_issue(self, _task_id, issue, **context):
+            self.issues.append((issue, context))
+
     calls = []
 
     def run_subtask(_task_id, provider_id, _registry):
@@ -249,6 +252,7 @@ def test_collection_analysis_resumes_and_settles_with_subtask_failures(monkeypat
         lambda provider_id, message: marked_failures.append((str(provider_id), message)),
     )
     registry = Registry()
+    registry.issues = []
 
     task_execution._analyze_collection(
         "parent-task",
@@ -268,6 +272,8 @@ def test_collection_analysis_resumes_and_settles_with_subtask_failures(monkeypat
     assert marked_failures == [
         (provider_ids[1], "Provider analysis exceeded 900 seconds"),
     ]
+    assert registry.issues[0][0]["code"] == "execution.timeout"
+    assert registry.issues[0][1]["provider_id"] == uuid.UUID(provider_ids[1])
 
 
 def test_collection_subtask_timeout_terminates_process(monkeypatch):

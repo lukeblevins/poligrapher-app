@@ -17,7 +17,7 @@ from urllib.parse import parse_qsl, quote, quote_plus, unquote, urlsplit
 from sqlalchemy import and_, or_
 
 from poligrapher_app.api.database import SessionLocal
-from poligrapher_app.api.models import TaskRecord
+from poligrapher_app.api.models import TaskIssue, TaskRecord
 
 _TERMINAL = ("done", "failed", "cancelled")
 _RECENT = timedelta(minutes=15)
@@ -87,9 +87,18 @@ def _now() -> datetime:
 
 
 def task_public(task: TaskRecord) -> dict:
+    outcome = task.outcome
+    if not outcome:
+        if task.status == "cancelled":
+            outcome = "cancelled"
+        elif task.status == "failed":
+            outcome = "failed"
+        elif task.status == "done":
+            outcome = "partially_succeeded" if (task.failed or 0) > 0 else "succeeded"
     return {
         "task_id": str(task.id),
         "status": task.status,
+        "outcome": outcome,
         "error": task.error,
         "label": task.label,
         "title": task.title,
@@ -105,6 +114,22 @@ def task_public(task: TaskRecord) -> dict:
         "run_id": task.run_id,
         "provider_name": task.provider_name,
         "has_output": bool(task.output),
+        "issues": [
+            {
+                "issue_id": str(issue.id),
+                "code": issue.code,
+                "stage": issue.stage,
+                "severity": issue.severity,
+                "retryability": issue.retryability,
+                "summary": issue.summary,
+                "technical_detail": issue.technical_detail,
+                "provider_id": issue.provider_id,
+                "policy_id": issue.policy_id,
+                "actions": list(issue.actions or []),
+                "occurred_at": issue.occurred_at.isoformat() if issue.occurred_at else None,
+            }
+            for issue in task.issues
+        ],
     }
 
 
@@ -215,6 +240,83 @@ class TaskRegistry:
             task.output = output
             db.commit()
 
+    def record_issue(
+        self,
+        task_id: str,
+        issue: dict,
+        *,
+        provider_id: str | uuid.UUID | None = None,
+        policy_id: str | uuid.UUID | None = None,
+    ) -> str | None:
+        """Persist one structured issue independently of the bounded console output."""
+
+        with SessionLocal() as db:
+            task = db.get(TaskRecord, uuid.UUID(task_id))
+            if task is None:
+                return None
+            existing = (
+                db.query(TaskIssue)
+                .filter(
+                    TaskIssue.task_id == task.id,
+                    TaskIssue.code == issue["code"],
+                    TaskIssue.provider_id == (str(provider_id) if provider_id else None),
+                    TaskIssue.policy_id == (str(policy_id) if policy_id else None),
+                )
+                .first()
+            )
+            if existing is not None:
+                return str(existing.id)
+            record = TaskIssue(
+                task_id=task.id,
+                code=issue["code"],
+                stage=issue["stage"],
+                severity=issue.get("severity", "error"),
+                retryability=issue.get("retryability", "manual"),
+                summary=issue["summary"],
+                technical_detail=_redact_output(issue.get("technical_detail") or ""),
+                provider_id=str(provider_id) if provider_id else None,
+                policy_id=str(policy_id) if policy_id else None,
+                actions=list(issue.get("actions") or []),
+            )
+            db.add(record)
+            db.commit()
+            db.refresh(record)
+            return str(record.id)
+
+    def retryable_provider_ids(self, task_id: str) -> list[str]:
+        with SessionLocal() as db:
+            rows = (
+                db.query(TaskIssue.provider_id)
+                .filter(
+                    TaskIssue.task_id == uuid.UUID(task_id),
+                    TaskIssue.provider_id.isnot(None),
+                    TaskIssue.retryability == "transient",
+                )
+                .distinct()
+                .all()
+            )
+            return [provider_id for (provider_id,) in rows if provider_id]
+
+    def retry_failed_subtasks(self, task_id: str) -> str | None:
+        provider_ids = self.retryable_provider_ids(task_id)
+        if not provider_ids:
+            return None
+        with SessionLocal() as db:
+            original = db.get(TaskRecord, uuid.UUID(task_id))
+            if original is None or original.kind != "collection-analysis":
+                return None
+            title = f"Retry failed companies from {original.title or 'company analysis'}"
+        retry_id = self.create(
+            kind="collection-analysis",
+            title=title,
+            total=len(provider_ids),
+        )
+        self.enqueue(
+            retry_id,
+            {"kind": "collection-analysis", "provider_ids": provider_ids},
+        )
+        return retry_id
+
     def get_output(self, task_id: str) -> dict | None:
         try:
             task_uuid = uuid.UUID(task_id)
@@ -274,6 +376,7 @@ class TaskRegistry:
                     return None
             if task.cancel_requested:
                 task.status = "cancelled"
+                task.outcome = "cancelled"
                 task.settled_at = _now()
                 db.commit()
                 return None
@@ -301,6 +404,7 @@ class TaskRegistry:
             task.cancel_requested = True
             if task.started_at is None:
                 task.status = "cancelled"
+                task.outcome = "cancelled"
                 task.settled_at = _now()
             else:
                 task.status = "cancelling"
@@ -308,13 +412,20 @@ class TaskRegistry:
             return True
 
     def set_done(self, task_id: str) -> None:
-        self._settle(task_id, "done")
+        with SessionLocal() as db:
+            task = db.get(TaskRecord, uuid.UUID(task_id))
+            failed = int(task.failed or 0) if task else 0
+        self._settle(
+            task_id,
+            "done",
+            outcome="partially_succeeded" if failed else "succeeded",
+        )
 
     def set_failed(self, task_id: str, error: str) -> None:
-        self._settle(task_id, "failed", error=error)
+        self._settle(task_id, "failed", error=error, outcome="failed")
 
     def set_cancelled(self, task_id: str) -> None:
-        self._settle(task_id, "cancelled")
+        self._settle(task_id, "cancelled", outcome="cancelled")
 
     def _settle(self, task_id: str, status: str, **fields) -> None:
         with SessionLocal() as db:

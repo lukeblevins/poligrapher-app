@@ -146,3 +146,15 @@ def cancel_task(task_id: str, request: Request):
     if not registry.cancel(task_id):
         raise HTTPException(status_code=404, detail="Task not found")
     return TaskStatus(**registry.get(task_id))
+
+
+@router.post("/api/tasks/{task_id}/retry-failures", response_model=TaskStatus)
+def retry_task_failures(task_id: str, request: Request):
+    registry = request.app.state.tasks
+    retry_id = registry.retry_failed_subtasks(task_id)
+    if retry_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail="This task has no transient failed subtasks that can be retried automatically",
+        )
+    return TaskStatus(**registry.get(retry_id))

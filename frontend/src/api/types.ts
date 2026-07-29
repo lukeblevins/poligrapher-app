@@ -121,10 +121,31 @@ export interface Policy {
 }
 
 export type TaskState = "running" | "cancelling" | "cancelled" | "done" | "failed";
+export type TaskOutcome = "succeeded" | "partially_succeeded" | "failed" | "cancelled";
+
+export interface TaskAction {
+  action: string;
+  label: string;
+}
+
+export interface TaskIssue {
+  issue_id: string;
+  code: string;
+  stage: string;
+  severity: "warning" | "error";
+  retryability: "transient" | "manual" | "blocked";
+  summary: string;
+  technical_detail: string | null;
+  provider_id: string | null;
+  policy_id: string | null;
+  actions: TaskAction[];
+  occurred_at: string | null;
+}
 
 export interface TaskStatus {
   task_id: string;
   status: TaskState;
+  outcome?: TaskOutcome | null;
   error: string | null;
   label: string | null;
   title?: string | null;
@@ -140,6 +161,7 @@ export interface TaskStatus {
   run_id?: string | null;
   provider_name?: string | null;
   has_output?: boolean;
+  issues?: TaskIssue[];
 }
 
 export interface TaskOutput {

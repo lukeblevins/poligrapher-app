@@ -123,11 +123,31 @@ class PolicyRead(BaseModel):
     created_at: datetime
 
 
+class TaskActionRead(BaseModel):
+    action: str
+    label: str
+
+
+class TaskIssueRead(BaseModel):
+    issue_id: str
+    code: str
+    stage: str
+    severity: str
+    retryability: str
+    summary: str
+    technical_detail: str | None = None
+    provider_id: str | None = None
+    policy_id: str | None = None
+    actions: list[TaskActionRead] = Field(default_factory=list)
+    occurred_at: str | None = None
+
+
 class TaskStatus(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     task_id: str
     status: str  # 'running', 'cancelling', 'cancelled', 'done', 'failed'
+    outcome: str | None = None
     error: str | None = None
     label: str | None = None
     title: str | None = None
@@ -143,6 +163,7 @@ class TaskStatus(BaseModel):
     run_id: str | None = None
     provider_name: str | None = None
     has_output: bool = False
+    issues: list[TaskIssueRead] = Field(default_factory=list)
 
 
 class RunGroup(BaseModel):

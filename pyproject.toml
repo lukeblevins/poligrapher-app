@@ -29,7 +29,7 @@ dependencies = [
 
 [project.optional-dependencies]
 analysis = [
-    "poligrapher @ git+https://github.com/lukeblevins/PoliGraph.git@6ce3bc0501b10687a1a3e9378eb31b1d99f657bb",
+    "poligrapher @ git+https://github.com/lukeblevins/PoliGraph.git@0b0b4f83dcbb250dab774f34685caeb48420b5e0",
     "policy-scorer[readability] @ git+https://github.com/lukeblevins/policy-scorer.git",
     "huggingface-hub==0.24.0",
     "pandas==3.0.3",

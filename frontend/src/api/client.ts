@@ -161,6 +161,8 @@ export const api = {
   getTaskOutput: (taskId: string) => request<TaskOutput>(`/api/tasks/${taskId}/output`),
   cancelTask: (taskId: string) =>
     request<TaskStatus>(`/api/tasks/${taskId}/cancel`, { method: "POST" }),
+  retryTaskFailures: (taskId: string) =>
+    request<TaskStatus>(`/api/tasks/${taskId}/retry-failures`, { method: "POST" }),
   getGraph: (id: string) => request<GraphElements>(`/api/policies/${id}/graph`),
   getStats: (id: string) => request<GraphStats>(`/api/policies/${id}/stats`),
   getAssessments: (id: string) => request<Assessments>(`/api/policies/${id}/assessments`),

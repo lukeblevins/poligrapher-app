@@ -12,6 +12,7 @@ import urllib.parse
 import uuid
 
 from poligrapher_app.services.task_output import capture_task_output
+from poligrapher_app.services.failures import classify_failure
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +156,12 @@ def execute_task(task_id: str, registry) -> bool:
             logger.info("Task %s finished with status %s", task_id, registry.get(task_id)["status"])
         except Exception as exc:  # noqa: BLE001
             logger.exception("Task %s failed", task_id)
+            registry.record_issue(
+                task_id,
+                classify_failure(exc),
+                provider_id=payload.get("provider_id"),
+                policy_id=payload.get("policy_id"),
+            )
             registry.set_failed(task_id, str(exc))
     return True
 
@@ -486,6 +493,12 @@ def _analyze_collection(task_id: str, payload: dict, registry) -> None:
                 )
         except Exception as exc:
             logger.exception("Collection analysis failed for provider %s", raw_id)
+            if isinstance(exc, CollectionSubtaskTimeoutError):
+                registry.record_issue(
+                    task_id,
+                    classify_failure(exc),
+                    provider_id=provider_id,
+                )
             if provider_id is not None:
                 _mark_collection_provider_failed(provider_id, str(exc))
             registry.append_output(

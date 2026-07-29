@@ -58,3 +58,15 @@ export function useRetryTask(task: TaskStatus) {
     },
   });
 }
+
+export function useRetryFailedSubtasks(task: TaskStatus) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.retryTaskFailures(task.task_id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["providers"] });
+      qc.invalidateQueries({ queryKey: ["policies"] });
+    },
+  });
+}

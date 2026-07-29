@@ -13,7 +13,7 @@ import failedIcon from "@material-symbols/svg-400/rounded/error.svg?url";
 
 import type { TaskState, TaskStatus } from "../api/types";
 import { isRunTask, isTaskActive } from "../api/types";
-import { canRetryTask, useCancelTask, useRetryTask, useTasks } from "../hooks/useTasks";
+import { canRetryTask, useCancelTask, useRetryFailedSubtasks, useRetryTask, useTasks } from "../hooks/useTasks";
 import { dismissTask, useDismissedTasks } from "../hooks/useDismissedTasks";
 import { ExpressiveProgressIndicator } from "./ExpressiveProgressIndicator";
 import { TaskOutputPanel } from "./TaskOutputPanel";
@@ -64,11 +64,23 @@ export function TaskRow({
 }) {
   const cancel = useCancelTask();
   const retryTask = useRetryTask(task);
+  const retryFailed = useRetryFailedSubtasks(task);
   const { operation, target } = taskPresentation(task);
   const accessibleName = target ? `${operation}: ${target}` : operation;
   const canViewOutput = isTaskActive(task.status) || task.status === "failed" || task.failed > 0 || task.has_output;
   const linksToHistory = !!task.provider_id && isRunTask(task) && !!onViewRun;
   const needsAttention = task.status === "failed" || task.failed > 0;
+  const issueGroups = Object.values(
+    (task.issues ?? []).reduce<Record<string, { summary: string; count: number; actions: string[] }>>((groups, issue) => {
+      const group = groups[issue.code] ?? { summary: issue.summary, count: 0, actions: [] };
+      group.count += 1;
+      group.actions = Array.from(new Set([...group.actions, ...issue.actions.map((action) => action.label)]));
+      groups[issue.code] = group;
+      return groups;
+    }, {}),
+  );
+  const canRetryFailures = task.kind === "collection-analysis"
+    && (task.issues ?? []).some((issue) => issue.retryability === "transient");
   const progress = taskProgress(task);
   const statusIcon = STATUS_ICON[task.status];
 
@@ -89,7 +101,7 @@ export function TaskRow({
             <div className="m3-task-meta">
             <span className={`m3-task-status ${STATUS_PILL[task.status]}`}>
               {statusIcon ? <MaterialIcon src={statusIcon} /> : null}
-              {STATUS_LABEL[task.status]}
+              {task.outcome === "partially_succeeded" ? "Completed with issues" : STATUS_LABEL[task.status]}
             </span>
               {task.failed > 0 && <span className="m3-task-failure-count"><MaterialIcon src={failedIcon} />{task.failed} failed</span>}
             </div>
@@ -104,10 +116,22 @@ export function TaskRow({
             </div>
           )}
           {task.error && <div className="mt-2 text-xs leading-5 text-[var(--md-sys-color-error)]">{task.error}</div>}
-          {(cancel.isError || retryTask.isError) && <div role="alert" className="mt-1 text-xs leading-4 text-[var(--md-sys-color-error)]">{cancel.error instanceof Error ? cancel.error.message : retryTask.error instanceof Error ? retryTask.error.message : "Could not update this task."}</div>}
+          {issueGroups.length > 0 && (
+            <section className="m3-task-issues" aria-label="Recommended next steps">
+              {issueGroups.slice(0, 3).map((issue) => (
+                <div className="m3-task-issue" key={issue.summary}>
+                  <p><strong>{issue.count > 1 ? `${issue.count}× ` : ""}{issue.summary}</strong></p>
+                  <p>{issue.actions.join(" · ")}</p>
+                </div>
+              ))}
+              {issueGroups.length > 3 ? <p className="m3-task-issue-more">Details include {issueGroups.length - 3} more issue types.</p> : null}
+            </section>
+          )}
+          {(cancel.isError || retryTask.isError || retryFailed.isError) && <div role="alert" className="mt-1 text-xs leading-4 text-[var(--md-sys-color-error)]">{cancel.error instanceof Error ? cancel.error.message : retryTask.error instanceof Error ? retryTask.error.message : retryFailed.error instanceof Error ? retryFailed.error.message : "Could not update this task."}</div>}
         </div>
         <div className="m3-task-actions" role="group" aria-label={`${accessibleName} actions`}>
           {canRetryTask(task) && <MdFilledButton className="m3-task-action m3-task-action-primary" disabled={retryTask.isPending} onClick={() => retryTask.mutate()}><MaterialIcon slot="icon" src={retryIcon} />{retryTask.isPending ? "Retrying…" : "Retry"}</MdFilledButton>}
+          {canRetryFailures && <MdFilledButton className="m3-task-action m3-task-action-primary" disabled={retryFailed.isPending} onClick={() => retryFailed.mutate()}><MaterialIcon slot="icon" src={retryIcon} />{retryFailed.isPending ? "Retrying…" : "Retry failed"}</MdFilledButton>}
           {linksToHistory ? (
             <MdFilledTonalButton className="m3-task-action m3-task-action-primary" onClick={() => onViewRun?.(task)}><MaterialIcon slot="icon" src={historyIcon} />View run</MdFilledTonalButton>
           ) : canViewOutput ? (

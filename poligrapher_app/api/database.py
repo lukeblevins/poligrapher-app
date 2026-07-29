@@ -16,14 +16,18 @@ if os.getenv("APP_ENV", "development").lower() == "production" and _is_sqlite:
 
 # SQLite needs check_same_thread=False because background pipeline/scoring tasks
 # run in a ThreadPoolExecutor and open their own sessions off the main thread.
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False} if _is_sqlite else {},
-    pool_pre_ping=not _is_sqlite,
-    pool_size=5 if not _is_sqlite else 5,
-    max_overflow=2 if not _is_sqlite else 10,
-    pool_recycle=300 if not _is_sqlite else -1,
+# QueuePool settings are only valid for the production PostgreSQL engine.
+engine_options = (
+    {"connect_args": {"check_same_thread": False}}
+    if _is_sqlite
+    else {
+        "pool_pre_ping": True,
+        "pool_size": 5,
+        "max_overflow": 2,
+        "pool_recycle": 300,
+    }
 )
+engine = create_engine(DATABASE_URL, **engine_options)
 
 if _is_sqlite:
 
