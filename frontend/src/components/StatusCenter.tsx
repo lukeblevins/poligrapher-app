@@ -11,7 +11,7 @@ import cancelledIcon from "@material-symbols/svg-400/rounded/cancel.svg?url";
 import completedIcon from "@material-symbols/svg-400/rounded/check_circle.svg?url";
 import failedIcon from "@material-symbols/svg-400/rounded/error.svg?url";
 
-import type { TaskState, TaskStatus } from "../api/types";
+import type { TaskAction, TaskState, TaskStatus } from "../api/types";
 import { isRunTask, isTaskActive } from "../api/types";
 import { canRetryTask, useCancelTask, useRetryFailedSubtasks, useRetryTask, useTasks } from "../hooks/useTasks";
 import { dismissTask, useDismissedTasks } from "../hooks/useDismissedTasks";
@@ -71,16 +71,30 @@ export function TaskRow({
   const linksToHistory = !!task.provider_id && isRunTask(task) && !!onViewRun;
   const needsAttention = task.status === "failed" || task.failed > 0;
   const issueGroups = Object.values(
-    (task.issues ?? []).reduce<Record<string, { summary: string; count: number; actions: string[] }>>((groups, issue) => {
+    (task.issues ?? []).reduce<Record<string, { summary: string; count: number; actions: TaskAction[] }>>((groups, issue) => {
       const group = groups[issue.code] ?? { summary: issue.summary, count: 0, actions: [] };
       group.count += 1;
-      group.actions = Array.from(new Set([...group.actions, ...issue.actions.map((action) => action.label)]));
+      group.actions = [...group.actions, ...issue.actions].filter(
+        (action, index, actions) => actions.findIndex((candidate) => candidate.action === action.action) === index,
+      );
       groups[issue.code] = group;
       return groups;
     }, {}),
   );
+  const recommendedActionCodes = new Set(
+    (task.issues ?? []).flatMap((issue) => issue.actions.map((action) => action.action)),
+  );
   const canRetryFailures = task.kind === "collection-analysis"
     && (task.issues ?? []).some((issue) => issue.retryability === "transient");
+  const canResolveInCompany = linksToHistory && [
+    "replace_source",
+    "upload_pdf",
+    "use_pdf_method",
+    "use_archive",
+    "review_content",
+    "try_other_method",
+    "model_review",
+  ].some((action) => recommendedActionCodes.has(action));
   const progress = taskProgress(task);
   const statusIcon = STATUS_ICON[task.status];
 
@@ -121,7 +135,9 @@ export function TaskRow({
               {issueGroups.slice(0, 3).map((issue) => (
                 <div className="m3-task-issue" key={issue.summary}>
                   <p><strong>{issue.count > 1 ? `${issue.count}× ` : ""}{issue.summary}</strong></p>
-                  <p>{issue.actions.join(" · ")}</p>
+                  <ol aria-label={`Next steps for ${issue.summary}`}>
+                    {issue.actions.map((action) => <li key={action.action}>{action.label}</li>)}
+                  </ol>
                 </div>
               ))}
               {issueGroups.length > 3 ? <p className="m3-task-issue-more">Details include {issueGroups.length - 3} more issue types.</p> : null}
@@ -132,15 +148,16 @@ export function TaskRow({
         <div className="m3-task-actions" role="group" aria-label={`${accessibleName} actions`}>
           {canRetryTask(task) && <MdFilledButton className="m3-task-action m3-task-action-primary" disabled={retryTask.isPending} onClick={() => retryTask.mutate()}><MaterialIcon slot="icon" src={retryIcon} />{retryTask.isPending ? "Retrying…" : "Retry"}</MdFilledButton>}
           {canRetryFailures && <MdFilledButton className="m3-task-action m3-task-action-primary" disabled={retryFailed.isPending} onClick={() => retryFailed.mutate()}><MaterialIcon slot="icon" src={retryIcon} />{retryFailed.isPending ? "Retrying…" : "Retry failed"}</MdFilledButton>}
-          {linksToHistory ? (
-            <MdFilledTonalButton className="m3-task-action m3-task-action-primary" onClick={() => onViewRun?.(task)}><MaterialIcon slot="icon" src={historyIcon} />View run</MdFilledTonalButton>
-          ) : canViewOutput ? (
+          {linksToHistory && (
+            <MdFilledTonalButton className="m3-task-action m3-task-action-primary" onClick={() => onViewRun?.(task)}><MaterialIcon slot="icon" src={historyIcon} />{canResolveInCompany ? "Resolve issue" : "View run"}</MdFilledTonalButton>
+          )}
+          {canViewOutput && (
             <MdTextButton
               className="m3-task-action"
               aria-expanded={expanded}
               onClick={onToggleOutput}
             ><MaterialIcon slot="icon" src={outputIcon} />{expanded ? "Collapse details" : "Details"}</MdTextButton>
-          ) : null}
+          )}
           {task.cancelable && (
             <MdTextButton className="m3-task-action m3-task-action-danger" disabled={cancel.isPending} onClick={() => cancel.mutate(task.task_id)}><MaterialIcon slot="icon" src={cancelIcon} />Cancel</MdTextButton>
           )}

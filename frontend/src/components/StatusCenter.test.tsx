@@ -114,4 +114,38 @@ describe("TaskRow", () => {
     expect(screen.getByRole("region", { name: "Recommended next steps" })).toHaveTextContent("The policy page could not be loaded.");
     expect(Array.from(container.querySelectorAll("md-filled-button")).map((action) => action.textContent?.trim())).toEqual(["Retry failed"]);
   });
+
+  it("offers company recovery without hiding diagnostics", () => {
+    const onViewRun = vi.fn();
+    const onToggleOutput = vi.fn();
+    const { container } = render(<TaskRow task={task({
+      status: "failed",
+      kind: "comparison",
+      provider_id: "provider-1",
+      run_id: "run-1",
+      has_output: true,
+      issues: [
+        {
+          issue_id: "issue-1",
+          code: "source.direct_pdf",
+          stage: "acquisition",
+          severity: "error",
+          retryability: "manual",
+          summary: "The policy URL opened a PDF instead of a webpage.",
+          technical_detail: "Page.goto: Download is starting",
+          provider_id: "provider-1",
+          policy_id: null,
+          actions: [
+            { action: "use_pdf_method", label: "Analyze the source as a PDF" },
+            { action: "upload_pdf", label: "Upload an official policy PDF" },
+          ],
+          occurred_at: null,
+        },
+      ],
+    })} expanded={false} onToggleOutput={onToggleOutput} onViewRun={onViewRun} />);
+
+    expect(screen.getByRole("list", { name: "Next steps for The policy URL opened a PDF instead of a webpage." })).toHaveTextContent("Analyze the source as a PDF");
+    expect(container.querySelector("md-filled-tonal-button")?.textContent?.trim()).toBe("Resolve issue");
+    expect(container.querySelector("md-text-button")?.textContent?.trim()).toBe("Details");
+  });
 });
