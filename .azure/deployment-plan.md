@@ -1,6 +1,6 @@
 # Azure Deployment Plan
 
-> **Status:** Deployed
+> **Status:** Validated
 
 Generated: 2026-07-28
 
@@ -148,10 +148,20 @@ Container App revisions and the existing migration-job template.
 | Live image inventory | Azure Resource Graph | App, worker, scheduled-run, and migration resources all `Succeeded` on immutable `0075063` images in `eastus2` | 2026-07-30 03:02 EDT |
 | S&P source acceptance | Production `/api/collections` and `/api/providers` | 500 collection members; 500 with source URLs | 2026-07-30 03:05 EDT |
 | Upgraded model smoke test | Task `44c83570-c72b-4763-a3c5-519bf9242825`; policy graph API | Succeeded with 1/1 complete and no issues; persisted 146 elements (65 nodes, 81 edges) | 2026-07-30 03:04 EDT |
+| Failure recovery release commit | `git rev-parse origin/main` | `42c5abfa3cac121015c86998c2423fc6e997db33` | 2026-07-30 |
+| Backend suite, failure recovery | `./.venv/bin/pytest -q` | 69 passed | 2026-07-30 |
+| Frontend suite, failure recovery | `npm --prefix frontend test -- --run` | 33 passed | 2026-07-30 |
+| Frontend type check and build, failure recovery | `npm --prefix frontend run typecheck`; `npm --prefix frontend run build` | Passed; production bundle built | 2026-07-30 |
+| Bicep compilation, failure recovery | `az bicep build --file infra/main.bicep --stdout` | Passed; template hash `11706172348469164637` | 2026-07-30 |
+| ARM provider validation, failure recovery | `az deployment group validate` against `poligrapher-rg` | Succeeded; correlation `d3aa1d2f-bc04-49a1-a2d4-8007d113f2e8` | 2026-07-30 |
+| ARM what-if, failure recovery | `az deployment group what-if --result-format ResourceIdOnly` | Succeeded | 2026-07-30 |
+| Azure resource and policy review, failure recovery | Azure MCP resource inventory and `policy_assignment_list` | Existing workload remains in `eastus2`; audit, regional, and MFA policies reviewed | 2026-07-30 |
+| Static RBAC review, failure recovery | `infra/main.bicep`; application storage and queue clients | No new identities or role assignments; existing secret-backed storage and database access unchanged | 2026-07-30 |
+| Container image validation gate | Local Docker availability; `.github/workflows/deploy-azure.yml` | Docker daemon unavailable locally; both production image builds remain blocking CI prerequisites | 2026-07-30 |
 
-**Validated and deployed by:** azure-validate and azure-deploy workflows
+**Validated by:** azure-validate workflow
 
-**Deployment timestamp:** 2026-07-30 03:05 EDT
+**Validation timestamp:** 2026-07-30
 
 ## 9. Files
 
@@ -165,5 +175,5 @@ Container App revisions and the existing migration-job template.
 
 ## 10. Next Step
 
-Deployment is complete. Continue with bounded production analyses and monitor
-task diagnostics before broad collection runs.
+Trigger the gated production workflow with what-if enabled, confirm migrations,
+then verify structured failure recovery against the live task API and UI.
