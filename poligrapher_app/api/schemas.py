@@ -137,6 +137,7 @@ class TaskIssueRead(BaseModel):
     summary: str
     technical_detail: str | None = None
     provider_id: str | None = None
+    provider_name: str | None = None
     policy_id: str | None = None
     actions: list[TaskActionRead] = Field(default_factory=list)
     occurred_at: str | None = None

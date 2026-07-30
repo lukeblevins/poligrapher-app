@@ -103,6 +103,7 @@ describe("TaskRow", () => {
           summary: "The policy page could not be loaded.",
           technical_detail: "net::ERR_TIMED_OUT",
           provider_id: "provider-1",
+          provider_name: "Example Company",
           policy_id: null,
           actions: [{ action: "retry", label: "Retry failed companies" }],
           occurred_at: null,
@@ -113,6 +114,41 @@ describe("TaskRow", () => {
     expect(screen.getByText("Completed with issues")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Recommended next steps" })).toHaveTextContent("The policy page could not be loaded.");
     expect(Array.from(container.querySelectorAll("md-filled-button")).map((action) => action.textContent?.trim())).toEqual(["Retry failed"]);
+  });
+
+  it("does not offer automatic retry when a specific manual cause accompanies a subprocess failure", () => {
+    const transientIssue = {
+      issue_id: "issue-1",
+      code: "execution.subprocess_failed",
+      stage: "execution",
+      severity: "error" as const,
+      retryability: "transient" as const,
+      summary: "The isolated analysis process exited unexpectedly.",
+      technical_detail: "exit 1",
+      provider_id: "provider-1",
+      provider_name: "Example Company",
+      policy_id: null,
+      actions: [{ action: "retry", label: "Retry failed companies" }],
+      occurred_at: null,
+    };
+    const { container } = render(<TaskRow task={task({
+      status: "done",
+      outcome: "partially_succeeded",
+      kind: "collection-analysis",
+      failed: 1,
+      issues: [
+        transientIssue,
+        {
+          ...transientIssue,
+          issue_id: "issue-2",
+          code: "graph.empty",
+          retryability: "manual",
+          summary: "The pipeline did not produce a usable knowledge graph.",
+        },
+      ],
+    })} expanded={false} onToggleOutput={vi.fn()} />);
+
+    expect(container.querySelector("md-filled-button")).not.toBeInTheDocument();
   });
 
   it("offers company recovery without hiding diagnostics", () => {
@@ -134,6 +170,7 @@ describe("TaskRow", () => {
           summary: "The policy URL opened a PDF instead of a webpage.",
           technical_detail: "Page.goto: Download is starting",
           provider_id: "provider-1",
+          provider_name: "Example Company",
           policy_id: null,
           actions: [
             { action: "use_pdf_method", label: "Analyze the source as a PDF" },
@@ -145,6 +182,7 @@ describe("TaskRow", () => {
     })} expanded={false} onToggleOutput={onToggleOutput} onViewRun={onViewRun} />);
 
     expect(screen.getByRole("list", { name: "Next steps for The policy URL opened a PDF instead of a webpage." })).toHaveTextContent("Analyze the source as a PDF");
+    expect(screen.getByRole("button", { name: "Review Example Company" })).toBeInTheDocument();
     expect(container.querySelector("md-filled-tonal-button")?.textContent?.trim()).toBe("Resolve issue");
     expect(container.querySelector("md-text-button")?.textContent?.trim()).toBe("Details");
   });

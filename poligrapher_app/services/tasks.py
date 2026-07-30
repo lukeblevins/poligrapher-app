@@ -17,7 +17,7 @@ from urllib.parse import parse_qsl, quote, quote_plus, unquote, urlsplit
 from sqlalchemy import and_, or_
 
 from poligrapher_app.api.database import SessionLocal
-from poligrapher_app.api.models import TaskIssue, TaskRecord
+from poligrapher_app.api.models import Provider, TaskIssue, TaskRecord
 
 _TERMINAL = ("done", "failed", "cancelled")
 _RECENT = timedelta(minutes=15)
@@ -86,7 +86,8 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def task_public(task: TaskRecord) -> dict:
+def task_public(task: TaskRecord, provider_names: dict[str, str] | None = None) -> dict:
+    provider_names = provider_names or {}
     outcome = task.outcome
     if not outcome:
         if task.status == "cancelled":
@@ -124,6 +125,7 @@ def task_public(task: TaskRecord) -> dict:
                 "summary": issue.summary,
                 "technical_detail": issue.technical_detail,
                 "provider_id": issue.provider_id,
+                "provider_name": provider_names.get(issue.provider_id or ""),
                 "policy_id": issue.policy_id,
                 "actions": list(issue.actions or []),
                 "occurred_at": issue.occurred_at.isoformat() if issue.occurred_at else None,
@@ -205,7 +207,18 @@ class TaskRegistry:
             return None
         with SessionLocal() as db:
             task = db.get(TaskRecord, task_uuid)
-            return task_public(task) if task else None
+            if task is None:
+                return None
+            provider_ids = {
+                issue.provider_id for issue in task.issues if issue.provider_id
+            }
+            provider_names = {
+                str(provider.id): provider.name
+                for provider in db.query(Provider).filter(
+                    Provider.id.in_([uuid.UUID(provider_id) for provider_id in provider_ids])
+                ).all()
+            }
+            return task_public(task, provider_names)
 
     def list(self) -> list[dict]:
         cutoff = _now() - _RECENT
@@ -224,7 +237,19 @@ class TaskRegistry:
                 .order_by(TaskRecord.created_at.desc())
                 .all()
             )
-            return [task_public(task) for task in tasks]
+            provider_ids = {
+                issue.provider_id
+                for task in tasks
+                for issue in task.issues
+                if issue.provider_id
+            }
+            provider_names = {
+                str(provider.id): provider.name
+                for provider in db.query(Provider).filter(
+                    Provider.id.in_([uuid.UUID(provider_id) for provider_id in provider_ids])
+                ).all()
+            }
+            return [task_public(task, provider_names) for task in tasks]
 
     def append_output(self, task_id: str, chunk: str) -> None:
         if not chunk:
@@ -286,16 +311,27 @@ class TaskRegistry:
     def retryable_provider_ids(self, task_id: str) -> list[str]:
         with SessionLocal() as db:
             rows = (
-                db.query(TaskIssue.provider_id)
+                db.query(
+                    TaskIssue.provider_id,
+                    TaskIssue.retryability,
+                    TaskIssue.severity,
+                )
                 .filter(
                     TaskIssue.task_id == uuid.UUID(task_id),
                     TaskIssue.provider_id.isnot(None),
-                    TaskIssue.retryability == "transient",
                 )
-                .distinct()
                 .all()
             )
-            return [provider_id for (provider_id,) in rows if provider_id]
+            retryability_by_provider: dict[str, set[str]] = {}
+            for provider_id, retryability, severity in rows:
+                if provider_id and severity == "error":
+                    retryability_by_provider.setdefault(provider_id, set()).add(retryability)
+            return sorted(
+                provider_id
+                for provider_id, retryabilities in retryability_by_provider.items()
+                if "transient" in retryabilities
+                and not retryabilities.intersection({"manual", "blocked"})
+            )
 
     def retry_failed_subtasks(self, task_id: str) -> str | None:
         provider_ids = self.retryable_provider_ids(task_id)

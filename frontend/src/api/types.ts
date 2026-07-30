@@ -137,6 +137,7 @@ export interface TaskIssue {
   summary: string;
   technical_detail: string | null;
   provider_id: string | null;
+  provider_name: string | null;
   policy_id: string | null;
   actions: TaskAction[];
   occurred_at: string | null;

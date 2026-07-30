@@ -1,6 +1,6 @@
 # Azure Deployment Plan
 
-> **Status:** Deployed
+> **Status:** Validated
 
 Generated: 2026-07-28
 
@@ -165,6 +165,14 @@ Container App revisions and the existing migration-job template.
 | Failure recovery analysis smoke test | Task `2381bf40-fc3a-41a8-9be8-f4d40b7066e6` | Abbott policy analysis completed with outcome `succeeded`, 1 complete, 0 failed, and no issues | 2026-07-30 |
 | Failure recovery UI acceptance | Production Tasks workspace in the in-app browser | Successful smoke run renders Completed; historical partial runs render Completed with issues and failure counts; failed runs expose Retry, View run, and Details | 2026-07-30 |
 | Live access review | Container Apps identity configuration | App identity is disabled; managed-identity role verification is not applicable and existing secret-backed connections remain unchanged | 2026-07-30 |
+| Backend suite, actionable cohort recovery | `./.venv/bin/pytest -q` | 69 passed | 2026-07-30 09:26 EDT |
+| Frontend suite, actionable cohort recovery | `npm --prefix frontend test -- --run` | 34 passed | 2026-07-30 09:26 EDT |
+| Frontend type check and build, actionable cohort recovery | `npm --prefix frontend run typecheck`; `npm --prefix frontend run build` | Passed; production bundle built | 2026-07-30 09:26 EDT |
+| Bicep compilation, actionable cohort recovery | `az bicep build --file infra/main.bicep --stdout` | Passed; template hash `11706172348469164637` | 2026-07-30 09:26 EDT |
+| ARM provider validation, actionable cohort recovery | `az deployment group validate` against `poligrapher-rg` | Succeeded; correlation `b3596a04-454d-43dc-bd49-f1480dea5d8f` | 2026-07-30 09:27 EDT |
+| ARM what-if, actionable cohort recovery | `az deployment group what-if --result-format ResourceIdOnly` | Succeeded; 15 existing resources deploy, 1 identity ignored, 0 deletes | 2026-07-30 09:27 EDT |
+| Static RBAC review, actionable cohort recovery | `infra/main.bicep`; application storage and queue clients | No managed identities or role assignments; existing secret-backed connections unchanged | 2026-07-30 09:27 EDT |
+| Container image validation gate, actionable cohort recovery | Local Docker availability; `.github/workflows/deploy-azure.yml` | Docker daemon unavailable locally; both immutable production image builds remain blocking CI prerequisites | 2026-07-30 09:26 EDT |
 
 **Validated by:** azure-validate workflow
 

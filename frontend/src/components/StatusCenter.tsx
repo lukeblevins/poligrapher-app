@@ -71,12 +71,18 @@ export function TaskRow({
   const linksToHistory = !!task.provider_id && isRunTask(task) && !!onViewRun;
   const needsAttention = task.status === "failed" || task.failed > 0;
   const issueGroups = Object.values(
-    (task.issues ?? []).reduce<Record<string, { summary: string; count: number; actions: TaskAction[] }>>((groups, issue) => {
-      const group = groups[issue.code] ?? { summary: issue.summary, count: 0, actions: [] };
+    (task.issues ?? []).reduce<Record<string, { summary: string; count: number; actions: TaskAction[]; providers: { id: string; name: string }[] }>>((groups, issue) => {
+      const group = groups[issue.code] ?? { summary: issue.summary, count: 0, actions: [], providers: [] };
       group.count += 1;
       group.actions = [...group.actions, ...issue.actions].filter(
         (action, index, actions) => actions.findIndex((candidate) => candidate.action === action.action) === index,
       );
+      if (issue.provider_id && !group.providers.some((provider) => provider.id === issue.provider_id)) {
+        group.providers.push({
+          id: issue.provider_id,
+          name: issue.provider_name ?? "Affected company",
+        });
+      }
       groups[issue.code] = group;
       return groups;
     }, {}),
@@ -84,8 +90,18 @@ export function TaskRow({
   const recommendedActionCodes = new Set(
     (task.issues ?? []).flatMap((issue) => issue.actions.map((action) => action.action)),
   );
+  const retryabilityByProvider = (task.issues ?? []).reduce<Record<string, Set<string>>>((providers, issue) => {
+    if (issue.provider_id && issue.severity === "error") {
+      (providers[issue.provider_id] ??= new Set()).add(issue.retryability);
+    }
+    return providers;
+  }, {});
   const canRetryFailures = task.kind === "collection-analysis"
-    && (task.issues ?? []).some((issue) => issue.retryability === "transient");
+    && Object.values(retryabilityByProvider).some(
+      (retryabilities) => retryabilities.has("transient")
+        && !retryabilities.has("manual")
+        && !retryabilities.has("blocked"),
+    );
   const canResolveInCompany = linksToHistory && [
     "replace_source",
     "upload_pdf",
@@ -138,6 +154,20 @@ export function TaskRow({
                   <ol aria-label={`Next steps for ${issue.summary}`}>
                     {issue.actions.map((action) => <li key={action.action}>{action.label}</li>)}
                   </ol>
+                  {onViewRun && issue.providers.length > 0 ? (
+                    <div className="m3-task-issue-companies" aria-label={`Affected companies for ${issue.summary}`}>
+                      {issue.providers.slice(0, 3).map((provider) => (
+                        <button
+                          type="button"
+                          key={provider.id}
+                          onClick={() => onViewRun({ ...task, provider_id: provider.id, provider_name: provider.name })}
+                        >
+                          Review {provider.name}
+                        </button>
+                      ))}
+                      {issue.providers.length > 3 ? <span>+{issue.providers.length - 3} more in details</span> : null}
+                    </div>
+                  ) : null}
                 </div>
               ))}
               {issueGroups.length > 3 ? <p className="m3-task-issue-more">Details include {issueGroups.length - 3} more issue types.</p> : null}

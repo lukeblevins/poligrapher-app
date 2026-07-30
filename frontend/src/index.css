@@ -550,6 +550,9 @@
   .m3-task-issue { border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-error-container); padding: 8px 12px; color: var(--md-sys-color-on-error-container); font-size: var(--md-sys-typescale-body-small-size); line-height: var(--md-sys-typescale-body-small-line-height); }
   .m3-task-issue ol { margin-top: 4px; list-style-position: inside; list-style-type: decimal; color: color-mix(in srgb, var(--md-sys-color-on-error-container) 76%, transparent); }
   .m3-task-issue li + li { margin-top: 2px; }
+  .m3-task-issue-companies { margin-top: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+  .m3-task-issue-companies button { color: inherit; font: inherit; font-weight: var(--md-sys-typescale-weight-medium); text-align: left; text-decoration: underline; text-underline-offset: 3px; }
+  .m3-task-issue-companies span { color: color-mix(in srgb, var(--md-sys-color-on-error-container) 72%, transparent); font-size: var(--md-sys-typescale-label-medium-size); }
   .m3-task-issue-more { padding-inline: 4px; color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-label-medium-size); }
   .m3-task-progress-block { margin-top: var(--md-sys-spacing-3); }
   .m3-task-progress-summary { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--md-sys-spacing-2); color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-label-medium-size); line-height: var(--md-sys-typescale-label-medium-line-height); }

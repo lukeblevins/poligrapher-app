@@ -159,3 +159,10 @@ def test_task_issues_survive_output_truncation_and_drive_partial_outcome(tmp_pat
     assert registry.retryable_provider_ids(task_id) == [
         "11111111-1111-1111-1111-111111111111"
     ]
+
+    registry.record_issue(
+        task_id,
+        classify_failure("Pipeline produced no canonical graph elements"),
+        provider_id="11111111-1111-1111-1111-111111111111",
+    )
+    assert registry.retryable_provider_ids(task_id) == []
