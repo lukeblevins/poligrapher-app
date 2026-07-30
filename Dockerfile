@@ -58,10 +58,12 @@ COPY --chown=user:user pyproject.toml ./
 COPY --chown=user:user poligrapher_app ./poligrapher_app
 COPY --chown=user:user alembic.ini ./
 COPY --chown=user:user alembic ./alembic
+COPY --chown=user:user docker/install_poligrapher_extra_data.py /tmp/install_poligrapher_extra_data.py
 RUN pip install --user --no-cache-dir '.[analysis]'
 RUN python -m spacy download en_core_web_md \
     && playwright install chromium \
-    && poligrapher-fetch-data
+    && poligrapher-fetch-data \
+    && python /tmp/install_poligrapher_extra_data.py
 
 FROM worker-runtime AS worker
 RUN useradd -m -u 1000 user \

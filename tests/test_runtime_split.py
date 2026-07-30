@@ -369,6 +369,7 @@ def test_dockerfile_exposes_separate_web_and_worker_targets():
     assert " AS worker" in dockerfile
     assert "pip install --user --no-cache-dir ." in dockerfile
     assert "pip install --user --no-cache-dir '.[analysis]'" in dockerfile
+    assert "python /tmp/install_poligrapher_extra_data.py" in dockerfile
 
 
 def test_azure_deploy_uses_oidc_and_gated_migrations():
