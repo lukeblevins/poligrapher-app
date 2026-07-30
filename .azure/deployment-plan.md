@@ -1,6 +1,6 @@
 # Azure Deployment Plan
 
-> **Status:** Validated
+> **Status:** Deployed
 
 Generated: 2026-07-28
 
@@ -173,6 +173,9 @@ Container App revisions and the existing migration-job template.
 | ARM what-if, actionable cohort recovery | `az deployment group what-if --result-format ResourceIdOnly` | Succeeded; 15 existing resources deploy, 1 identity ignored, 0 deletes | 2026-07-30 09:27 EDT |
 | Static RBAC review, actionable cohort recovery | `infra/main.bicep`; application storage and queue clients | No managed identities or role assignments; existing secret-backed connections unchanged | 2026-07-30 09:27 EDT |
 | Container image validation gate, actionable cohort recovery | Local Docker availability; `.github/workflows/deploy-azure.yml` | Docker daemon unavailable locally; both immutable production image builds remain blocking CI prerequisites | 2026-07-30 09:26 EDT |
+| Actionable cohort recovery deployment | GitHub Actions run `30547050188` | Both immutable image builds, real-secret what-if, Bicep deployment, migrations, and endpoint verification succeeded at `0ecff136273896f07408e50bbea580c735042f1e` | 2026-07-30 09:40 EDT |
+| Actionable cohort recovery live acceptance | Container Apps revision and production task API | Revision `poligrapherc1de43-app--0000015` is `Succeeded`; task issues resolve affected provider IDs to company names | 2026-07-30 09:41 EDT |
+| Transient-only S&P retry | Task `6078146a-7be2-473b-b321-7518af6ec649` | Queued exactly 47 companies with transient-only error sets; worker claimed the task | 2026-07-30 09:42 EDT |
 
 **Validated by:** azure-validate workflow
 
