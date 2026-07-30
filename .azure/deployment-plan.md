@@ -1,6 +1,6 @@
 # Azure Deployment Plan
 
-> **Status:** Validated
+> **Status:** Deployed
 
 Generated: 2026-07-28
 
@@ -105,11 +105,11 @@ Container App revisions and the existing migration-job template.
 
 ### Deployment
 
-- [ ] Commit and push the coherent release
-- [ ] Trigger the gated Azure production workflow
-- [ ] Confirm migration-job success
-- [ ] Verify the deployed API reports all 500 S&P sources ready
-- [ ] Set status to Deployed
+- [x] Commit and push the coherent release
+- [x] Trigger the gated Azure production workflow
+- [x] Confirm migration-job success
+- [x] Verify the deployed API reports all 500 S&P sources ready
+- [x] Set status to Deployed
 
 ## 8. Validation Proof
 
@@ -142,10 +142,16 @@ Container App revisions and the existing migration-job template.
 | Azure policy review | Azure MCP `policy_assignment_list` | Audit-only Security Center policy and inherited regional/MFA controls reviewed; eastus2 remains allowed | 2026-07-30 02:25 EDT |
 | Static RBAC review | `infra/main.bicep`; live resource inventory | No new role assignments; existing connection-string data-plane access and GitHub OIDC identity unchanged | 2026-07-30 02:25 EDT |
 | Diff validation, model release | `git diff --check` | Passed before validation-proof update | 2026-07-30 02:22 EDT |
+| Initial model deployment | GitHub Actions run `30519712592` | Images, what-if, deployment, migrations, and API verification succeeded at `d7eec6a`; bounded analysis then exposed missing `phrase_map.yml` in the worker image | 2026-07-30 02:43 EDT |
+| Worker packaging correction | `./.venv/bin/pytest -q`; pinned phrase-map digest check | 60 passed; SHA-256 `cae2e134e550884583cad6b9b021f862cce9e75801b5c7f26251090b44f9c127` matched | 2026-07-30 02:48 EDT |
+| Corrected production deployment | GitHub Actions run `30520874932` | Image builds, what-if, deployment, migrations, and API verification succeeded at `0075063557646f34cc9849ed56c265b7f858b86b` | 2026-07-30 03:02 EDT |
+| Live image inventory | Azure Resource Graph | App, worker, scheduled-run, and migration resources all `Succeeded` on immutable `0075063` images in `eastus2` | 2026-07-30 03:02 EDT |
+| S&P source acceptance | Production `/api/collections` and `/api/providers` | 500 collection members; 500 with source URLs | 2026-07-30 03:05 EDT |
+| Upgraded model smoke test | Task `44c83570-c72b-4763-a3c5-519bf9242825`; policy graph API | Succeeded with 1/1 complete and no issues; persisted 146 elements (65 nodes, 81 edges) | 2026-07-30 03:04 EDT |
 
-**Validated by:** azure-validate workflow
+**Validated and deployed by:** azure-validate and azure-deploy workflows
 
-**Validation timestamp:** 2026-07-30 02:25 EDT
+**Deployment timestamp:** 2026-07-30 03:05 EDT
 
 ## 9. Files
 
@@ -159,5 +165,5 @@ Container App revisions and the existing migration-job template.
 
 ## 10. Next Step
 
-Approve reuse of the existing subscription and `eastus2` deployment context,
-then run the formal validation and production workflow.
+Deployment is complete. Continue with bounded production analyses and monitor
+task diagnostics before broad collection runs.
