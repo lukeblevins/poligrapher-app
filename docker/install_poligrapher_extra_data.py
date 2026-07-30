@@ -1,4 +1,4 @@
-"""Install static PoliGraph data omitted from the retrained model bundle."""
+"""Install static PoliGraph data omitted from the packaged fork."""
 
 from __future__ import annotations
 

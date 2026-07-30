@@ -170,7 +170,19 @@ def _settle_result(task_id: str, result: str, registry) -> None:
     if result == "cancelled":
         registry.set_cancelled(task_id)
     elif result in ("needs_source", "gone"):
-        registry.set_failed(task_id, f"Run did not complete: {result}")
+        detail = (
+            "Run did not complete: needs_source"
+            if result == "needs_source"
+            else "Document is not accessible or does not exist: configured policy"
+        )
+        task = registry.get(task_id) or {}
+        registry.record_issue(
+            task_id,
+            classify_failure(detail),
+            provider_id=task.get("provider_id"),
+            policy_id=task.get("policy_id"),
+        )
+        registry.set_failed(task_id, detail)
     else:
         registry.update(task_id, completed=1)
         registry.set_done(task_id)
@@ -493,12 +505,11 @@ def _analyze_collection(task_id: str, payload: dict, registry) -> None:
                 )
         except Exception as exc:
             logger.exception("Collection analysis failed for provider %s", raw_id)
-            if isinstance(exc, CollectionSubtaskTimeoutError):
-                registry.record_issue(
-                    task_id,
-                    classify_failure(exc),
-                    provider_id=provider_id,
-                )
+            registry.record_issue(
+                task_id,
+                classify_failure(exc),
+                provider_id=provider_id,
+            )
             if provider_id is not None:
                 _mark_collection_provider_failed(provider_id, str(exc))
             registry.append_output(
