@@ -1,6 +1,6 @@
 # Azure Deployment Plan
 
-> **Status:** Validated
+> **Status:** Deployed
 
 Generated: 2026-07-28
 
@@ -158,6 +158,13 @@ Container App revisions and the existing migration-job template.
 | Azure resource and policy review, failure recovery | Azure MCP resource inventory and `policy_assignment_list` | Existing workload remains in `eastus2`; audit, regional, and MFA policies reviewed | 2026-07-30 |
 | Static RBAC review, failure recovery | `infra/main.bicep`; application storage and queue clients | No new identities or role assignments; existing secret-backed storage and database access unchanged | 2026-07-30 |
 | Container image validation gate | Local Docker availability; `.github/workflows/deploy-azure.yml` | Docker daemon unavailable locally; both production image builds remain blocking CI prerequisites | 2026-07-30 |
+| Failure recovery production deployment | GitHub Actions run `30523625758` | Image builds, real-secret what-if, Bicep deployment, migrations, and deployed-app verification succeeded at `2f2d9b53a86485fea7db5364937e23c90ae1dcb0` | 2026-07-30 |
+| Failure recovery live resource inventory | Azure Resource Graph | App revision `poligrapherc1de43-app--0000014`, worker, and migration job report `Succeeded` on immutable `2f2d9b5` images in `eastus2` | 2026-07-30 |
+| Failure recovery migration | Container Apps job execution `poligrapherc1de43-migrations-0emciug` | Succeeded | 2026-07-30 |
+| Failure recovery API acceptance | Production `/api/providers`; `/api/tasks` | 510 providers and 510 source URLs; task history exposes terminal partial-failure state | 2026-07-30 |
+| Failure recovery analysis smoke test | Task `2381bf40-fc3a-41a8-9be8-f4d40b7066e6` | Abbott policy analysis completed with outcome `succeeded`, 1 complete, 0 failed, and no issues | 2026-07-30 |
+| Failure recovery UI acceptance | Production Tasks workspace in the in-app browser | Successful smoke run renders Completed; historical partial runs render Completed with issues and failure counts; failed runs expose Retry, View run, and Details | 2026-07-30 |
+| Live access review | Container Apps identity configuration | App identity is disabled; managed-identity role verification is not applicable and existing secret-backed connections remain unchanged | 2026-07-30 |
 
 **Validated by:** azure-validate workflow
 
@@ -175,5 +182,6 @@ Container App revisions and the existing migration-job template.
 
 ## 10. Next Step
 
-Trigger the gated production workflow with what-if enabled, confirm migrations,
-then verify structured failure recovery against the live task API and UI.
+Monitor new production analyses for newly classified issue codes. Historical
+tasks are intentionally not backfilled, so failures created before this release
+may continue to display the legacy unclassified recommendation.
