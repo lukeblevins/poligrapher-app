@@ -206,6 +206,9 @@ Container App revisions and the existing migration-job template.
 | Curated recovery live acceptance | Container Apps revision and migration execution | Revision `poligrapherc1de43-app--0000018` and migration execution `poligrapherc1de43-migrations-8y7k1y6` report `Succeeded`; app and worker use immutable `46c3b58` images | 2026-08-04 13:07 EDT |
 | Warning-semantics production smoke test | Task `b2635d1a-c07c-4441-a3e1-6c82aa4b3d65` | Ares Management completed with outcome `succeeded`, 1 complete, 0 failed, and an empty issue list | 2026-08-04 13:10 EDT |
 | Live role verification, curated recovery release | Container App identity configuration | App identity is `None`; managed-identity role verification is not applicable and existing secret-backed connections remain unchanged | 2026-08-04 13:07 EDT |
+| Curated source correction batch two | Task `2371bd2c-c59a-4394-ae45-a7475ad86c05` | `succeeded`: Delta Air Lines, Expedia Group, and Sysco completed 3/3 with 0 failures and an empty issue list | 2026-08-04 13:18 EDT |
+| S&P coverage reconciliation, curated batch two | Production `/api/bulk/preview` for collection `4cac831c-a33d-438c-a0d5-55ee871418e9` | 500 providers, 419 already analyzed, and 81 still eligible; coverage increased from 416 to 419 | 2026-08-04 13:19 EDT |
+| Backend suite, curated batch two catalog | `./.venv/bin/pytest -q` | 74 passed after persisting the three verified production sources in the versioned catalog | 2026-08-04 13:19 EDT |
 
 **Validated by:** azure-validate workflow
 
@@ -223,6 +226,6 @@ Container App revisions and the existing migration-job template.
 
 ## 10. Next Step
 
-Continue curated remediation of the remaining 84 eligible companies. Validate
+Continue curated remediation of the remaining 81 eligible companies. Validate
 official replacements with the application document checks before updating
 production, then use bounded retries and reconcile coverage after each batch.

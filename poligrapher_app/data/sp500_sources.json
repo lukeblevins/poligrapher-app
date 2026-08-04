@@ -1644,11 +1644,11 @@
       "cik": "1324424",
       "domain": "expediagroup.com",
       "name": "Expedia Group",
-      "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://legal.expediagroup.com/privacy/international-data-transfer/eu",
+      "source_checked_at": "2026-08-04T17:19:18Z",
+      "source_final_url": "https://legal.expediagroup.com/privacy/privacy-and-cookies-statements/privacy-statement-all",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://legal.expediagroup.com/privacy/international-data-transfer/eu",
+      "source_url": "https://legal.expediagroup.com/privacy/privacy-and-cookies-statements/privacy-statement-all",
       "tickers": [
         "EXPE"
       ]
@@ -3428,11 +3428,11 @@
       "cik": "27904",
       "domain": "delta.com",
       "name": "Delta Air Lines",
-      "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://www.delta.com/us/en/legal/privacy-and-security/protect-your-data",
+      "source_checked_at": "2026-08-04T17:19:18Z",
+      "source_final_url": "https://www.delta.com/us/en/legal/privacy-and-security",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.delta.com/us/en/legal/privacy-and-security/protect-your-data",
+      "source_url": "https://www.delta.com/us/en/legal/privacy-and-security",
       "tickers": [
         "DAL"
       ]
@@ -6457,11 +6457,11 @@
       "cik": "96021",
       "domain": "sysco.com",
       "name": "Sysco",
-      "source_checked_at": "2026-07-28T05:46:10.194754",
-      "source_final_url": "https://www.sysco.com/privacy-notice",
+      "source_checked_at": "2026-08-04T17:19:18Z",
+      "source_final_url": "https://hawaii.sysco.com/authoring.sysco.com/Sysco/Privacy-Policy.html",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.sysco.com/privacy-notice",
+      "source_url": "https://hawaii.sysco.com/authoring.sysco.com/Sysco/Privacy-Policy.html",
       "tickers": [
         "SYY"
       ]
