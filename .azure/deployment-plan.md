@@ -209,6 +209,9 @@ Container App revisions and the existing migration-job template.
 | Curated source correction batch two | Task `2371bd2c-c59a-4394-ae45-a7475ad86c05` | `succeeded`: Delta Air Lines, Expedia Group, and Sysco completed 3/3 with 0 failures and an empty issue list | 2026-08-04 13:18 EDT |
 | S&P coverage reconciliation, curated batch two | Production `/api/bulk/preview` for collection `4cac831c-a33d-438c-a0d5-55ee871418e9` | 500 providers, 419 already analyzed, and 81 still eligible; coverage increased from 416 to 419 | 2026-08-04 13:19 EDT |
 | Backend suite, curated batch two catalog | `./.venv/bin/pytest -q` | 74 passed after persisting the three verified production sources in the versioned catalog | 2026-08-04 13:19 EDT |
+| Curated source correction batch three | Task `1fb919f9-f992-4bb8-9df6-9a132c793001` | `partially_succeeded`: Marriott International completed; HP Inc. produced the standardized root issue `graph.empty` with manual recovery actions | 2026-08-04 15:04 EDT |
+| S&P coverage reconciliation, curated batch three | Production `/api/bulk/preview` for collection `4cac831c-a33d-438c-a0d5-55ee871418e9` | 500 providers, 420 already analyzed, and 80 still eligible; coverage increased from 419 to 420 | 2026-08-04 15:05 EDT |
+| Validation, root-issue deduplication | `./.venv/bin/pytest -q`; `npm --prefix frontend run typecheck`; `npm --prefix frontend test -- --run`; `npm --prefix frontend run build` | Passed: 75 backend tests, 34 frontend tests, type check, and production bundle | 2026-08-04 15:06 EDT |
 
 **Validated by:** azure-validate workflow
 
@@ -226,6 +229,6 @@ Container App revisions and the existing migration-job template.
 
 ## 10. Next Step
 
-Continue curated remediation of the remaining 81 eligible companies. Validate
+Continue curated remediation of the remaining 80 eligible companies. Validate
 official replacements with the application document checks before updating
 production, then use bounded retries and reconcile coverage after each batch.

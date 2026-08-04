@@ -291,6 +291,75 @@ def test_collection_analysis_resumes_and_settles_with_subtask_failures(monkeypat
     assert registry.issues[0][1]["provider_id"] == uuid.UUID(provider_ids[1])
 
 
+def test_collection_analysis_preserves_child_root_issue_without_wrapper(monkeypatch):
+    provider_id = uuid.uuid4()
+
+    class Registry:
+        state = {
+            "completed": 0,
+            "failed": 0,
+            "status": "running",
+            "error": None,
+        }
+        recorded = []
+
+        def get(self, _task_id):
+            return {
+                **self.state,
+                "issues": [
+                    {"code": "graph.empty", "provider_id": str(provider_id)},
+                ],
+            }
+
+        @staticmethod
+        def is_cancelled(_task_id):
+            return False
+
+        def incr(self, _task_id, field, by=1):
+            self.state[field] += by
+
+        @staticmethod
+        def append_output(_task_id, _chunk):
+            return None
+
+        def update(self, _task_id, **fields):
+            self.state.update(fields)
+
+        def set_done(self, _task_id):
+            self.state["status"] = "done"
+
+        def record_issue(self, _task_id, issue, **context):
+            self.recorded.append((issue, context))
+
+    monkeypatch.setattr(
+        task_execution,
+        "_run_collection_subtask",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("Provider analysis subprocess exited with code 1")
+        ),
+    )
+    monkeypatch.setattr(
+        task_execution,
+        "_mark_collection_provider_failed",
+        lambda *_: None,
+    )
+
+    registry = Registry()
+    task_execution._analyze_collection(
+        "parent-task",
+        {"provider_ids": [str(provider_id)]},
+        registry,
+    )
+
+    assert registry.recorded == []
+    assert registry.state == {
+        "completed": 1,
+        "failed": 1,
+        "status": "done",
+        "error": "Completed with 1 subtask failure.",
+    }
+
+
 def test_collection_subtask_timeout_terminates_process(monkeypatch):
     class Process:
         stdout = io.StringIO("")

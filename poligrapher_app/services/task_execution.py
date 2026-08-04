@@ -467,6 +467,16 @@ def _mark_collection_provider_failed(provider_id: uuid.UUID, message: str) -> No
             db.commit()
 
 
+def _task_has_provider_issue(task_id: str, provider_id: uuid.UUID, registry) -> bool:
+    """Return whether the isolated child already persisted a root issue."""
+
+    task = registry.get(task_id) or {}
+    return any(
+        str(issue.get("provider_id")) == str(provider_id)
+        for issue in task.get("issues", [])
+    )
+
+
 def _analyze_collection(task_id: str, payload: dict, registry) -> None:
     provider_ids = payload.get("provider_ids", [])
     task = registry.get(task_id) or {}
@@ -505,11 +515,14 @@ def _analyze_collection(task_id: str, payload: dict, registry) -> None:
                 )
         except Exception as exc:
             logger.exception("Collection analysis failed for provider %s", raw_id)
-            registry.record_issue(
-                task_id,
-                classify_failure(exc),
-                provider_id=provider_id,
-            )
+            if provider_id is None or not _task_has_provider_issue(
+                task_id, provider_id, registry
+            ):
+                registry.record_issue(
+                    task_id,
+                    classify_failure(exc),
+                    provider_id=provider_id,
+                )
             if provider_id is not None:
                 _mark_collection_provider_failed(provider_id, str(exc))
             registry.append_output(

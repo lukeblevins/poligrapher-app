@@ -487,11 +487,11 @@
       "cik": "1048286",
       "domain": "marriott.com.cn",
       "name": "Marriott International",
-      "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://www.marriott.com.cn/about/privacy.mi",
+      "source_checked_at": "2026-08-04T19:04:18+00:00",
+      "source_final_url": "https://www.marriott.com/about/us-consumer.mi",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.marriott.com.cn/about/privacy.mi",
+      "source_url": "https://www.marriott.com/about/us-consumer.mi",
       "tickers": [
         "MAR"
       ]
@@ -3974,11 +3974,11 @@
       "cik": "47217",
       "domain": "hp.com",
       "name": "HP Inc.",
-      "source_checked_at": "2026-07-28T05:46:10.194754",
-      "source_final_url": "https://www.hp.com/us-en/privacy/privacy.html",
+      "source_checked_at": "2026-08-04T19:04:18+00:00",
+      "source_final_url": "https://www.hp.com/us-en/privacy/ww-privacy.html",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.hp.com/us-en/privacy/privacy.html",
+      "source_url": "https://www.hp.com/us-en/privacy/ww-privacy.html",
       "tickers": [
         "HPQ"
       ]
