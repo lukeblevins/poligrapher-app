@@ -217,6 +217,11 @@ Container App revisions and the existing migration-job template.
 | Root-issue deduplication smoke test | Task `17006841-f5c2-4a5d-ad28-564aba140a33` | HP Inc. completed with one `graph.empty` root issue and its manual recovery actions; no redundant `execution.subprocess_failed` wrapper was emitted | 2026-08-04 15:26 EDT |
 | Comparison method isolation | `run_comparison`; `tests/test_comparison_persistence.py` | A failed website graph no longer discards a usable PDF-derived graph from the same comparison run | 2026-08-04 17:07 EDT |
 | Validation, comparison method isolation | `./.venv/bin/pytest -q`; `npm --prefix frontend run typecheck`; `npm --prefix frontend test -- --run`; `npm --prefix frontend run build`; `git diff --check` | Passed: 76 backend tests, 34 frontend tests, type check, production bundle, and whitespace validation | 2026-08-04 17:08 EDT |
+| Comparison method isolation deployment | GitHub Actions run `30951035439` | Both immutable image builds, real-secret what-if, Bicep deployment, migrations, and endpoint verification succeeded at `9d3a2e488214918c5a6b4d3b3717770461dd4c7c` | 2026-08-04 17:23 EDT |
+| Comparison method isolation live acceptance | Container Apps revision and migration execution | Revision `poligrapherc1de43-app--0000020` is healthy; migration execution `poligrapherc1de43-migrations-7ijj507` succeeded; web and worker use immutable `9d3a2e4` images | 2026-08-04 17:23 EDT |
+| Representative graph-empty recovery | Task `6f1a7d9b-9d3f-46a4-96d3-38fca261807b` | Eight completed; Mondelez International recovered by preserving its successful website graph while seven providers remained empty in both methods | 2026-08-04 17:33 EDT |
+| Remaining graph-empty class recovery | Task `c4a0ed7c-483a-4cd3-9c4c-9bb1e0c0a020` | 24 completed; ConocoPhillips, Genuine Parts Company, HP Inc., and PG&E Corporation recovered; 20 failed with standardized root issues | 2026-08-04 17:57 EDT |
+| S&P coverage reconciliation, comparison isolation | Production `/api/bulk/preview` for collection `4cac831c-a33d-438c-a0d5-55ee871418e9` | 500 providers, 425 already analyzed, and 75 still eligible; comparison isolation recovered 5 of the 32-company graph-empty class | 2026-08-04 17:57 EDT |
 
 **Validated by:** azure-validate workflow
 
@@ -234,6 +239,6 @@ Container App revisions and the existing migration-job template.
 
 ## 10. Next Step
 
-Continue curated remediation of the remaining 80 eligible companies. Validate
-official replacements with the application document checks before updating
-production, then use bounded retries and reconcile coverage after each batch.
+Audit the remaining 75 eligible companies by failure class. Run content-aware
+source preflight for acquisition and validation failures, apply only validated
+official replacements, then retry bounded class shards and reconcile coverage.
