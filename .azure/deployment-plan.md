@@ -1,6 +1,6 @@
 # Azure Deployment Plan
 
-> **Status:** Deployed
+> **Status:** Validated
 
 Generated: 2026-07-28
 
@@ -194,6 +194,14 @@ Container App revisions and the existing migration-job template.
 | S&P transient-subset recovery | Task `7b88d33c-cc1b-4b07-903f-c32c0dc1208e` | `partially_succeeded`: 46 completed, 2 recovered, and 44 failed with standardized root issues; Baker Hughes and Paccar now have analyses | 2026-08-03 21:41 EDT |
 | S&P coverage reconciliation | Production `/api/bulk/preview` for collection `4cac831c-a33d-438c-a0d5-55ee871418e9` | 500 providers, 411 already analyzed, and 89 still eligible; coverage increased from 409 to 411 | 2026-08-03 21:42 EDT |
 | Remaining recovery taxonomy | Production task issue summary | 23 `crawl.navigation_failed`, 11 `source.not_policy`, 5 `source.unsupported_language`, 4 `source.inaccessible`, and one provider with both `graph.empty` and `model.incompatible`; 44 wrapper `execution.subprocess_failed` issues preserve process diagnostics | 2026-08-03 21:42 EDT |
+| Curated source correction smoke test | Task `47031f78-bedd-415f-b04c-861ae2cec6fc` | `succeeded`: 5 completed and 0 failed after validated source corrections for Ares Management, FedEx, FedEx Freight, Paramount Skydance, and Qnity Electronics | 2026-08-04 12:46 EDT |
+| S&P coverage reconciliation, curated batch | Production `/api/bulk/preview` for collection `4cac831c-a33d-438c-a0d5-55ee871418e9` | 500 providers, 416 already analyzed, and 84 still eligible; coverage increased from 411 to 416 | 2026-08-04 12:47 EDT |
+| Backend suite, warning semantics and source catalog | `./.venv/bin/pytest -q` | 74 passed; model compatibility warnings remain diagnostic output and no longer create blocked issues on successful tasks | 2026-08-04 12:49 EDT |
+| Frontend validation, curated recovery release | `npm --prefix frontend run typecheck`; `npm --prefix frontend test -- --run`; `npm --prefix frontend run build` | Passed; 34 tests and production bundle built | 2026-08-04 12:50 EDT |
+| Bicep compilation, curated recovery release | `az bicep build --file infra/main.bicep --stdout` | Passed; SHA-256 `9f920f62bf6ed48ed91270fd3eed39d57495c310938573c700e17b5b5027504e` | 2026-08-04 12:48 EDT |
+| ARM provider validation, curated recovery release | `az deployment group validate` against `poligrapher-rg` | Succeeded; correlation `d34bc6f7-887f-41c0-961c-b3e89b4770ab` | 2026-08-04 12:49 EDT |
+| ARM what-if, curated recovery release | `az deployment group what-if --result-format ResourceIdOnly` | Succeeded; 15 existing resources deploy, 1 identity ignored, 0 deletes | 2026-08-04 12:49 EDT |
+| Static RBAC review, curated recovery release | `infra/main.bicep`; live app identity configuration | No managed identities or role assignments; app identity remains `None` and existing secret-backed access is unchanged | 2026-08-04 12:48 EDT |
 
 **Validated by:** azure-validate workflow
 
@@ -211,7 +219,7 @@ Container App revisions and the existing migration-job template.
 
 ## 10. Next Step
 
-Remediate the remaining 89 eligible companies from the task's named,
-actionable issue list. Replace or upload sources for manual failures; reserve
-retry/archive actions for acquisition failures, and investigate the single
-graph/model incompatibility before another bounded bulk run.
+Deploy the durable five-source catalog correction and warning-only model
+diagnostic semantics, verify the worker no longer records a blocked issue on a
+successful smoke run, then continue curated remediation of the remaining 84
+eligible companies.

@@ -14,15 +14,16 @@ from poligrapher_app.services.tasks import TaskRegistry
 logger = logging.getLogger(__name__)
 
 
-def _record_model_warnings(registry: TaskRegistry, task_id: str, caught) -> None:
+def _log_model_warnings(caught) -> None:
     messages = "\n".join(str(item.message) for item in caught)
     if any(
         marker in messages
         for marker in ("[W095]", "[W113]", "strict=True", "retrain your custom model")
     ):
-        issue = classify_failure(f"Model incompatible with runtime: {messages}")
-        issue["severity"] = "warning"
-        registry.record_issue(task_id, issue)
+        logger.warning(
+            "Model compatibility warnings were observed, but they are not a "
+            "task failure unless model loading or analysis raises an exception."
+        )
 
 
 def main() -> int:
@@ -45,7 +46,7 @@ def main() -> int:
         try:
             result = analyze_collection_provider(provider_id, task_id, registry)
         except Exception as exc:  # noqa: BLE001
-            _record_model_warnings(registry, task_id, caught)
+            _log_model_warnings(caught)
             registry.record_issue(
                 task_id,
                 classify_failure(exc),
@@ -53,7 +54,7 @@ def main() -> int:
             )
             logger.exception("Collection subtask failed for provider %s", provider_id)
             return 1
-    _record_model_warnings(registry, task_id, caught)
+    _log_model_warnings(caught)
 
     if result in ("ok", "unchanged"):
         return 0

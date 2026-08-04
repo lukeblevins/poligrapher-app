@@ -4,6 +4,7 @@ import logging
 import sys
 import tomllib
 import uuid
+import warnings
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -14,10 +15,24 @@ from sqlalchemy.orm import sessionmaker
 from poligrapher_app.api.database import Base
 from poligrapher_app.api.models import TaskRecord
 from poligrapher_app.api.routers.analysis import get_task_output
+from poligrapher_app import collection_subtask
 from poligrapher_app.services import task_execution
 from poligrapher_app.services import tasks as task_module
 from poligrapher_app.services.task_execution import execute_task
 from poligrapher_app.services.task_output import _TaskLogSink, capture_task_output
+
+
+def test_model_compatibility_warning_is_diagnostic_not_task_issue(caplog):
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.warn(
+            "[W095] Model was trained with an older spaCy version",
+            UserWarning,
+        )
+
+    with caplog.at_level(logging.WARNING):
+        collection_subtask._log_model_warnings(caught)
+
+    assert "not a task failure" in caplog.text
 
 
 class FakeQueue:

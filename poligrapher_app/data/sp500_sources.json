@@ -513,11 +513,11 @@
       "cik": "1048911",
       "domain": "fedex.com",
       "name": "FedEx",
-      "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://www.fedex.com/en-fr/privacy-policy.html",
+      "source_checked_at": "2026-08-04T16:37:12Z",
+      "source_final_url": "https://www.fedex.com/en-us/trust-center/privacy.html",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.fedex.com/en-fr/privacy-policy.html",
+      "source_url": "https://www.fedex.com/en-us/trust-center/privacy.html",
       "tickers": [
         "FDX"
       ]
@@ -1408,13 +1408,13 @@
     },
     {
       "cik": "1176948",
-      "domain": null,
+      "domain": "ares.com",
       "name": "Ares Management",
-      "source_checked_at": "2026-07-28T05:46:10.194754",
-      "source_final_url": "https://www.ares.com",
+      "source_checked_at": "2026-08-04T16:37:12Z",
+      "source_final_url": "https://www.ares.com/us/privacy-policy",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.ares.com",
+      "source_url": "https://www.ares.com/us/privacy-policy",
       "tickers": [
         "ARES"
       ]
@@ -3231,39 +3231,39 @@
     },
     {
       "cik": "2041610",
-      "domain": null,
+      "domain": "viacomcbsprivacy.com",
       "name": "Paramount Skydance Corporation",
-      "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://www.viacomcbsprivacy.com/fr/policy",
+      "source_checked_at": "2026-08-04T16:37:12Z",
+      "source_final_url": "https://www.viacomcbsprivacy.com/en/policy",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.viacomcbsprivacy.com/fr/policy",
+      "source_url": "https://www.viacomcbsprivacy.com/en/policy",
       "tickers": [
         "PSKY"
       ]
     },
     {
       "cik": "2058873",
-      "domain": null,
+      "domain": "qnityelectronics.com",
       "name": "Qnity Electronics",
-      "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://qnity.com/terms-conditions",
+      "source_checked_at": "2026-08-04T16:37:12Z",
+      "source_final_url": "https://ir.qnityelectronics.com/privacy-policy",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://qnity.com/terms-conditions",
+      "source_url": "https://ir.qnityelectronics.com/privacy-policy",
       "tickers": [
         "Q"
       ]
     },
     {
       "cik": "2082247",
-      "domain": null,
+      "domain": "fedex.com",
       "name": "FedEx Freight",
-      "source_checked_at": "2026-07-28T05:46:10.194754",
-      "source_final_url": "https://www.fedex.com/en-fr/privacy-policy.html",
+      "source_checked_at": "2026-08-04T16:37:12Z",
+      "source_final_url": "https://www.fedex.com/en-us/trust-center/privacy.html",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.fedex.com/en-fr/privacy-policy.html",
+      "source_url": "https://www.fedex.com/en-us/trust-center/privacy.html",
       "tickers": [
         "FDXF"
       ]
