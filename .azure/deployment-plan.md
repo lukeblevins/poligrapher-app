@@ -1,6 +1,6 @@
 # Azure Deployment Plan
 
-> **Status:** Validated
+> **Status:** Deployed
 
 Generated: 2026-07-28
 
@@ -202,6 +202,10 @@ Container App revisions and the existing migration-job template.
 | ARM provider validation, curated recovery release | `az deployment group validate` against `poligrapher-rg` | Succeeded; correlation `d34bc6f7-887f-41c0-961c-b3e89b4770ab` | 2026-08-04 12:49 EDT |
 | ARM what-if, curated recovery release | `az deployment group what-if --result-format ResourceIdOnly` | Succeeded; 15 existing resources deploy, 1 identity ignored, 0 deletes | 2026-08-04 12:49 EDT |
 | Static RBAC review, curated recovery release | `infra/main.bicep`; live app identity configuration | No managed identities or role assignments; app identity remains `None` and existing secret-backed access is unchanged | 2026-08-04 12:48 EDT |
+| Curated recovery production deployment | GitHub Actions run `30931110947` | Both immutable image builds, real-secret what-if, Bicep deployment, migrations, and endpoint verification succeeded at `46c3b581b831ac595b3b1f685fce5c67b18e9143` | 2026-08-04 13:07 EDT |
+| Curated recovery live acceptance | Container Apps revision and migration execution | Revision `poligrapherc1de43-app--0000018` and migration execution `poligrapherc1de43-migrations-8y7k1y6` report `Succeeded`; app and worker use immutable `46c3b58` images | 2026-08-04 13:07 EDT |
+| Warning-semantics production smoke test | Task `b2635d1a-c07c-4441-a3e1-6c82aa4b3d65` | Ares Management completed with outcome `succeeded`, 1 complete, 0 failed, and an empty issue list | 2026-08-04 13:10 EDT |
+| Live role verification, curated recovery release | Container App identity configuration | App identity is `None`; managed-identity role verification is not applicable and existing secret-backed connections remain unchanged | 2026-08-04 13:07 EDT |
 
 **Validated by:** azure-validate workflow
 
@@ -219,7 +223,6 @@ Container App revisions and the existing migration-job template.
 
 ## 10. Next Step
 
-Deploy the durable five-source catalog correction and warning-only model
-diagnostic semantics, verify the worker no longer records a blocked issue on a
-successful smoke run, then continue curated remediation of the remaining 84
-eligible companies.
+Continue curated remediation of the remaining 84 eligible companies. Validate
+official replacements with the application document checks before updating
+production, then use bounded retries and reconcile coverage after each batch.
