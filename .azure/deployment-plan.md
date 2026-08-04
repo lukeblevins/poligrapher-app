@@ -183,6 +183,12 @@ Container App revisions and the existing migration-job template.
 | ARM what-if, post-navigation archive fallback | `az deployment group what-if --result-format ResourceIdOnly` | Succeeded; 15 existing resources deploy, 1 identity ignored, 0 deletes | 2026-08-03 20:29 EDT |
 | Static RBAC review, post-navigation archive fallback | `infra/main.bicep`; application storage and queue clients | No managed identities or role assignments; existing secret-backed connections unchanged | 2026-08-03 20:29 EDT |
 | Diff validation, post-navigation archive fallback | `git diff --check` | Passed | 2026-08-03 20:29 EDT |
+| Browser-replay fallback deployment | GitHub Actions run `30865789761` | Both immutable image builds, real-secret what-if, Bicep deployment, migrations, and endpoint verification succeeded at `6330bf7b41dd8d497fa4df4afd36427d45a42d49` | 2026-08-03 20:44 EDT |
+| Browser-replay live acceptance | Container Apps revision and migration execution | Revision `poligrapherc1de43-app--0000016` and migration execution `poligrapherc1de43-migrations-sh228a7` report `Succeeded`; app and worker use immutable `6330bf7` images | 2026-08-03 20:45 EDT |
+| Browser-replay recovery finding | Task `159a42b0-4aa3-44dd-9203-f7b401892070`; task output | Fallback executed, but Azure timed out on Wayback browser replay; task cancelled after preserving 5 terminal failures | 2026-08-03 20:48 EDT |
+| Raw archive acquisition check | `fetch_wayback` against Delta Air Lines configured source | Returned 80,679 characters with privacy and personal-information markers | 2026-08-03 20:48 EDT |
+| Backend suite, materialized archive fallback | `./.venv/bin/pytest -q` | 73 passed, including raw-archive precedence and temporary-file cleanup | 2026-08-03 20:49 EDT |
+| Diff validation, materialized archive fallback | `git diff --check` | Passed | 2026-08-03 20:49 EDT |
 
 **Validated by:** azure-validate workflow
 

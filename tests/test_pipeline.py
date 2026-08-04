@@ -26,6 +26,7 @@ def test_live_navigation_dead_end_retries_once_from_wayback(monkeypatch, tmp_pat
         "wayback_snapshot_url",
         lambda url, raw: archive_url if url == live_url and raw is False else None,
     )
+    monkeypatch.setattr(pipeline, "fetch_wayback", lambda _url: "")
 
     def crawl(path, _staging, pdf_output=None):
         crawled.append((path, pdf_output is not None))
@@ -57,6 +58,7 @@ def test_validation_failure_does_not_try_archive(monkeypatch, tmp_path):
         "wayback_snapshot_url",
         lambda *args, **kwargs: archive_lookups.append((args, kwargs)),
     )
+    monkeypatch.setattr(pipeline, "fetch_wayback", lambda _url: "")
     monkeypatch.setattr(
         html_crawler,
         "main",
@@ -87,6 +89,7 @@ def test_archive_navigation_dead_end_is_not_retried(monkeypatch, tmp_path):
         "wayback_snapshot_url",
         lambda *args, **kwargs: archive_lookups.append((args, kwargs)),
     )
+    monkeypatch.setattr(pipeline, "fetch_wayback", lambda _url: "")
     monkeypatch.setattr(
         html_crawler,
         "main",
@@ -109,3 +112,42 @@ def test_archive_navigation_dead_end_is_not_retried(monkeypatch, tmp_path):
         raise AssertionError("expected the archive crawl failure to propagate")
 
     assert archive_lookups == []
+
+
+def test_live_navigation_dead_end_prefers_materialized_wayback_html(monkeypatch, tmp_path):
+    live_url = "https://example.com/privacy"
+    archived_html = "<html><body>Example privacy policy</body></html>"
+    crawled = []
+    snapshot_lookups = []
+
+    monkeypatch.setattr(pipeline, "test_document_url", lambda _url: True)
+    monkeypatch.setattr(pipeline, "fetch_wayback", lambda url: archived_html if url == live_url else "")
+    monkeypatch.setattr(
+        pipeline,
+        "wayback_snapshot_url",
+        lambda *args, **kwargs: snapshot_lookups.append((args, kwargs)),
+    )
+
+    def crawl(path, _staging, pdf_output=None):
+        if path == live_url:
+            raise RuntimeError(
+                "html_crawler failure: Chromium navigation failed and the HTTP source "
+                "fallback was unavailable"
+            )
+        with open(path, encoding="utf-8") as archived_file:
+            assert archived_file.read() == archived_html
+        crawled.append((path, pdf_output is not None))
+
+    monkeypatch.setattr(html_crawler, "main", crawl)
+    _stub_remaining_stages(monkeypatch)
+
+    output = tmp_path / "output"
+    pipeline.generate_graph_from_html(
+        live_url, str(output), capture_pdf=False, emit_pdf=True
+    )
+
+    assert len(crawled) == 1
+    assert crawled[0][1] is True
+    assert not (tmp_path / crawled[0][0]).exists()
+    assert not list(tmp_path.glob("poligrapher-wayback-*.html"))
+    assert snapshot_lookups == []

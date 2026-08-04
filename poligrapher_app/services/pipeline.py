@@ -8,6 +8,7 @@ import logging
 import os
 import shutil
 import sys
+import tempfile
 import urllib.parse
 import uuid
 from contextlib import contextmanager
@@ -20,6 +21,7 @@ from poligrapher_app.domain.policy_analysis import (
 )
 from poligrapher_app.services.acquisition import (
     crawl_proxy_mode,
+    fetch_wayback,
     httpx_proxy,
     open_client,
     wayback_snapshot_url,
@@ -333,6 +335,39 @@ def generate_graph_from_html(
             and not _archive_fallback_attempted
             and _should_retry_crawl_from_archive(path, exc)
         ):
+            archived_html = fetch_wayback(path)
+            if archived_html:
+                parent = os.path.dirname(output_folder) or None
+                if parent:
+                    os.makedirs(parent, exist_ok=True)
+                with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    encoding="utf-8",
+                    prefix="poligrapher-wayback-",
+                    suffix=".html",
+                    dir=parent,
+                    delete=False,
+                ) as archived_file:
+                    archived_file.write(archived_html)
+                    archived_path = archived_file.name
+                logger.warning(
+                    "Live Chromium crawl failed; retrying once from materialized Wayback HTML: %s",
+                    path,
+                )
+                try:
+                    return generate_graph_from_html(
+                        archived_path,
+                        output_folder,
+                        capture_pdf=False,
+                        should_cancel=should_cancel,
+                        emit_pdf=emit_pdf,
+                        _archive_fallback_attempted=True,
+                    )
+                finally:
+                    try:
+                        os.unlink(archived_path)
+                    except FileNotFoundError:
+                        pass
             snapshot = wayback_snapshot_url(path, raw=False)
             if snapshot and snapshot != path:
                 logger.warning(
