@@ -1,6 +1,6 @@
 # Azure Deployment Plan
 
-> **Status:** Validated
+> **Status:** Deployed
 
 Generated: 2026-07-28
 
@@ -189,6 +189,11 @@ Container App revisions and the existing migration-job template.
 | Raw archive acquisition check | `fetch_wayback` against Delta Air Lines configured source | Returned 80,679 characters with privacy and personal-information markers | 2026-08-03 20:48 EDT |
 | Backend suite, materialized archive fallback | `./.venv/bin/pytest -q` | 73 passed, including raw-archive precedence and temporary-file cleanup | 2026-08-03 20:49 EDT |
 | Diff validation, materialized archive fallback | `git diff --check` | Passed | 2026-08-03 20:49 EDT |
+| Materialized archive fallback deployment | GitHub Actions run `30866837764` | Both immutable image builds, real-secret what-if, Bicep deployment, migrations, and endpoint verification succeeded at `b83a948e802a5e1464e05e5d1bf53713557b3fc8` | 2026-08-03 21:04 EDT |
+| Materialized archive live acceptance | Container Apps revision and migration execution | Revision `poligrapherc1de43-app--0000017` and migration execution `poligrapherc1de43-migrations-4nfpjxc` report `Succeeded`; app and worker use immutable `b83a948` images | 2026-08-03 21:04 EDT |
+| S&P transient-subset recovery | Task `7b88d33c-cc1b-4b07-903f-c32c0dc1208e` | `partially_succeeded`: 46 completed, 2 recovered, and 44 failed with standardized root issues; Baker Hughes and Paccar now have analyses | 2026-08-03 21:41 EDT |
+| S&P coverage reconciliation | Production `/api/bulk/preview` for collection `4cac831c-a33d-438c-a0d5-55ee871418e9` | 500 providers, 411 already analyzed, and 89 still eligible; coverage increased from 409 to 411 | 2026-08-03 21:42 EDT |
+| Remaining recovery taxonomy | Production task issue summary | 23 `crawl.navigation_failed`, 11 `source.not_policy`, 5 `source.unsupported_language`, 4 `source.inaccessible`, and one provider with both `graph.empty` and `model.incompatible`; 44 wrapper `execution.subprocess_failed` issues preserve process diagnostics | 2026-08-03 21:42 EDT |
 
 **Validated by:** azure-validate workflow
 
@@ -206,5 +211,7 @@ Container App revisions and the existing migration-job template.
 
 ## 10. Next Step
 
-Deploy the post-navigation archive fallback, then rerun the remaining eligible
-S&P 500 companies and measure recovered coverage before changing any sources.
+Remediate the remaining 89 eligible companies from the task's named,
+actionable issue list. Replace or upload sources for manual failures; reserve
+retry/archive actions for acquisition failures, and investigate the single
+graph/model incompatibility before another bounded bulk run.
