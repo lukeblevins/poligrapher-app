@@ -1,6 +1,6 @@
 # Azure Deployment Plan
 
-> **Status:** Deployed
+> **Status:** Validated
 
 Generated: 2026-07-28
 
@@ -176,10 +176,17 @@ Container App revisions and the existing migration-job template.
 | Actionable cohort recovery deployment | GitHub Actions run `30547050188` | Both immutable image builds, real-secret what-if, Bicep deployment, migrations, and endpoint verification succeeded at `0ecff136273896f07408e50bbea580c735042f1e` | 2026-07-30 09:40 EDT |
 | Actionable cohort recovery live acceptance | Container Apps revision and production task API | Revision `poligrapherc1de43-app--0000015` is `Succeeded`; task issues resolve affected provider IDs to company names | 2026-07-30 09:41 EDT |
 | Transient-only S&P retry | Task `6078146a-7be2-473b-b321-7518af6ec649` | Queued exactly 47 companies with transient-only error sets; worker claimed the task | 2026-07-30 09:42 EDT |
+| Backend suite, post-navigation archive fallback | `./.venv/bin/pytest -q` | 72 passed, including bounded archive-fallback regression coverage | 2026-08-03 20:28 EDT |
+| Frontend validation, post-navigation archive fallback | `npm --prefix frontend run typecheck`; `npm --prefix frontend test -- --run`; `npm --prefix frontend run build` | Passed; 34 tests and production bundle built | 2026-08-03 20:28 EDT |
+| Bicep compilation, post-navigation archive fallback | `az bicep build --file infra/main.bicep --stdout` | Passed; unchanged template hash `11706172348469164637` | 2026-08-03 20:28 EDT |
+| ARM provider validation, post-navigation archive fallback | `az deployment group validate` against `poligrapher-rg` | Succeeded; correlation `0f4c75e7-f10e-4ead-940a-9a2e2c9e6c88` | 2026-08-03 20:29 EDT |
+| ARM what-if, post-navigation archive fallback | `az deployment group what-if --result-format ResourceIdOnly` | Succeeded; 15 existing resources deploy, 1 identity ignored, 0 deletes | 2026-08-03 20:29 EDT |
+| Static RBAC review, post-navigation archive fallback | `infra/main.bicep`; application storage and queue clients | No managed identities or role assignments; existing secret-backed connections unchanged | 2026-08-03 20:29 EDT |
+| Diff validation, post-navigation archive fallback | `git diff --check` | Passed | 2026-08-03 20:29 EDT |
 
 **Validated by:** azure-validate workflow
 
-**Validation timestamp:** 2026-07-30
+**Validation timestamp:** 2026-08-03 20:29 EDT
 
 ## 9. Files
 
@@ -193,6 +200,5 @@ Container App revisions and the existing migration-job template.
 
 ## 10. Next Step
 
-Monitor new production analyses for newly classified issue codes. Historical
-tasks are intentionally not backfilled, so failures created before this release
-may continue to display the legacy unclassified recommendation.
+Deploy the post-navigation archive fallback, then rerun the remaining eligible
+S&P 500 companies and measure recovered coverage before changing any sources.

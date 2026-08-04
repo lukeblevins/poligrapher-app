@@ -175,12 +175,40 @@ def resolve_crawl_url(url: str) -> str:
     raise FileNotFoundError(f"Document is not accessible or does not exist: {url}")
 
 
+def _is_wayback_url(url: str) -> bool:
+    try:
+        hostname = (urllib.parse.urlparse(url).hostname or "").casefold()
+    except Exception:
+        return False
+    return hostname == "web.archive.org" or hostname.endswith(".web.archive.org")
+
+
+def _should_retry_crawl_from_archive(path: str, error: BaseException) -> bool:
+    """Return whether a live website crawl hit the known navigation dead end.
+
+    Keep this deliberately narrow: validation, extraction, cancellation, and
+    arbitrary browser errors must retain their original failure semantics.
+    """
+    try:
+        parsed = urllib.parse.urlparse(path)
+    except Exception:
+        return False
+    detail = str(error).casefold()
+    return (
+        parsed.scheme in ("http", "https")
+        and not _is_wayback_url(path)
+        and "chromium navigation failed" in detail
+        and "http source fallback was unavailable" in detail
+    )
+
+
 def generate_graph_from_html(
     path: str,
     output_folder: str,
     capture_pdf: bool,
     should_cancel: Callable[[], bool] | None = None,
     emit_pdf: bool = False,
+    _archive_fallback_attempted: bool = False,
 ) -> None:
     """Run the PoliGraph pipeline stages for a single input into output_folder.
 
@@ -216,7 +244,11 @@ def generate_graph_from_html(
     else:
         # Website crawl: fall back to an archived snapshot when the live site is
         # unreachable or bot-blocked, so a transient block doesn't fail the run.
-        path = resolve_crawl_url(path)
+        # A post-navigation retry already came from the Wayback availability
+        # API. Do not reject that snapshot with the lightweight reachability
+        # probe that archived pages are known to time out on.
+        if not (_archive_fallback_attempted and _is_wayback_url(path)):
+            path = resolve_crawl_url(path)
         logger.info("Resolved crawlable source: %s", path)
 
     def _cancelled() -> bool:
@@ -294,8 +326,28 @@ def generate_graph_from_html(
             raise PipelineCancelled("Cancelled before finalizing output")
 
         _swap_into_place(staging, output_folder)
-    except BaseException:
+    except BaseException as exc:
         shutil.rmtree(staging, ignore_errors=True)
+        if (
+            not capture_pdf
+            and not _archive_fallback_attempted
+            and _should_retry_crawl_from_archive(path, exc)
+        ):
+            snapshot = wayback_snapshot_url(path, raw=False)
+            if snapshot and snapshot != path:
+                logger.warning(
+                    "Live Chromium crawl failed; retrying once from Wayback: %s -> %s",
+                    path,
+                    snapshot,
+                )
+                return generate_graph_from_html(
+                    snapshot,
+                    output_folder,
+                    capture_pdf=False,
+                    should_cancel=should_cancel,
+                    emit_pdf=emit_pdf,
+                    _archive_fallback_attempted=True,
+                )
         raise
 
     logger.info("Completed PoliGraph pipeline for %s", output_folder)
