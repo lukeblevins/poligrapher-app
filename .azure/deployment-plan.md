@@ -215,6 +215,8 @@ Container App revisions and the existing migration-job template.
 | Root-failure preservation deployment | GitHub Actions run `30941797226` | Both immutable image builds, real-secret what-if, Bicep deployment, migrations, and endpoint verification succeeded at `4cd90f81942c49a8d809ab2a9d1c6cd56c0a93e9` | 2026-08-04 15:23 EDT |
 | Root-failure preservation live acceptance | Container Apps revision and migration execution | Revision `poligrapherc1de43-app--0000019` is healthy; migration execution `poligrapherc1de43-migrations-5zundmi` succeeded; web and worker use immutable `4cd90f8` images | 2026-08-04 15:24 EDT |
 | Root-issue deduplication smoke test | Task `17006841-f5c2-4a5d-ad28-564aba140a33` | HP Inc. completed with one `graph.empty` root issue and its manual recovery actions; no redundant `execution.subprocess_failed` wrapper was emitted | 2026-08-04 15:26 EDT |
+| Comparison method isolation | `run_comparison`; `tests/test_comparison_persistence.py` | A failed website graph no longer discards a usable PDF-derived graph from the same comparison run | 2026-08-04 17:07 EDT |
+| Validation, comparison method isolation | `./.venv/bin/pytest -q`; `npm --prefix frontend run typecheck`; `npm --prefix frontend test -- --run`; `npm --prefix frontend run build`; `git diff --check` | Passed: 76 backend tests, 34 frontend tests, type check, production bundle, and whitespace validation | 2026-08-04 17:08 EDT |
 
 **Validated by:** azure-validate workflow
 

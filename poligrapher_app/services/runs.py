@@ -65,6 +65,36 @@ def _mark_failed(policies, db, message: str) -> None:
     db.commit()
 
 
+def _persist_generated_method(
+    policy,
+    doc,
+    archive_path: Path,
+    db,
+    *,
+    record_content_hash: bool = False,
+) -> Exception | None:
+    """Persist one comparison method without discarding its sibling result."""
+
+    from poligrapher_app.services.persistence import persist_workspace
+
+    try:
+        _score(policy, db, doc)
+        persist_workspace(policy, doc, archive_path)
+        if record_content_hash:
+            policy.content_hash = _website_text_hash(policy, db, doc)
+        db.commit()
+        return None
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        _mark_failed([policy], db, f"{policy.method} failed: {exc}")
+        logger.warning(
+            "Comparison method %s failed while preserving sibling results: %s",
+            policy.method,
+            exc,
+        )
+        return exc
+
+
 def run_comparison(
     provider_id, *, scheduled: bool, registry=None, task_id=None, link_task: bool = True
 ) -> str:
@@ -77,7 +107,6 @@ def run_comparison(
     from poligrapher_app.services.acquisition import PolicySourceResolver
     from poligrapher_app.services.pipeline import PipelineCancelled, generate_comparison
     from poligrapher_app.domain.policy_analysis import DocumentCaptureSource, PolicyDocumentInfo
-    from poligrapher_app.services.persistence import persist_workspace
 
     should_cancel = (lambda: registry.is_cancelled(task_id)) if (task_id and registry) else None
     db = SessionLocal()
@@ -144,13 +173,31 @@ def run_comparison(
                                              day, False)
                 pdf_doc = PolicyDocumentInfo(str(web_dir / "output.pdf"), str(pdf_dir),
                                              DocumentCaptureSource.PDF, day, False)
-                _score(website, db, web_doc)
-                _score(pdf, db, pdf_doc)
-                persist_workspace(website, web_doc, Path(workspace) / "website.zip")
-                persist_workspace(pdf, pdf_doc, Path(workspace) / "pdf.zip")
-                website.content_hash = _website_text_hash(website, db, web_doc)
-                db.commit()
-                return "ok"
+                failures = [
+                    error
+                    for error in (
+                        _persist_generated_method(
+                            website,
+                            web_doc,
+                            Path(workspace) / "website.zip",
+                            db,
+                            record_content_hash=True,
+                        ),
+                        _persist_generated_method(
+                            pdf,
+                            pdf_doc,
+                            Path(workspace) / "pdf.zip",
+                            db,
+                        ),
+                    )
+                    if error is not None
+                ]
+                if len(failures) < 2:
+                    return "ok"
+                raise RuntimeError(
+                    "Both comparison methods failed: "
+                    + "; ".join(str(error) for error in failures)
+                )
             except PipelineCancelled:
                 db.rollback()
                 _mark_failed([website, pdf], db, "Run cancelled")
