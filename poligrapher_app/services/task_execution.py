@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import subprocess
@@ -147,6 +148,8 @@ def execute_task(task_id: str, registry) -> bool:
                 _retention_cleanup(task_id, payload, registry)
             elif kind == "source-verification":
                 _verify_sources(task_id, payload, registry)
+            elif kind == "cohort-source-audit":
+                _audit_cohort_sources(task_id, payload, registry)
             elif kind == "collection-analysis":
                 _analyze_collection(task_id, payload, registry)
             elif kind == "schedule":
@@ -401,6 +404,40 @@ def _verify_sources(task_id: str, payload: dict, registry) -> None:
             should_cancel=lambda: registry.is_cancelled(task_id),
         )
     registry.set_cancelled(task_id) if registry.is_cancelled(task_id) else registry.set_done(task_id)
+
+
+def _audit_cohort_sources(task_id: str, payload: dict, registry) -> None:
+    from poligrapher_app.api.database import SessionLocal
+    from poligrapher_app.services.cohort_audit import (
+        audit_source_targets,
+        source_audit_targets,
+    )
+
+    provider_ids = [uuid.UUID(value) for value in payload.get("provider_ids", [])]
+    with SessionLocal() as db:
+        targets = source_audit_targets(db, provider_ids)
+
+    def record_result(result: dict) -> None:
+        registry.append_output(task_id, json.dumps(result, sort_keys=True) + "\n")
+        registry.incr(task_id, "completed")
+        if result["status"] == "audit_error":
+            registry.incr(task_id, "failed")
+
+    counts = audit_source_targets(
+        targets,
+        on_result=record_result,
+        should_cancel=lambda: registry.is_cancelled(task_id),
+    )
+    registry.append_output(task_id, "AUDIT SUMMARY: " + json.dumps(counts, sort_keys=True) + "\n")
+    if registry.is_cancelled(task_id):
+        registry.set_cancelled(task_id)
+        return
+    if counts["audit_error"]:
+        registry.update(
+            task_id,
+            error=f"Completed with {counts['audit_error']} source audit error(s).",
+        )
+    registry.set_done(task_id)
 
 
 def analyze_collection_provider(provider_id: uuid.UUID, task_id: str, registry) -> str:

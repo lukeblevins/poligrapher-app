@@ -14,6 +14,7 @@ from poligrapher_app.api.schemas import (
     TaskStatus,
 )
 from poligrapher_app.services.sp500_catalog import sync_sp500
+from poligrapher_app.services.cohort_audit import source_audit_targets
 
 router = APIRouter(prefix="/api/collections", tags=["collections"])
 Db = Annotated[Session, Depends(get_db)]
@@ -124,6 +125,31 @@ def verify_collection_sources(collection_id: uuid.UUID, request: Request, db: Db
         "kind": "source-verification",
         "provider_ids": [str(provider_id) for provider_id in provider_ids],
     })
+    return TaskStatus(**registry.get(task_id))
+
+
+@router.post("/{collection_id}/audit-failures", response_model=TaskStatus)
+def audit_collection_failures(collection_id: uuid.UUID, request: Request, db: Db):
+    """Queue a read-only, content-aware audit of unresolved source failures."""
+
+    collection = db.get(CompanyCollection, collection_id)
+    if collection is None:
+        raise HTTPException(status_code=404, detail="Collection not found")
+    provider_ids = [provider.id for provider in collection.providers]
+    targets = source_audit_targets(db, provider_ids)
+    registry = request.app.state.tasks
+    task_id = registry.create(
+        kind="cohort-source-audit",
+        title=f"Audit {len(targets)} failed company sources",
+        total=len(targets),
+    )
+    registry.enqueue(
+        task_id,
+        {
+            "kind": "cohort-source-audit",
+            "provider_ids": [str(target.provider_id) for target in targets],
+        },
+    )
     return TaskStatus(**registry.get(task_id))
 
 

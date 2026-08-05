@@ -222,6 +222,8 @@ Container App revisions and the existing migration-job template.
 | Representative graph-empty recovery | Task `6f1a7d9b-9d3f-46a4-96d3-38fca261807b` | Eight completed; Mondelez International recovered by preserving its successful website graph while seven providers remained empty in both methods | 2026-08-04 17:33 EDT |
 | Remaining graph-empty class recovery | Task `c4a0ed7c-483a-4cd3-9c4c-9bb1e0c0a020` | 24 completed; ConocoPhillips, Genuine Parts Company, HP Inc., and PG&E Corporation recovered; 20 failed with standardized root issues | 2026-08-04 17:57 EDT |
 | S&P coverage reconciliation, comparison isolation | Production `/api/bulk/preview` for collection `4cac831c-a33d-438c-a0d5-55ee871418e9` | 500 providers, 425 already analyzed, and 75 still eligible; comparison isolation recovered 5 of the 32-company graph-empty class | 2026-08-04 17:57 EDT |
+| Content-aware cohort source audit | `POST /api/collections/{collection_id}/audit-failures`; `cohort-source-audit` worker task | Read-only audit selects unresolved source-related root failures, validates current policy content, and records only application-validated replacement candidates | 2026-08-04 21:41 EDT |
+| Validation, cohort source audit | `./.venv/bin/pytest -q`; `npm --prefix frontend run typecheck`; `npm --prefix frontend test -- --run`; `npm --prefix frontend run build`; `git diff --check` | Passed: 78 backend tests, 34 frontend tests, type check, production bundle, and whitespace validation | 2026-08-04 21:42 EDT |
 
 **Validated by:** azure-validate workflow
 
