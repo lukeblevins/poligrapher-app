@@ -4534,10 +4534,10 @@
       "domain": "cintas.com",
       "name": "Cintas",
       "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://www.cintas.com/privacy/",
+      "source_final_url": "https://www.cintas.com/privacy/general-privacy-policy/",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.cintas.com/privacy/",
+      "source_url": "https://www.cintas.com/privacy/general-privacy-policy/",
       "tickers": [
         "CTAS"
       ]

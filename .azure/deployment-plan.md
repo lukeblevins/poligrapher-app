@@ -248,10 +248,13 @@ Container App revisions and the existing migration-job template.
 | Validation, graph-empty source recovery | `./.venv/bin/pytest -q`; JSON catalog parse; `git diff --check` | Passed: 80 backend tests, durable source catalog validation, and whitespace validation | 2026-08-04 23:49 EDT |
 | Graph-empty source recovery deployment | GitHub Actions run `30973475374` | Both immutable image builds, real-secret preview, Azure deployment, durable source import, migrations, and endpoint verification succeeded at `6eb27a7a6cedbdf7de566c0120113da61adfab0b` | 2026-08-05 00:03 EDT |
 | Graph-empty source recovery live acceptance | Container Apps revision, worker job, migration execution, source API, and graph-aware preview | Revision `poligrapherc1de43-app--0000023` is healthy; migration `poligrapherc1de43-migrations-xjq8omf` succeeded; web and worker use immutable `6eb27a7` images; all seven curated URLs are live; coverage is 439/500 | 2026-08-05 00:04 EDT |
+| Full unresolved-cohort audit | Task `418025b3-ed45-42cf-8077-108e37d4935f` | `succeeded`: 61 checked, 10 current sources valid, 26 nominal replacements, 14 review-required candidates, 11 unresolved, and 0 audit errors; manual scope review excluded investor, product, regional, employment, event, search, and lookalike-domain false positives | 2026-08-05 00:14 EDT |
+| Content-bearing graph-empty batch | Task `e4ebf384-cfbc-4caf-afad-9a79b4f52ac3` | `partially_succeeded`: Cintas recovered through its official general-policy representation; Yum! Brands retained `graph.empty`, and its experimental query-parameter source was reverted | 2026-08-05 00:22 EDT |
+| S&P coverage reconciliation, full audit | Production graph-aware preview and latest root-issue summary | 440 analyzed and 60 eligible; remaining taxonomy is 20 `crawl.navigation_failed`, 18 `graph.empty`, 9 `source.inaccessible`, 7 `source.not_policy`, 4 `source.unsupported_language`, and 2 `pdf.invalid_source` | 2026-08-05 00:23 EDT |
 
 **Validated by:** azure-validate workflow
 
-**Validation timestamp:** 2026-08-05 00:04 EDT
+**Validation timestamp:** 2026-08-05 00:23 EDT
 
 ## 9. Files
 
@@ -265,7 +268,7 @@ Container App revisions and the existing migration-job template.
 
 ## 10. Next Step
 
-Address the remaining 61 eligible companies by failure class. Treat the 19
+Address the remaining 60 eligible companies by failure class. Treat the 18
 `graph.empty` companies as source-representation failures unless a direct crawl
 proves otherwise, and investigate the 42 acquisition failures with reviewed,
 content-bearing official sources rather than automatic retries.
