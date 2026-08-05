@@ -239,6 +239,8 @@ Container App revisions and the existing migration-job template.
 | S&P coverage reconciliation, source audit | Production graph-aware preview and latest root-issue summary | 434 analyzed and 66 eligible; remaining taxonomy is 26 `graph.empty`, 18 `crawl.navigation_failed`, 9 `source.inaccessible`, 7 `source.not_policy`, 4 `source.unsupported_language`, and 2 `pdf.invalid_source` | 2026-08-04 22:30 EDT |
 | Audit-loop hardening | `cohort_audit`; official-domain tests | Validated candidates are no longer fetched twice; off-domain matches are surfaced as `review_required` instead of safe replacements | 2026-08-04 23:02 EDT |
 | Validation, source-audit recovery | `./.venv/bin/pytest -q`; `git diff --check` | Passed: 79 backend tests and whitespace validation | 2026-08-04 23:02 EDT |
+| Source-audit hardening deployment | GitHub Actions run `30971135255` | Immutable image builds, real-secret what-if, deployment, durable source import, migrations, and endpoint verification succeeded at `028d45a67837a228f1e5eaf3da48d7fe2d903ff6` | 2026-08-04 23:27 EDT |
+| Source-audit hardening live acceptance | Container Apps revision, migration execution, and graph-aware preview | Revision `poligrapherc1de43-app--0000022` is healthy; migration `poligrapherc1de43-migrations-rpz3ynh` succeeded; web and worker use immutable `028d45a` images; coverage remains 434/500 | 2026-08-04 23:27 EDT |
 
 **Validated by:** azure-validate workflow
 
