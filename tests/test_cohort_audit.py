@@ -94,8 +94,7 @@ def test_audit_source_target_returns_only_validated_replacement(monkeypatch):
             assert allow_headless is False
 
         def resolve(self, _name, _domain, url):
-            if url.endswith("/privacy"):
-                return SimpleNamespace(url="https://example.com/privacy")
+            assert url == "https://example.com/wrong"
             return None
 
         def resolve_candidate(self, *_args, **kwargs):
@@ -115,3 +114,35 @@ def test_audit_source_target_returns_only_validated_replacement(monkeypatch):
     assert result["current_valid"] is False
     assert result["replacement_url"] == "https://example.com/privacy"
     assert result["replacement_confidence"] == 0.84
+
+
+def test_audit_source_target_requires_review_for_off_domain_candidate(monkeypatch):
+    target = cohort_audit.SourceAuditTarget(
+        provider_id=uuid.uuid4(),
+        provider_name="Example",
+        domain="example.com",
+        source_url="https://example.com/wrong",
+        root_code="source.not_policy",
+    )
+
+    class Resolver:
+        def __init__(self, allow_headless=False):
+            assert allow_headless is False
+
+        def resolve(self, *_args):
+            return None
+
+        def resolve_candidate(self, *_args, **_kwargs):
+            return SimpleNamespace(
+                url="https://example-privacy.com/privacy",
+                strategy="search",
+                confidence=0.76,
+                notes="validated public search result",
+            )
+
+    monkeypatch.setattr(cohort_audit, "PolicySourceResolver", Resolver)
+
+    result = cohort_audit.audit_source_target(target)
+
+    assert result["status"] == "review_required"
+    assert result["replacement_url"] == "https://example-privacy.com/privacy"

@@ -96,6 +96,10 @@ Container App revisions and the existing migration-job template.
 
 ### Validation
 
+- [x] All validation checks pass
+  - [x] Core Validation (CLI, auth, build, validate, what-if)
+  - [x] Linting (Bicep compilation and application suites)
+  - [x] Azure Policy Validation
 - [x] Compile Bicep
 - [x] Validate and preview the resource-group deployment
 - [x] Validate application builds locally; production image builds remain a required CI prerequisite
@@ -219,15 +223,26 @@ Container App revisions and the existing migration-job template.
 | Validation, comparison method isolation | `./.venv/bin/pytest -q`; `npm --prefix frontend run typecheck`; `npm --prefix frontend test -- --run`; `npm --prefix frontend run build`; `git diff --check` | Passed: 76 backend tests, 34 frontend tests, type check, production bundle, and whitespace validation | 2026-08-04 17:08 EDT |
 | Comparison method isolation deployment | GitHub Actions run `30951035439` | Both immutable image builds, real-secret what-if, Bicep deployment, migrations, and endpoint verification succeeded at `9d3a2e488214918c5a6b4d3b3717770461dd4c7c` | 2026-08-04 17:23 EDT |
 | Comparison method isolation live acceptance | Container Apps revision and migration execution | Revision `poligrapherc1de43-app--0000020` is healthy; migration execution `poligrapherc1de43-migrations-7ijj507` succeeded; web and worker use immutable `9d3a2e4` images | 2026-08-04 17:23 EDT |
+| Validation, cohort source audit | `./.venv/bin/pytest -q`; `npm --prefix frontend run typecheck`; `npm --prefix frontend test -- --run`; `npm --prefix frontend run build`; `git diff --check` | Passed: 78 backend tests, 34 frontend tests, type check, production bundle, and whitespace validation | 2026-08-04 |
+| Bicep and ARM validation, cohort source audit | `az bicep build`; `az deployment group validate`; `az deployment group what-if --result-format ResourceIdOnly` | Passed; ARM correlation `3375a44e-2fe3-4a0c-9076-1efbc7c55a90`; preview succeeded with 16 resources and 0 deletes | 2026-08-04 |
+| Policy and static RBAC review, cohort source audit | Subscription policy assignment inventory; `infra/main.bicep`; live app and worker identity configuration | Enforced Security Center default policy remains assigned; no Bicep role assignments; app and worker identities remain `None` with existing secret-backed access unchanged | 2026-08-04 |
 | Representative graph-empty recovery | Task `6f1a7d9b-9d3f-46a4-96d3-38fca261807b` | Eight completed; Mondelez International recovered by preserving its successful website graph while seven providers remained empty in both methods | 2026-08-04 17:33 EDT |
 | Remaining graph-empty class recovery | Task `c4a0ed7c-483a-4cd3-9c4c-9bb1e0c0a020` | 24 completed; ConocoPhillips, Genuine Parts Company, HP Inc., and PG&E Corporation recovered; 20 failed with standardized root issues | 2026-08-04 17:57 EDT |
 | S&P coverage reconciliation, comparison isolation | Production `/api/bulk/preview` for collection `4cac831c-a33d-438c-a0d5-55ee871418e9` | 500 providers, 425 already analyzed, and 75 still eligible; comparison isolation recovered 5 of the 32-company graph-empty class | 2026-08-04 17:57 EDT |
 | Content-aware cohort source audit | `POST /api/collections/{collection_id}/audit-failures`; `cohort-source-audit` worker task | Read-only audit selects unresolved source-related root failures, validates current policy content, and records only application-validated replacement candidates | 2026-08-04 21:41 EDT |
 | Validation, cohort source audit | `./.venv/bin/pytest -q`; `npm --prefix frontend run typecheck`; `npm --prefix frontend test -- --run`; `npm --prefix frontend run build`; `git diff --check` | Passed: 78 backend tests, 34 frontend tests, type check, production bundle, and whitespace validation | 2026-08-04 21:42 EDT |
+| Cohort source audit deployment | GitHub Actions run `30967433455` | Both immutable image builds, real-secret what-if, Bicep deployment, migrations, and endpoint verification succeeded at `33bb527b6c1e5892adcd8e0f125804c46ada4b53` | 2026-08-04 22:04 EDT |
+| Cohort source audit live acceptance | Container Apps revision and migration execution | Revision `poligrapherc1de43-app--0000021` is healthy; migration execution `poligrapherc1de43-migrations-n9z4l5f` succeeded; web and worker use immutable `33bb527` images and have no managed identities | 2026-08-04 22:04 EDT |
+| S&P source-failure audit | Task `3486b68c-1a6c-4d4a-99a8-48bd818ec3d1` | `succeeded`: all 51 source-related failures audited with 9 current sources valid, 26 validated candidates, 16 unresolved, and 0 audit errors | 2026-08-04 22:14 EDT |
+| Current-source retry batch | Task `56f26788-43f6-49f9-8d07-bad063e03ddc` | 9/9 remained failures: 5 navigation, 2 unsupported-language, 1 not-policy, and 1 graph-empty; proved source preflight alone does not imply analyzer recovery | 2026-08-04 22:25 EDT |
+| Curated replacement recovery batch | Task `f43dfad3-96a7-4e75-8dd6-0e72adbad397` | 9 of 11 recovered; Northern Trust remained `source.not_policy` and Yum! Brands shifted to `graph.empty` | 2026-08-04 22:29 EDT |
+| S&P coverage reconciliation, source audit | Production graph-aware preview and latest root-issue summary | 434 analyzed and 66 eligible; remaining taxonomy is 26 `graph.empty`, 18 `crawl.navigation_failed`, 9 `source.inaccessible`, 7 `source.not_policy`, 4 `source.unsupported_language`, and 2 `pdf.invalid_source` | 2026-08-04 22:30 EDT |
+| Audit-loop hardening | `cohort_audit`; official-domain tests | Validated candidates are no longer fetched twice; off-domain matches are surfaced as `review_required` instead of safe replacements | 2026-08-04 23:02 EDT |
+| Validation, source-audit recovery | `./.venv/bin/pytest -q`; `git diff --check` | Passed: 79 backend tests and whitespace validation | 2026-08-04 23:02 EDT |
 
 **Validated by:** azure-validate workflow
 
-**Validation timestamp:** 2026-08-03 20:29 EDT
+**Validation timestamp:** 2026-08-04 23:02 EDT
 
 ## 9. Files
 
@@ -241,6 +256,6 @@ Container App revisions and the existing migration-job template.
 
 ## 10. Next Step
 
-Audit the remaining 75 eligible companies by failure class. Run content-aware
-source preflight for acquisition and validation failures, apply only validated
-official replacements, then retry bounded class shards and reconcile coverage.
+Address the remaining 66 eligible companies by failure class. Treat the 26
+`graph.empty` companies as a graph/pipeline cohort, and investigate the 40
+source failures with reviewed official sources rather than automatic retries.

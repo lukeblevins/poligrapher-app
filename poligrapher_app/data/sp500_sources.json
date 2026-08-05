@@ -397,10 +397,10 @@
       "domain": "yum.com",
       "name": "Yum! Brands",
       "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://privacy.yum.com/policies",
+      "source_final_url": "https://www.yum.com/wps/portal/yumbrands/Yumbrands/footer-pages/privacy-policy",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://privacy.yum.com/policies",
+      "source_url": "https://www.yum.com/wps/portal/yumbrands/Yumbrands/footer-pages/privacy-policy",
       "tickers": [
         "YUM"
       ]
@@ -527,10 +527,10 @@
       "domain": "quantaservices.com",
       "name": "Quanta Services",
       "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://www.quantaservices.com/privacy-policy",
+      "source_final_url": "https://investors.quantaservices.com/privacy-policy",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.quantaservices.com/privacy-policy",
+      "source_url": "https://investors.quantaservices.com/privacy-policy",
       "tickers": [
         "PWR"
       ]
@@ -1151,10 +1151,10 @@
       "domain": "principal.com",
       "name": "Principal Financial Group",
       "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://secure02.principal.com/publicvsupply/GetFile?fm=WW728&ty=VOP&EXT=.VOP",
+      "source_final_url": "https://www.principal.com/privacy-policies",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://secure02.principal.com/publicvsupply/GetFile?fm=WW728&ty=VOP&EXT=.VOP",
+      "source_url": "https://www.principal.com/privacy-policies",
       "tickers": [
         "PFG"
       ]
@@ -1671,10 +1671,10 @@
       "domain": "meta.com",
       "name": "Meta Platforms",
       "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://www.meta.com/legal/privacy-policy/",
+      "source_final_url": "https://www.meta.com/legal/united-states/",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.meta.com/legal/privacy-policy/",
+      "source_url": "https://www.meta.com/legal/united-states/",
       "tickers": [
         "META"
       ]
@@ -2074,10 +2074,10 @@
       "domain": "verisk.com",
       "name": "Verisk Analytics",
       "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://www.verisk.com/company/newsroom/verisk-names-samantha-vaughan-chief-privacy-officer/",
+      "source_final_url": "https://risksolutions.verisk.com/legal/Privacy-Policy/",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.verisk.com/company/newsroom/verisk-names-samantha-vaughan-chief-privacy-officer/",
+      "source_url": "https://risksolutions.verisk.com/legal/Privacy-Policy/",
       "tickers": [
         "VRSK"
       ]
@@ -3806,10 +3806,10 @@
       "domain": "usbank.com",
       "name": "U.S. Bancorp",
       "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://www.usbank.com/dam/en/documents/pdfs/disclosures/consumer-privacy-notice.pdf",
+      "source_final_url": "https://www.usbank.com/about-us-bank/privacy/security.html",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.usbank.com/dam/en/documents/pdfs/disclosures/consumer-privacy-notice.pdf",
+      "source_url": "https://www.usbank.com/about-us-bank/privacy/security.html",
       "tickers": [
         "USB"
       ]
@@ -4651,10 +4651,10 @@
       "domain": "northerntrust.com",
       "name": "Northern Trust",
       "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://www.northerntrust.com/content/dam/northerntrust/pws/nt/documents/legal/us-privacy-notice.pdf",
+      "source_final_url": "https://www.northerntrust.com/united-states/privacy/global-privacy-standard",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.northerntrust.com/content/dam/northerntrust/pws/nt/documents/legal/us-privacy-notice.pdf",
+      "source_url": "https://www.northerntrust.com/united-states/privacy/global-privacy-standard",
       "tickers": [
         "NTRS"
       ]
@@ -4898,10 +4898,10 @@
       "domain": "hcpi.com",
       "name": "Healthpeak Properties",
       "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://ir.healthpeak.com/privacy-policy/default.aspx",
+      "source_final_url": "https://healthpeak.com/privacy-policy/",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://ir.healthpeak.com/privacy-policy/default.aspx",
+      "source_url": "https://healthpeak.com/privacy-policy/",
       "tickers": [
         "DOC"
       ]
@@ -5925,10 +5925,10 @@
       "domain": "copart.com",
       "name": "Copart",
       "source_checked_at": "2026-07-28T05:46:10.194754",
-      "source_final_url": "https://www.copart.com/auctions/Content/US/en/Privacy-Policy",
+      "source_final_url": "https://cds.copart.com/CMS/en/Content/US/en/Seller/AboutCopart/Privacy-Policy.html",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.copart.com/auctions/Content/US/en/Privacy-Policy",
+      "source_url": "https://cds.copart.com/CMS/en/Content/US/en/Seller/AboutCopart/Privacy-Policy.html",
       "tickers": [
         "CPRT"
       ]
@@ -6094,10 +6094,10 @@
       "domain": "avaloncommunities.com",
       "name": "AvalonBay Communities",
       "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://www.avaloncommunities.com/us-state-privacy-notice/",
+      "source_final_url": "https://www.avaloncommunities.com/privacy-policy/",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.avaloncommunities.com/us-state-privacy-notice/",
+      "source_url": "https://www.avaloncommunities.com/privacy-policy/",
       "tickers": [
         "AVB"
       ]
@@ -6211,10 +6211,10 @@
       "domain": "truist.com",
       "name": "Truist Financial",
       "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://www.truist.com/content/dam/truist-bank/us/en/documents/footer/privacy-policy-truist-english.pdf",
+      "source_final_url": "https://www.truist.com/privacy",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.truist.com/content/dam/truist-bank/us/en/documents/footer/privacy-policy-truist-english.pdf",
+      "source_url": "https://www.truist.com/privacy",
       "tickers": [
         "TFC"
       ]

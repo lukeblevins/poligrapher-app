@@ -5,6 +5,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 import os
+import urllib.parse
 import uuid
 
 from sqlalchemy.orm import Session
@@ -31,6 +32,12 @@ class SourceAuditTarget:
     domain: str | None
     source_url: str | None
     root_code: str
+
+
+def _matches_provider_domain(url: str, domain: str | None) -> bool:
+    expected = (domain or "").casefold().strip(". ")
+    host = (urllib.parse.urlparse(url).hostname or "").casefold().strip(".")
+    return bool(expected and (host == expected or host.endswith(f".{expected}")))
 
 
 def source_audit_targets(
@@ -121,16 +128,14 @@ def audit_source_target(target: SourceAuditTarget) -> dict:
         )
         if candidate is None:
             return result
-        validated = resolver.resolve(
-            target.provider_name,
-            target.domain,
-            candidate.url,
+        status = (
+            "replacement_found"
+            if _matches_provider_domain(candidate.url, target.domain)
+            else "review_required"
         )
-        if validated is None:
-            return result
         result.update(
-            status="replacement_found",
-            replacement_url=validated.url,
+            status=status,
+            replacement_url=candidate.url,
             replacement_strategy=candidate.strategy,
             replacement_confidence=candidate.confidence,
             replacement_notes=candidate.notes,
@@ -153,6 +158,7 @@ def audit_source_targets(
         "checked": 0,
         "current_valid": 0,
         "replacement_found": 0,
+        "review_required": 0,
         "unresolved": 0,
         "audit_error": 0,
     }
