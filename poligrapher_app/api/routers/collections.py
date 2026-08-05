@@ -130,7 +130,7 @@ def verify_collection_sources(collection_id: uuid.UUID, request: Request, db: Db
 
 @router.post("/{collection_id}/audit-failures", response_model=TaskStatus)
 def audit_collection_failures(collection_id: uuid.UUID, request: Request, db: Db):
-    """Queue a read-only, content-aware audit of unresolved source failures."""
+    """Queue a read-only audit of unresolved source or representation failures."""
 
     collection = db.get(CompanyCollection, collection_id)
     if collection is None:

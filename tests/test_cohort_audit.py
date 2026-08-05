@@ -75,9 +75,10 @@ def test_source_audit_targets_select_latest_unresolved_source_failure():
             [source_failed.id, graph_failed.id, analyzed.id],
         )
 
-    assert len(targets) == 1
-    assert targets[0].provider_name == "Source Failed"
-    assert targets[0].root_code == "crawl.navigation_failed"
+    assert [(target.provider_name, target.root_code) for target in targets] == [
+        ("Graph Failed", "graph.empty"),
+        ("Source Failed", "crawl.navigation_failed"),
+    ]
 
 
 def test_audit_source_target_returns_only_validated_replacement(monkeypatch):
@@ -146,3 +147,37 @@ def test_audit_source_target_requires_review_for_off_domain_candidate(monkeypatc
 
     assert result["status"] == "review_required"
     assert result["replacement_url"] == "https://example-privacy.com/privacy"
+
+
+def test_graph_empty_audit_skips_current_source_and_finds_alternate(monkeypatch):
+    target = cohort_audit.SourceAuditTarget(
+        provider_id=uuid.uuid4(),
+        provider_name="Example",
+        domain="example.com",
+        source_url="https://example.com/privacy-shell",
+        root_code="graph.empty",
+    )
+
+    class Resolver:
+        def __init__(self, allow_headless=False):
+            assert allow_headless is False
+
+        def resolve(self, *_args):
+            raise AssertionError("graph-empty audits must not revalidate the current source")
+
+        def resolve_candidate(self, *_args, **kwargs):
+            assert kwargs["exclude_urls"] == {"https://example.com/privacy-shell"}
+            assert kwargs["require_validation"] is True
+            return SimpleNamespace(
+                url="https://www.example.com/privacy-policy",
+                strategy="search",
+                confidence=0.84,
+                notes="validated public search result",
+            )
+
+    monkeypatch.setattr(cohort_audit, "PolicySourceResolver", Resolver)
+
+    result = cohort_audit.audit_source_target(target)
+
+    assert result["status"] == "replacement_found"
+    assert result["replacement_url"] == "https://www.example.com/privacy-policy"

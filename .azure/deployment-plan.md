@@ -241,10 +241,15 @@ Container App revisions and the existing migration-job template.
 | Validation, source-audit recovery | `./.venv/bin/pytest -q`; `git diff --check` | Passed: 79 backend tests and whitespace validation | 2026-08-04 23:02 EDT |
 | Source-audit hardening deployment | GitHub Actions run `30971135255` | Immutable image builds, real-secret what-if, deployment, durable source import, migrations, and endpoint verification succeeded at `028d45a67837a228f1e5eaf3da48d7fe2d903ff6` | 2026-08-04 23:27 EDT |
 | Source-audit hardening live acceptance | Container Apps revision, migration execution, and graph-aware preview | Revision `poligrapherc1de43-app--0000022` is healthy; migration `poligrapherc1de43-migrations-rpz3ynh` succeeded; web and worker use immutable `028d45a` images; coverage remains 434/500 | 2026-08-04 23:27 EDT |
+| Graph-empty root-cause reproduction | Allegion direct Chromium crawl and sanitized HTTP fallback | The direct browser representation generated 60 nodes and 63 links (35 nodes and 43 links after trimming), while the same production fallback path generated an empty graph from a JavaScript policy shell; `graph.empty` is therefore a source-representation failure for this cohort, not a graph persistence failure | 2026-08-04 23:35 EDT |
+| Graph-empty alternate-source audit | Local content-aware audit of the exact 26-company cohort | Found 20 same-domain candidates, 5 off-domain candidates requiring review, and 1 unresolved company; narrow or unrelated pages were excluded before changing any source | 2026-08-04 23:41 EDT |
+| Curated graph-empty recovery batch | Task `161cd1ab-d749-4e5b-ae55-02900c5db2ae` | 5 of 7 recovered: Allegion, Duke Energy, Electronic Arts, PulteGroup, and Welltower; Cooper Companies and Johnson Controls retained standardized `crawl.navigation_failed` issues | 2026-08-04 23:45 EDT |
+| S&P coverage reconciliation, graph-empty sources | Production graph-aware preview and latest root-issue summary | 439 analyzed and 61 eligible; remaining taxonomy is 20 `crawl.navigation_failed`, 19 `graph.empty`, 9 `source.inaccessible`, 7 `source.not_policy`, 4 `source.unsupported_language`, and 2 `pdf.invalid_source` | 2026-08-04 23:46 EDT |
+| Validation, graph-empty source recovery | `./.venv/bin/pytest -q`; JSON catalog parse; `git diff --check` | Passed: 80 backend tests, durable source catalog validation, and whitespace validation | 2026-08-04 23:49 EDT |
 
 **Validated by:** azure-validate workflow
 
-**Validation timestamp:** 2026-08-04 23:02 EDT
+**Validation timestamp:** 2026-08-04 23:49 EDT
 
 ## 9. Files
 
@@ -258,6 +263,7 @@ Container App revisions and the existing migration-job template.
 
 ## 10. Next Step
 
-Address the remaining 66 eligible companies by failure class. Treat the 26
-`graph.empty` companies as a graph/pipeline cohort, and investigate the 40
-source failures with reviewed official sources rather than automatic retries.
+Address the remaining 61 eligible companies by failure class. Treat the 19
+`graph.empty` companies as source-representation failures unless a direct crawl
+proves otherwise, and investigate the 42 acquisition failures with reviewed,
+content-bearing official sources rather than automatic retries.

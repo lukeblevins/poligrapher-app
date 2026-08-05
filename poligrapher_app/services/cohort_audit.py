@@ -23,6 +23,7 @@ SOURCE_FAILURE_CODES = frozenset(
         "pdf.invalid_source",
     }
 )
+AUDITABLE_FAILURE_CODES = SOURCE_FAILURE_CODES | {"graph.empty"}
 
 
 @dataclass(frozen=True)
@@ -44,7 +45,7 @@ def source_audit_targets(
     db: Session,
     provider_ids: list[uuid.UUID],
 ) -> list[SourceAuditTarget]:
-    """Select unresolved providers whose latest root issue is source-related."""
+    """Select unresolved providers with source or representation failures."""
 
     if not provider_ids:
         return []
@@ -86,7 +87,7 @@ def source_audit_targets(
         )
         for provider in providers
         if provider.id not in analyzed_ids
-        and latest_code.get(str(provider.id)) in SOURCE_FAILURE_CODES
+        and latest_code.get(str(provider.id)) in AUDITABLE_FAILURE_CODES
     ]
 
 
@@ -106,7 +107,10 @@ def audit_source_target(target: SourceAuditTarget) -> dict:
     }
     resolver = PolicySourceResolver(allow_headless=False)
     try:
-        if target.source_url:
+        # An empty graph already proves the current source reached the pipeline.
+        # Auditing it again only repeats work; look for a distinct official
+        # representation that may expose the policy more cleanly instead.
+        if target.source_url and target.root_code != "graph.empty":
             current = resolver.resolve(
                 target.provider_name,
                 target.domain,

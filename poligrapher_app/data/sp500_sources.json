@@ -1658,10 +1658,10 @@
       "domain": "duke-energy.com",
       "name": "Duke Energy",
       "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://www.duke-energy.com/legal/privacy",
+      "source_final_url": "https://www.duke-energy.com/legal/privacy-policy",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.duke-energy.com/legal/privacy",
+      "source_url": "https://www.duke-energy.com/legal/privacy-policy",
       "tickers": [
         "DUK"
       ]
@@ -2426,10 +2426,10 @@
       "domain": "allegion.com",
       "name": "Allegion",
       "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://www.allegion.com/corp/en/footer/privacy-statement.html",
+      "source_final_url": "https://www.allegion.com/corp/en/footer/privacy-statement/en.html",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.allegion.com/corp/en/footer/privacy-statement.html",
+      "source_url": "https://www.allegion.com/corp/en/footer/privacy-statement/en.html",
       "tickers": [
         "ALLE"
       ]
@@ -4430,10 +4430,10 @@
       "domain": "coopercos.com",
       "name": "Cooper Companies (The)",
       "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://www.coopersurgical.com/privacy-statement/",
+      "source_final_url": "https://www.coopercos.com/privacy-policy/",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.coopersurgical.com/privacy-policy/",
+      "source_url": "https://www.coopercos.com/privacy-policy/",
       "tickers": [
         "COO"
       ]
@@ -4443,10 +4443,10 @@
       "domain": "ea.com",
       "name": "Electronic Arts",
       "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://www.ea.com/legal",
+      "source_final_url": "https://www.ea.com/legal/privacy-portal",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.ea.com/legal",
+      "source_url": "https://www.ea.com/legal/privacy-portal",
       "tickers": [
         "EA"
       ]
@@ -4911,10 +4911,10 @@
       "domain": "welltower.com",
       "name": "Welltower",
       "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "http://welltower.com/privacy-policy/",
+      "source_final_url": "https://welltower.com/privacy-policy/us-privacy-policy/",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "http://welltower.com/privacy-policy/",
+      "source_url": "https://welltower.com/privacy-policy/us-privacy-policy/",
       "tickers": [
         "WELL"
       ]
@@ -5275,10 +5275,10 @@
       "domain": "pulte.com",
       "name": "PulteGroup",
       "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://www.pulte.com/legal/privacy-policy",
+      "source_final_url": "https://www.pulte.com/legal/privacy-policy/privacy-policy-general",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.pulte.com/legal/privacy-policy",
+      "source_url": "https://www.pulte.com/legal/privacy-policy/privacy-policy-general",
       "tickers": [
         "PHM"
       ]
@@ -5379,10 +5379,10 @@
       "domain": "johnsoncontrols.com",
       "name": "Johnson Controls",
       "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://www.johnsoncontrols.com/trust-center/privacy/your-privacy-choices",
+      "source_final_url": "https://www.johnsoncontrols.com/trust-center/privacy/global-privacy-notice/johnson-controls-privacy-notice_english",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.johnsoncontrols.com/trust-center/privacy/your-privacy-choices",
+      "source_url": "https://www.johnsoncontrols.com/trust-center/privacy/global-privacy-notice/johnson-controls-privacy-notice_english",
       "tickers": [
         "JCI"
       ]
