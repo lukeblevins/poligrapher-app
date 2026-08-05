@@ -246,10 +246,12 @@ Container App revisions and the existing migration-job template.
 | Curated graph-empty recovery batch | Task `161cd1ab-d749-4e5b-ae55-02900c5db2ae` | 5 of 7 recovered: Allegion, Duke Energy, Electronic Arts, PulteGroup, and Welltower; Cooper Companies and Johnson Controls retained standardized `crawl.navigation_failed` issues | 2026-08-04 23:45 EDT |
 | S&P coverage reconciliation, graph-empty sources | Production graph-aware preview and latest root-issue summary | 439 analyzed and 61 eligible; remaining taxonomy is 20 `crawl.navigation_failed`, 19 `graph.empty`, 9 `source.inaccessible`, 7 `source.not_policy`, 4 `source.unsupported_language`, and 2 `pdf.invalid_source` | 2026-08-04 23:46 EDT |
 | Validation, graph-empty source recovery | `./.venv/bin/pytest -q`; JSON catalog parse; `git diff --check` | Passed: 80 backend tests, durable source catalog validation, and whitespace validation | 2026-08-04 23:49 EDT |
+| Graph-empty source recovery deployment | GitHub Actions run `30973475374` | Both immutable image builds, real-secret preview, Azure deployment, durable source import, migrations, and endpoint verification succeeded at `6eb27a7a6cedbdf7de566c0120113da61adfab0b` | 2026-08-05 00:03 EDT |
+| Graph-empty source recovery live acceptance | Container Apps revision, worker job, migration execution, source API, and graph-aware preview | Revision `poligrapherc1de43-app--0000023` is healthy; migration `poligrapherc1de43-migrations-xjq8omf` succeeded; web and worker use immutable `6eb27a7` images; all seven curated URLs are live; coverage is 439/500 | 2026-08-05 00:04 EDT |
 
 **Validated by:** azure-validate workflow
 
-**Validation timestamp:** 2026-08-04 23:49 EDT
+**Validation timestamp:** 2026-08-05 00:04 EDT
 
 ## 9. Files
 
