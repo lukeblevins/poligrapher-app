@@ -21,6 +21,57 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+
+def _download_remote_pdf(url: str, destination, max_bytes: int = 50 * 1024 * 1024) -> None:
+    """Download a policy PDF with the same retry and proxy routes as acquisition."""
+
+    from poligrapher_app.services.acquisition import (
+        crawl_proxy_mode,
+        httpx_proxy,
+        open_client,
+    )
+
+    configured_proxy = httpx_proxy()
+    mode = crawl_proxy_mode()
+    routes = [configured_proxy] if configured_proxy and mode == "always" else [None]
+    if configured_proxy and mode == "fallback":
+        routes.append(configured_proxy)
+
+    last_error: Exception | None = None
+    for proxy in routes:
+        for attempt in range(2):
+            destination.seek(0)
+            destination.truncate()
+            try:
+                with open_client(45.0, proxy) as client:
+                    with client.stream("GET", url) as response:
+                        response.raise_for_status()
+                        size = 0
+                        for chunk in response.iter_bytes(1024 * 1024):
+                            size += len(chunk)
+                            if size > max_bytes:
+                                raise ValueError(
+                                    "Remote policy PDF exceeds the 50 MB limit"
+                                )
+                            destination.write(chunk)
+                destination.flush()
+                destination.seek(0)
+                if destination.read(4) != b"%PDF":
+                    raise ValueError("Remote policy source did not return a PDF")
+                destination.seek(0)
+                return
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+                logger.warning(
+                    "Remote PDF download failed for %s (route=%s, attempt=%d): %s",
+                    url,
+                    "proxy" if proxy else "direct",
+                    attempt + 1,
+                    exc,
+                )
+    assert last_error is not None
+    raise last_error
+
 def file_hash(path: str) -> str | None:
     try:
         h = hashlib.sha256()
@@ -261,7 +312,6 @@ def run_remote_pdf(
     """Download an official policy PDF, store it durably, and analyze it."""
     from poligrapher_app.api.database import SessionLocal
     from poligrapher_app.api.models import Policy, Provider
-    from poligrapher_app.services.acquisition import open_client
     from poligrapher_app.services.storage import get_storage, source_key
 
     with SessionLocal() as db:
@@ -276,19 +326,7 @@ def run_remote_pdf(
         with tempfile.NamedTemporaryFile(
             prefix="poligrapher-remote-", suffix=".pdf", dir=temp_root
         ) as download:
-            with open_client(45.0) as client:
-                with client.stream("GET", url) as response:
-                    response.raise_for_status()
-                    size = 0
-                    for chunk in response.iter_bytes(1024 * 1024):
-                        size += len(chunk)
-                        if size > 50 * 1024 * 1024:
-                            raise ValueError("Remote policy PDF exceeds the 50 MB limit")
-                        download.write(chunk)
-            download.flush()
-            download.seek(0)
-            if download.read(4) != b"%PDF":
-                raise ValueError("Remote policy source did not return a PDF")
+            _download_remote_pdf(url, download)
             digest = file_hash(download.name)
             existing = (
                 db.query(Policy)

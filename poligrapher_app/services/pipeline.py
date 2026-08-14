@@ -21,6 +21,7 @@ from poligrapher_app.domain.policy_analysis import (
 )
 from poligrapher_app.services.acquisition import (
     crawl_proxy_mode,
+    fetch_validated_policy_html,
     fetch_wayback,
     httpx_proxy,
     open_client,
@@ -335,6 +336,39 @@ def generate_graph_from_html(
             and not _archive_fallback_attempted
             and _should_retry_crawl_from_archive(path, exc)
         ):
+            direct_html = fetch_validated_policy_html(path)
+            if direct_html:
+                parent = os.path.dirname(output_folder) or None
+                if parent:
+                    os.makedirs(parent, exist_ok=True)
+                with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    encoding="utf-8",
+                    prefix="poligrapher-direct-",
+                    suffix=".html",
+                    dir=parent,
+                    delete=False,
+                ) as direct_file:
+                    direct_file.write(direct_html)
+                    direct_path = direct_file.name
+                logger.warning(
+                    "Live Chromium crawl failed; retrying from validated direct HTML: %s",
+                    path,
+                )
+                try:
+                    return generate_graph_from_html(
+                        direct_path,
+                        output_folder,
+                        capture_pdf=False,
+                        should_cancel=should_cancel,
+                        emit_pdf=emit_pdf,
+                        _archive_fallback_attempted=True,
+                    )
+                finally:
+                    try:
+                        os.unlink(direct_path)
+                    except FileNotFoundError:
+                        pass
             archived_html = fetch_wayback(path)
             if archived_html:
                 parent = os.path.dirname(output_folder) or None

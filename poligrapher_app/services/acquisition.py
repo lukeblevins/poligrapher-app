@@ -176,6 +176,13 @@ _NARROW_POLICY_RESULT = re.compile(
     r"hipaa|health[-_ ]fund|benchmark|study|canadian[-_ ]residents?)",
     re.I,
 )
+_PIPELINE_POLICY_PATTERN = re.compile(
+    r"(data|privacy)\s*(?:policy|notice|statement)", re.I
+)
+_PIPELINE_HTML_REMOVE_SELECTORS = (
+    "script, noscript, link, style, header, footer, nav, iframe, "
+    "img, picture, video, audio, source, object, embed"
+)
 _COMPANY_SUFFIX = re.compile(
     r"[\s,]+(inc\.?|incorporated|corp\.?|corporation|co\.?|company|"
     r"plc|ltd\.?|llc|l\.?p\.?|holdings?|group|technologies|the)\b",
@@ -366,6 +373,41 @@ def extract_text(html: str, select: list[str] | str | None = None) -> str:
         tag.decompose()
     root = soup.find("main") or soup.find("article") or soup.body or soup
     return _normalize_ws(root.get_text(" ", strip=True))
+
+
+def validate_policy_html(html: str) -> str:
+    """Sanitize HTML and return it only when it satisfies the crawler contract."""
+    soup = BeautifulSoup(html, "html.parser")
+    for element in soup.select(_PIPELINE_HTML_REMOVE_SELECTORS):
+        element.decompose()
+    for element in soup.select('[aria-hidden="true"]'):
+        element["aria-hidden"] = "false"
+
+    text = soup.body.get_text(" ", strip=True) if soup.body else ""
+    try:
+        import langdetect
+
+        language = langdetect.detect(text)
+    except Exception:  # noqa: BLE001
+        language = "UNKNOWN"
+    if not language.casefold().startswith("en"):
+        return ""
+    if _PIPELINE_POLICY_PATTERN.search(text) is None:
+        return ""
+    return str(soup)
+
+
+def fetch_validated_policy_html(url: str, timeout: float = 30.0) -> str:
+    """Fetch pipeline-valid HTML through the application's shared client.
+
+    The upstream crawler performs its own request with ``requests`` after
+    Chromium navigation fails; some corporate sites accept this application's
+    ``httpx`` request and reject the crawler's second request. Materializing the
+    already validated bytes lets the crawler process that content locally.
+    """
+
+    status, html = fetch_static(url, timeout=timeout, attempts=2)
+    return validate_policy_html(html) if status == 200 and html else ""
 
 
 def _normalize_ws(text: str) -> str:
@@ -730,9 +772,22 @@ class PolicySourceResolver:
                 )
             if response.status_code >= 400 or len(content) < 500 or len(content) > 10 * 1024 * 1024:
                 continue
-            text = privacy_document_text(
-                content, response.headers.get("content-type", ""), str(response.url)
+            content_type = response.headers.get("content-type", "")
+            response_url = str(response.url)
+            document_is_pdf = (
+                content.startswith(b"%PDF")
+                or "pdf" in content_type.casefold()
+                or response_url.lower().split("?", 1)[0].endswith(".pdf")
             )
+            if require_validation and not document_is_pdf:
+                validated_html = validate_policy_html(
+                    content.decode(response.encoding or "utf-8", "ignore")
+                )
+                if not validated_html:
+                    continue
+                text = extract_text(validated_html)
+            else:
+                text = privacy_document_text(content, content_type, response_url)
             if not is_privacy_document(text, provider_name, same_domain=same_domain):
                 continue
             confidence = 0.84 if same_domain else 0.76

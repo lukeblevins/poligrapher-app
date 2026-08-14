@@ -251,10 +251,14 @@ Container App revisions and the existing migration-job template.
 | Full unresolved-cohort audit | Task `418025b3-ed45-42cf-8077-108e37d4935f` | `succeeded`: 61 checked, 10 current sources valid, 26 nominal replacements, 14 review-required candidates, 11 unresolved, and 0 audit errors; manual scope review excluded investor, product, regional, employment, event, search, and lookalike-domain false positives | 2026-08-05 00:14 EDT |
 | Content-bearing graph-empty batch | Task `e4ebf384-cfbc-4caf-afad-9a79b4f52ac3` | `partially_succeeded`: Cintas recovered through its official general-policy representation; Yum! Brands retained `graph.empty`, and its experimental query-parameter source was reverted | 2026-08-05 00:22 EDT |
 | S&P coverage reconciliation, full audit | Production graph-aware preview and latest root-issue summary | 440 analyzed and 60 eligible; remaining taxonomy is 20 `crawl.navigation_failed`, 18 `graph.empty`, 9 `source.inaccessible`, 7 `source.not_policy`, 4 `source.unsupported_language`, and 2 `pdf.invalid_source` | 2026-08-05 00:23 EDT |
+| Production baseline, validated-source recovery | Container Apps revision and graph-aware preview | Revision `poligrapherc1de43-app--0000023` is healthy on immutable `6eb27a7` images; coverage remains 440 analyzed and 60 eligible | 2026-08-14 EDT |
+| Failed-cohort cause refinement | Strict reproduction of the 10 prior `current_valid` results against the analyzer's language and policy-pattern contract | Four HTML sources are directly pipeline-valid (Cooper Companies, Lumentum, Otis, and Targa); PNC is a retryable PDF download; American Tower and Snap-on are non-English, Digital Realty and Northern Trust are false-positive policy pages, and ServiceNow remains inaccessible | 2026-08-14 EDT |
+| Direct-source fallback acceptance | Forced the production navigation/fallback error for Cooper Companies, then ran the real pipeline from application-fetched validated HTML | Generated `graph-original.yml` (11,038 bytes) and `output.pdf`; temporary materialized HTML was removed | 2026-08-14 EDT |
+| Validation, validated-source recovery | `./.venv/bin/pytest -q`; `git diff --check` | Passed: 86 backend tests, including strict HTML validation, direct-source fallback, audit classification, and transient PDF retry; whitespace validation passed | 2026-08-14 EDT |
 
 **Validated by:** azure-validate workflow
 
-**Validation timestamp:** 2026-08-05 00:23 EDT
+**Validation timestamp:** 2026-08-14 EDT
 
 ## 9. Files
 

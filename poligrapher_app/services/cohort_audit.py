@@ -11,7 +11,10 @@ import uuid
 from sqlalchemy.orm import Session
 
 from poligrapher_app.api.models import Policy, Provider, TaskIssue
-from poligrapher_app.services.acquisition import PolicySourceResolver
+from poligrapher_app.services.acquisition import (
+    PolicySourceResolver,
+    fetch_validated_policy_html,
+)
 
 
 SOURCE_FAILURE_CODES = frozenset(
@@ -111,16 +114,12 @@ def audit_source_target(target: SourceAuditTarget) -> dict:
         # Auditing it again only repeats work; look for a distinct official
         # representation that may expose the policy more cleanly instead.
         if target.source_url and target.root_code != "graph.empty":
-            current = resolver.resolve(
-                target.provider_name,
-                target.domain,
-                target.source_url,
-            )
-            if current is not None:
+            current_html = fetch_validated_policy_html(target.source_url)
+            if current_html:
                 result.update(
                     status="current_valid",
                     current_valid=True,
-                    current_resolved_url=current.url,
+                    current_resolved_url=target.source_url,
                 )
                 return result
 

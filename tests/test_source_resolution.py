@@ -1,7 +1,9 @@
 from poligrapher_app.services.acquisition import (
+    fetch_validated_policy_html,
     is_privacy_document,
     reader_snapshot_url,
     search_result_links,
+    validate_policy_html,
 )
 from poligrapher_app.services.task_execution import _is_pdf_source
 from poligrapher_app.services import source_verification
@@ -38,6 +40,51 @@ def test_privacy_document_accepts_official_domain_without_brand_repetition():
     text = "Privacy policy " + ("personal information and your rights " * 30)
 
     assert is_privacy_document(text, "Example Corporation", same_domain=True)
+
+
+def test_fetch_validated_policy_html_matches_pipeline_contract(monkeypatch):
+    html = """
+    <html><body>
+      <header>Navigation</header>
+      <main aria-hidden="true">
+        <h1>Privacy Policy</h1>
+        <p>This privacy policy explains how we collect, use, disclose, and
+        protect personal information when customers use our products and
+        services. We retain information only as long as needed and provide
+        choices about data processing and marketing communications.</p>
+      </main>
+      <script>tracking()</script>
+    </body></html>
+    """
+    monkeypatch.setattr(
+        "poligrapher_app.services.acquisition.fetch_static",
+        lambda *_args, **_kwargs: (200, html),
+    )
+
+    validated = fetch_validated_policy_html("https://example.com/privacy")
+
+    assert "Privacy Policy" in validated
+    assert 'aria-hidden="false"' in validated
+    assert "Navigation" not in validated
+    assert "tracking()" not in validated
+
+    assert validate_policy_html(html) == validated
+
+
+def test_fetch_validated_policy_html_rejects_non_english_policy(monkeypatch):
+    html = """
+    <html><body><main><h1>Política de privacidad</h1>
+    <p>Esta política explica cómo recopilamos, utilizamos, compartimos y
+    protegemos los datos personales de nuestros clientes cuando utilizan
+    nuestros productos y servicios. También describe sus derechos y opciones
+    con respecto al tratamiento de información personal.</p></main></body></html>
+    """
+    monkeypatch.setattr(
+        "poligrapher_app.services.acquisition.fetch_static",
+        lambda *_args, **_kwargs: (200, html),
+    )
+
+    assert fetch_validated_policy_html("https://example.com/privacy") == ""
 
 
 def test_privacy_document_requires_brand_for_cross_domain_result():
