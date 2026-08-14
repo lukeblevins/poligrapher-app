@@ -458,13 +458,16 @@ def generate_comparison(
     website_dir: str,
     pdf_dir: str,
     should_cancel: Callable[[], bool] | None = None,
-) -> None:
+) -> Exception | None:
     """Produce two graphs from a single website fetch, for method comparison.
 
     1. Website method: crawl the live URL, and print that same rendered page to
        ``website_dir/output.pdf``.
     2. PDF-from-page method: run the PDF-parsing path on that emitted PDF (no
        second fetch), yielding a comparable graph in ``pdf_dir``.
+
+    Return the optional PDF method's error after a successful website graph so
+    callers can persist that usable result. Website failures still raise.
     """
     logger.info("Comparison run for %s -> website=%s pdf=%s", url, website_dir, pdf_dir)
     generate_graph_from_html(url, website_dir, capture_pdf=False,
@@ -474,7 +477,19 @@ def generate_comparison(
     if not os.path.exists(shared_pdf):
         raise RuntimeError("Website crawl did not produce a PDF to compare against")
 
-    generate_graph_from_html(shared_pdf, pdf_dir, capture_pdf=True, should_cancel=should_cancel)
+    try:
+        generate_graph_from_html(
+            shared_pdf, pdf_dir, capture_pdf=True, should_cancel=should_cancel
+        )
+    except PipelineCancelled:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "PDF-from-page comparison failed; preserving the website graph: %s",
+            exc,
+        )
+        return exc
+    return None
 
 
 def infer_graph_kind(policy: PolicyDocumentInfo) -> GraphKind:

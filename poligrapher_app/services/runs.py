@@ -38,6 +38,7 @@ def _download_remote_pdf(url: str, destination, max_bytes: int = 50 * 1024 * 102
         routes.append(configured_proxy)
 
     last_error: Exception | None = None
+    direct_error: Exception | None = None
     for proxy in routes:
         for attempt in range(2):
             destination.seek(0)
@@ -62,6 +63,8 @@ def _download_remote_pdf(url: str, destination, max_bytes: int = 50 * 1024 * 102
                 return
             except Exception as exc:  # noqa: BLE001
                 last_error = exc
+                if proxy is None:
+                    direct_error = exc
                 logger.warning(
                     "Remote PDF download failed for %s (route=%s, attempt=%d): %s",
                     url,
@@ -69,8 +72,14 @@ def _download_remote_pdf(url: str, destination, max_bytes: int = 50 * 1024 * 102
                     attempt + 1,
                     exc,
                 )
-    assert last_error is not None
-    raise last_error
+    failure = direct_error or last_error
+    assert failure is not None
+    if "timed out" in str(failure).casefold():
+        raise TimeoutError(
+            "Remote policy PDF download timed out after all configured attempts"
+        ) from failure
+    raise failure
+
 
 def file_hash(path: str) -> str | None:
     try:
@@ -219,30 +228,39 @@ def run_comparison(
             web_dir = Path(workspace) / "website"
             pdf_dir = Path(workspace) / "pdf"
             try:
-                generate_comparison(url, str(web_dir), str(pdf_dir), should_cancel)
+                pdf_generation_error = generate_comparison(
+                    url, str(web_dir), str(pdf_dir), should_cancel
+                )
                 web_doc = PolicyDocumentInfo(url, str(web_dir), DocumentCaptureSource.WEBPAGE,
                                              day, False)
                 pdf_doc = PolicyDocumentInfo(str(web_dir / "output.pdf"), str(pdf_dir),
                                              DocumentCaptureSource.PDF, day, False)
-                failures = [
-                    error
-                    for error in (
-                        _persist_generated_method(
-                            website,
-                            web_doc,
-                            Path(workspace) / "website.zip",
-                            db,
-                            record_content_hash=True,
-                        ),
-                        _persist_generated_method(
-                            pdf,
-                            pdf_doc,
-                            Path(workspace) / "pdf.zip",
-                            db,
-                        ),
+                failures = []
+                website_error = _persist_generated_method(
+                    website,
+                    web_doc,
+                    Path(workspace) / "website.zip",
+                    db,
+                    record_content_hash=True,
+                )
+                if website_error is not None:
+                    failures.append(website_error)
+                if pdf_generation_error is None:
+                    pdf_error = _persist_generated_method(
+                        pdf,
+                        pdf_doc,
+                        Path(workspace) / "pdf.zip",
+                        db,
                     )
-                    if error is not None
-                ]
+                    if pdf_error is not None:
+                        failures.append(pdf_error)
+                else:
+                    _mark_failed(
+                        [pdf],
+                        db,
+                        f"pdf_from_page failed: {pdf_generation_error}",
+                    )
+                    failures.append(pdf_generation_error)
                 if len(failures) < 2:
                     return "ok"
                 raise RuntimeError(

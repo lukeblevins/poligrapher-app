@@ -72,3 +72,21 @@ def test_remote_pdf_download_rejects_non_pdf(monkeypatch):
         assert "did not return a PDF" in str(exc)
     else:
         raise AssertionError("expected a non-PDF response to be rejected")
+
+
+def test_remote_pdf_download_reports_exhausted_timeouts(monkeypatch):
+    monkeypatch.setattr(
+        acquisition,
+        "open_client",
+        lambda *_args: _Client(error=TimeoutError("read timed out")),
+    )
+    monkeypatch.setattr(acquisition, "httpx_proxy", lambda: None)
+
+    try:
+        runs._download_remote_pdf(
+            "https://example.com/privacy.pdf", io.BytesIO()
+        )
+    except TimeoutError as exc:
+        assert "Remote policy PDF download timed out" in str(exc)
+    else:
+        raise AssertionError("expected exhausted PDF timeouts to be classified")

@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from poligrapher_app.services import persistence, runs
+from poligrapher_app.services import persistence, pipeline, runs
 
 
 class FakeSession:
@@ -70,3 +70,28 @@ def test_comparison_method_failure_preserves_sibling_result(tmp_path, monkeypatc
     assert pdf.graph_data["elements"]
     assert db.rollbacks == 1
     assert db.commits == 2
+
+
+def test_pdf_generation_failure_preserves_generated_website(tmp_path, monkeypatch):
+    calls = []
+
+    def generate(path, output_dir, capture_pdf, **kwargs):
+        calls.append((path, output_dir, capture_pdf, kwargs.get("emit_pdf")))
+        if capture_pdf:
+            raise RuntimeError("Content language UNKNOWN isn't English")
+        website = tmp_path / "website"
+        website.mkdir()
+        (website / "output.pdf").write_bytes(b"%PDF-1.7")
+
+    monkeypatch.setattr(pipeline, "generate_graph_from_html", generate)
+
+    error = pipeline.generate_comparison(
+        "https://example.com/privacy",
+        str(tmp_path / "website"),
+        str(tmp_path / "pdf"),
+    )
+
+    assert str(error) == "Content language UNKNOWN isn't English"
+    assert calls[0][2:] == (False, True)
+    assert calls[1][0] == str(tmp_path / "website" / "output.pdf")
+    assert calls[1][2] is True

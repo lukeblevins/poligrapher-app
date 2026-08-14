@@ -32,6 +32,15 @@ def test_proxy_credentials_are_kept_separate_and_encoded(monkeypatch):
     }
 
 
+def test_proxy_host_without_scheme_is_normalized(monkeypatch):
+    monkeypatch.setenv("CRAWL_PROXY", "gate.decodo.com:7000")
+    monkeypatch.setenv("CRAWL_PROXY_USERNAME", "user")
+    monkeypatch.setenv("CRAWL_PROXY_PASSWORD", "secret")
+
+    assert acquisition.httpx_proxy() == "http://user:secret@gate.decodo.com:7000"
+    assert acquisition.playwright_proxy()["server"] == "http://gate.decodo.com:7000"
+
+
 def test_fallback_mode_spends_proxy_bandwidth_only_when_forced(monkeypatch):
     monkeypatch.setenv("CRAWL_PROXY", "http://gate.decodo.com:7000")
     monkeypatch.setenv("CRAWL_PROXY_MODE", "fallback")

@@ -90,6 +90,8 @@ def _proxy_parts() -> tuple[str, str | None, str | None] | None:
     server = (os.getenv("CRAWL_PROXY") or "").strip()
     if not server:
         return None
+    if "://" not in server:
+        server = f"http://{server.lstrip('/')}"
     return server, os.getenv("CRAWL_PROXY_USERNAME"), os.getenv("CRAWL_PROXY_PASSWORD")
 
 

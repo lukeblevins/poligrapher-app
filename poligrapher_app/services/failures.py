@@ -35,7 +35,12 @@ def classify_failure(error: BaseException | str) -> dict:
     detail = str(error).strip() or error.__class__.__name__
     text = detail.casefold()
 
-    if "exceeded" in text and ("second" in text or "timeout" in text):
+    if "remote policy pdf download timed out" in text:
+        definition = FailureDefinition(
+            "pdf.download_timeout", "acquisition", "transient",
+            "The policy PDF download timed out.", (RETRY, REPLACE_SOURCE, UPLOAD_PDF),
+        )
+    elif "exceeded" in text and ("second" in text or "timeout" in text):
         definition = FailureDefinition(
             "execution.timeout", "execution", "transient",
             "Analysis exceeded its time limit.", (RETRY, REPORT),

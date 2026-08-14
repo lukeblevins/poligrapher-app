@@ -79,6 +79,13 @@ def test_failure_classifier_exposes_stable_codes_and_safe_actions():
             "transient",
             "retry",
         ),
+        (
+            "Remote policy PDF download timed out after all configured attempts",
+            "pdf.download_timeout",
+            "acquisition",
+            "transient",
+            "retry",
+        ),
     ],
 )
 def test_failure_classifier_recognizes_pipeline_failures(
