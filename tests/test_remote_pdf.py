@@ -1,4 +1,6 @@
 import io
+import time
+from contextlib import nullcontext
 
 from poligrapher_app.services import acquisition, runs
 
@@ -99,6 +101,7 @@ def test_remote_pdf_download_stops_a_trickling_stream(monkeypatch):
         lambda *_args: _Client(response=_Response(b"%PDF-1.7\npolicy")),
     )
     monkeypatch.setattr(acquisition, "httpx_proxy", lambda: None)
+    monkeypatch.setattr(runs, "_wall_clock_deadline", lambda _seconds: nullcontext())
     ticks = iter([0.0, 61.0, 62.0, 123.0])
     monkeypatch.setattr(runs.time, "monotonic", lambda: next(ticks))
 
@@ -112,3 +115,26 @@ def test_remote_pdf_download_stops_a_trickling_stream(monkeypatch):
         assert "Remote policy PDF download timed out" in str(exc)
     else:
         raise AssertionError("expected a trickling stream to hit the wall-clock bound")
+
+
+def test_remote_pdf_download_stops_before_response_headers(monkeypatch):
+    class BlockingClient(_Client):
+        def stream(self, _method, _url):
+            time.sleep(1)
+            raise AssertionError("attempt deadline did not interrupt the blocked request")
+
+    monkeypatch.setattr(acquisition, "open_client", lambda *_args: BlockingClient())
+    monkeypatch.setattr(acquisition, "httpx_proxy", lambda: None)
+
+    started = time.monotonic()
+    try:
+        runs._download_remote_pdf(
+            "https://example.com/privacy.pdf",
+            io.BytesIO(),
+            max_attempt_seconds=0.02,
+        )
+    except TimeoutError as exc:
+        assert "Remote policy PDF download timed out" in str(exc)
+    else:
+        raise AssertionError("expected a pre-response stall to hit the deadline")
+    assert time.monotonic() - started < 0.5

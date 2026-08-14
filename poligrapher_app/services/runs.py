@@ -12,15 +12,51 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import signal
 import tempfile
+import threading
 import time
 import urllib.parse
 import uuid
 import zipfile
+from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _wall_clock_deadline(seconds: float):
+    """Interrupt a blocking network attempt after a real elapsed-time limit."""
+
+    if (
+        seconds <= 0
+        or not hasattr(signal, "SIGALRM")
+        or threading.current_thread() is not threading.main_thread()
+    ):
+        yield
+        return
+
+    def expire(_signum, _frame):
+        raise TimeoutError("Remote policy PDF download timed out at its attempt deadline")
+
+    previous_handler = signal.getsignal(signal.SIGALRM)
+    signal.signal(signal.SIGALRM, expire)
+    previous_timer = signal.setitimer(signal.ITIMER_REAL, seconds)
+    started = time.monotonic()
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
+        if previous_timer[0] > 0:
+            elapsed = time.monotonic() - started
+            signal.setitimer(
+                signal.ITIMER_REAL,
+                max(0.000001, previous_timer[0] - elapsed),
+                previous_timer[1],
+            )
 
 
 def _download_remote_pdf(
@@ -51,21 +87,22 @@ def _download_remote_pdf(
             destination.truncate()
             attempt_started = time.monotonic()
             try:
-                with open_client(45.0, proxy) as client:
-                    with client.stream("GET", url) as response:
-                        response.raise_for_status()
-                        size = 0
-                        for chunk in response.iter_bytes(1024 * 1024):
-                            if time.monotonic() - attempt_started > max_attempt_seconds:
-                                raise TimeoutError(
-                                    "Remote policy PDF download timed out while streaming"
-                                )
-                            size += len(chunk)
-                            if size > max_bytes:
-                                raise ValueError(
-                                    "Remote policy PDF exceeds the 50 MB limit"
-                                )
-                            destination.write(chunk)
+                with _wall_clock_deadline(max_attempt_seconds):
+                    with open_client(45.0, proxy) as client:
+                        with client.stream("GET", url) as response:
+                            response.raise_for_status()
+                            size = 0
+                            for chunk in response.iter_bytes(1024 * 1024):
+                                if time.monotonic() - attempt_started > max_attempt_seconds:
+                                    raise TimeoutError(
+                                        "Remote policy PDF download timed out while streaming"
+                                    )
+                                size += len(chunk)
+                                if size > max_bytes:
+                                    raise ValueError(
+                                        "Remote policy PDF exceeds the 50 MB limit"
+                                    )
+                                destination.write(chunk)
                 destination.flush()
                 destination.seek(0)
                 if destination.read(4) != b"%PDF":
