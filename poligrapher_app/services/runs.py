@@ -11,52 +11,96 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import multiprocessing
 import os
-import signal
 import tempfile
-import threading
-import time
 import urllib.parse
 import uuid
 import zipfile
-from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 
-@contextmanager
-def _wall_clock_deadline(seconds: float):
-    """Interrupt a blocking network attempt after a real elapsed-time limit."""
+def _download_pdf_attempt(url: str, path: str, max_bytes: int, proxy: str | None) -> None:
+    """Perform one PDF transfer. The caller provides the killable boundary."""
 
-    if (
-        seconds <= 0
-        or not hasattr(signal, "SIGALRM")
-        or threading.current_thread() is not threading.main_thread()
-    ):
-        yield
-        return
+    from poligrapher_app.services.acquisition import open_client
 
-    def expire(_signum, _frame):
+    with open_client(45.0, proxy) as client:
+        with client.stream("GET", url) as response:
+            response.raise_for_status()
+            size = 0
+            with open(path, "wb") as output:
+                for chunk in response.iter_bytes(1024 * 1024):
+                    size += len(chunk)
+                    if size > max_bytes:
+                        raise ValueError("Remote policy PDF exceeds the 50 MB limit")
+                    output.write(chunk)
+    with open(path, "rb") as output:
+        if output.read(4) != b"%PDF":
+            raise ValueError("Remote policy source did not return a PDF")
+
+
+def _download_pdf_attempt_child(connection, url, path, max_bytes, proxy) -> None:
+    try:
+        _download_pdf_attempt(url, path, max_bytes, proxy)
+        connection.send(("ok", ""))
+    except BaseException as exc:  # noqa: BLE001
+        message = str(exc)
+        if isinstance(exc, TimeoutError) or "timed out" in message.casefold():
+            category = "timeout"
+        elif isinstance(exc, ValueError):
+            category = "value"
+        else:
+            category = "runtime"
+        connection.send((category, message))
+    finally:
+        connection.close()
+
+
+def _run_pdf_download_attempt(
+    url: str,
+    path: str,
+    max_bytes: int,
+    proxy: str | None,
+    max_attempt_seconds: float,
+) -> None:
+    """Run one transfer in a process that can be terminated on a hard deadline."""
+
+    context = multiprocessing.get_context("fork")
+    receiver, sender = context.Pipe(duplex=False)
+    process = context.Process(
+        target=_download_pdf_attempt_child,
+        args=(sender, url, path, max_bytes, proxy),
+    )
+    process.start()
+    sender.close()
+    process.join(max_attempt_seconds)
+    if process.is_alive():
+        process.terminate()
+        process.join(5.0)
+        if process.is_alive():
+            process.kill()
+            process.join()
+        receiver.close()
         raise TimeoutError("Remote policy PDF download timed out at its attempt deadline")
 
-    previous_handler = signal.getsignal(signal.SIGALRM)
-    signal.signal(signal.SIGALRM, expire)
-    previous_timer = signal.setitimer(signal.ITIMER_REAL, seconds)
-    started = time.monotonic()
-    try:
-        yield
-    finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)
-        signal.signal(signal.SIGALRM, previous_handler)
-        if previous_timer[0] > 0:
-            elapsed = time.monotonic() - started
-            signal.setitimer(
-                signal.ITIMER_REAL,
-                max(0.000001, previous_timer[0] - elapsed),
-                previous_timer[1],
-            )
+    result = receiver.recv() if receiver.poll() else None
+    receiver.close()
+    if result is None:
+        raise RuntimeError(
+            f"Remote policy PDF download process exited with code {process.exitcode}"
+        )
+    category, message = result
+    if category == "ok":
+        return
+    if category == "timeout":
+        raise TimeoutError(message)
+    if category == "value":
+        raise ValueError(message)
+    raise RuntimeError(message)
 
 
 def _download_remote_pdf(
@@ -67,11 +111,7 @@ def _download_remote_pdf(
 ) -> None:
     """Download a policy PDF with the same retry and proxy routes as acquisition."""
 
-    from poligrapher_app.services.acquisition import (
-        crawl_proxy_mode,
-        httpx_proxy,
-        open_client,
-    )
+    from poligrapher_app.services.acquisition import crawl_proxy_mode, httpx_proxy
 
     configured_proxy = httpx_proxy()
     mode = crawl_proxy_mode()
@@ -85,28 +125,23 @@ def _download_remote_pdf(
         for attempt in range(2):
             destination.seek(0)
             destination.truncate()
-            attempt_started = time.monotonic()
             try:
-                with _wall_clock_deadline(max_attempt_seconds):
-                    with open_client(45.0, proxy) as client:
-                        with client.stream("GET", url) as response:
-                            response.raise_for_status()
-                            size = 0
-                            for chunk in response.iter_bytes(1024 * 1024):
-                                if time.monotonic() - attempt_started > max_attempt_seconds:
-                                    raise TimeoutError(
-                                        "Remote policy PDF download timed out while streaming"
-                                    )
-                                size += len(chunk)
-                                if size > max_bytes:
-                                    raise ValueError(
-                                        "Remote policy PDF exceeds the 50 MB limit"
-                                    )
-                                destination.write(chunk)
+                temp_root = os.getenv("TEMP_WORKSPACE_ROOT") or None
+                with tempfile.TemporaryDirectory(
+                    prefix="poligrapher-pdf-attempt-", dir=temp_root
+                ) as attempt_dir:
+                    attempt_path = str(Path(attempt_dir) / "policy.pdf")
+                    _run_pdf_download_attempt(
+                        url,
+                        attempt_path,
+                        max_bytes,
+                        proxy,
+                        max_attempt_seconds,
+                    )
+                    with open(attempt_path, "rb") as downloaded:
+                        for chunk in iter(lambda: downloaded.read(1024 * 1024), b""):
+                            destination.write(chunk)
                 destination.flush()
-                destination.seek(0)
-                if destination.read(4) != b"%PDF":
-                    raise ValueError("Remote policy source did not return a PDF")
                 destination.seek(0)
                 return
             except Exception as exc:  # noqa: BLE001

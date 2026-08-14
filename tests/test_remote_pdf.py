@@ -1,54 +1,21 @@
 import io
+import tempfile
 import time
-from contextlib import nullcontext
+from pathlib import Path
 
 from poligrapher_app.services import acquisition, runs
-
-
-class _Response:
-    def __init__(self, content: bytes):
-        self.content = content
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_args):
-        return None
-
-    def raise_for_status(self):
-        return None
-
-    def iter_bytes(self, _size):
-        yield self.content
-
-
-class _Client:
-    def __init__(self, response=None, error=None):
-        self.response = response
-        self.error = error
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_args):
-        return None
-
-    def stream(self, _method, _url):
-        if self.error:
-            raise self.error
-        return self.response
 
 
 def test_remote_pdf_download_retries_transient_failure(monkeypatch):
     attempts = []
 
-    def client(_timeout, proxy):
+    def attempt(_url, path, _max_bytes, proxy, _max_attempt_seconds):
         attempts.append(proxy)
         if len(attempts) == 1:
-            return _Client(error=TimeoutError("read timed out"))
-        return _Client(response=_Response(b"%PDF-1.7\npolicy"))
+            raise TimeoutError("read timed out")
+        Path(path).write_bytes(b"%PDF-1.7\npolicy")
 
-    monkeypatch.setattr(acquisition, "open_client", client)
+    monkeypatch.setattr(runs, "_run_pdf_download_attempt", attempt)
     monkeypatch.setattr(acquisition, "httpx_proxy", lambda: None)
     destination = io.BytesIO()
 
@@ -59,11 +26,10 @@ def test_remote_pdf_download_retries_transient_failure(monkeypatch):
 
 
 def test_remote_pdf_download_rejects_non_pdf(monkeypatch):
-    monkeypatch.setattr(
-        acquisition,
-        "open_client",
-        lambda *_args: _Client(response=_Response(b"<html>blocked</html>")),
-    )
+    def attempt(*_args):
+        raise ValueError("Remote policy source did not return a PDF")
+
+    monkeypatch.setattr(runs, "_run_pdf_download_attempt", attempt)
     monkeypatch.setattr(acquisition, "httpx_proxy", lambda: None)
 
     try:
@@ -77,11 +43,10 @@ def test_remote_pdf_download_rejects_non_pdf(monkeypatch):
 
 
 def test_remote_pdf_download_reports_exhausted_timeouts(monkeypatch):
-    monkeypatch.setattr(
-        acquisition,
-        "open_client",
-        lambda *_args: _Client(error=TimeoutError("read timed out")),
-    )
+    def attempt(*_args):
+        raise TimeoutError("read timed out")
+
+    monkeypatch.setattr(runs, "_run_pdf_download_attempt", attempt)
     monkeypatch.setattr(acquisition, "httpx_proxy", lambda: None)
 
     try:
@@ -94,47 +59,45 @@ def test_remote_pdf_download_reports_exhausted_timeouts(monkeypatch):
         raise AssertionError("expected exhausted PDF timeouts to be classified")
 
 
-def test_remote_pdf_download_stops_a_trickling_stream(monkeypatch):
-    monkeypatch.setattr(
-        acquisition,
-        "open_client",
-        lambda *_args: _Client(response=_Response(b"%PDF-1.7\npolicy")),
-    )
-    monkeypatch.setattr(acquisition, "httpx_proxy", lambda: None)
-    monkeypatch.setattr(runs, "_wall_clock_deadline", lambda _seconds: nullcontext())
-    ticks = iter([0.0, 61.0, 62.0, 123.0])
-    monkeypatch.setattr(runs.time, "monotonic", lambda: next(ticks))
-
-    try:
-        runs._download_remote_pdf(
-            "https://example.com/privacy.pdf",
-            io.BytesIO(),
-            max_attempt_seconds=60.0,
-        )
-    except TimeoutError as exc:
-        assert "Remote policy PDF download timed out" in str(exc)
-    else:
-        raise AssertionError("expected a trickling stream to hit the wall-clock bound")
-
-
 def test_remote_pdf_download_stops_before_response_headers(monkeypatch):
-    class BlockingClient(_Client):
-        def stream(self, _method, _url):
-            time.sleep(1)
-            raise AssertionError("attempt deadline did not interrupt the blocked request")
+    def blocked_attempt(*_args):
+        time.sleep(1)
 
-    monkeypatch.setattr(acquisition, "open_client", lambda *_args: BlockingClient())
-    monkeypatch.setattr(acquisition, "httpx_proxy", lambda: None)
+    monkeypatch.setattr(runs, "_download_pdf_attempt", blocked_attempt)
 
     started = time.monotonic()
-    try:
-        runs._download_remote_pdf(
-            "https://example.com/privacy.pdf",
-            io.BytesIO(),
-            max_attempt_seconds=0.02,
-        )
-    except TimeoutError as exc:
-        assert "Remote policy PDF download timed out" in str(exc)
-    else:
-        raise AssertionError("expected a pre-response stall to hit the deadline")
+    with tempfile.TemporaryDirectory() as directory:
+        try:
+            runs._run_pdf_download_attempt(
+                "https://example.com/privacy.pdf",
+                str(Path(directory) / "policy.pdf"),
+                1024,
+                None,
+                0.02,
+            )
+        except TimeoutError as exc:
+            assert "Remote policy PDF download timed out" in str(exc)
+        else:
+            raise AssertionError("expected a pre-response stall to hit the deadline")
     assert time.monotonic() - started < 0.5
+
+
+def test_remote_pdf_download_stops_a_trickling_stream(monkeypatch):
+    def blocked_attempt(*_args):
+        while True:
+            time.sleep(0.01)
+
+    monkeypatch.setattr(runs, "_download_pdf_attempt", blocked_attempt)
+    with tempfile.TemporaryDirectory() as directory:
+        try:
+            runs._run_pdf_download_attempt(
+                "https://example.com/privacy.pdf",
+                str(Path(directory) / "policy.pdf"),
+                1024,
+                None,
+                0.02,
+            )
+        except TimeoutError as exc:
+            assert "Remote policy PDF download timed out" in str(exc)
+        else:
+            raise AssertionError("expected a trickling stream to hit the deadline")
