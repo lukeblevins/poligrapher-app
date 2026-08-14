@@ -13,6 +13,7 @@ import hashlib
 import logging
 import os
 import tempfile
+import time
 import urllib.parse
 import uuid
 import zipfile
@@ -22,7 +23,12 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-def _download_remote_pdf(url: str, destination, max_bytes: int = 50 * 1024 * 1024) -> None:
+def _download_remote_pdf(
+    url: str,
+    destination,
+    max_bytes: int = 50 * 1024 * 1024,
+    max_attempt_seconds: float = 60.0,
+) -> None:
     """Download a policy PDF with the same retry and proxy routes as acquisition."""
 
     from poligrapher_app.services.acquisition import (
@@ -43,12 +49,17 @@ def _download_remote_pdf(url: str, destination, max_bytes: int = 50 * 1024 * 102
         for attempt in range(2):
             destination.seek(0)
             destination.truncate()
+            attempt_started = time.monotonic()
             try:
                 with open_client(45.0, proxy) as client:
                     with client.stream("GET", url) as response:
                         response.raise_for_status()
                         size = 0
                         for chunk in response.iter_bytes(1024 * 1024):
+                            if time.monotonic() - attempt_started > max_attempt_seconds:
+                                raise TimeoutError(
+                                    "Remote policy PDF download timed out while streaming"
+                                )
                             size += len(chunk)
                             if size > max_bytes:
                                 raise ValueError(

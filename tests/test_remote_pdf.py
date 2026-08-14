@@ -90,3 +90,25 @@ def test_remote_pdf_download_reports_exhausted_timeouts(monkeypatch):
         assert "Remote policy PDF download timed out" in str(exc)
     else:
         raise AssertionError("expected exhausted PDF timeouts to be classified")
+
+
+def test_remote_pdf_download_stops_a_trickling_stream(monkeypatch):
+    monkeypatch.setattr(
+        acquisition,
+        "open_client",
+        lambda *_args: _Client(response=_Response(b"%PDF-1.7\npolicy")),
+    )
+    monkeypatch.setattr(acquisition, "httpx_proxy", lambda: None)
+    ticks = iter([0.0, 61.0, 62.0, 123.0])
+    monkeypatch.setattr(runs.time, "monotonic", lambda: next(ticks))
+
+    try:
+        runs._download_remote_pdf(
+            "https://example.com/privacy.pdf",
+            io.BytesIO(),
+            max_attempt_seconds=60.0,
+        )
+    except TimeoutError as exc:
+        assert "Remote policy PDF download timed out" in str(exc)
+    else:
+        raise AssertionError("expected a trickling stream to hit the wall-clock bound")

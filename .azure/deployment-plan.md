@@ -260,6 +260,9 @@ Container App revisions and the existing migration-job template.
 | Five-company recovery smoke | Task `bf27564a-2761-4b37-a626-dc011c4a320d` | `partially_succeeded`: Cooper Companies and Otis Worldwide recovered through validated direct HTML; Lumentum and Targa produced usable website graphs but their optional PDF-from-page branches failed language validation; PNC exhausted two direct PDF attempts and exposed a scheme-less proxy configuration boundary | 2026-08-14 EDT |
 | S&P coverage reconciliation, direct-source fallback | Production graph-aware preview for collection `4cac831c-a33d-438c-a0d5-55ee871418e9` | 442 analyzed and 58 eligible; coverage increased from 440 to 442 | 2026-08-14 EDT |
 | Validation, comparison and proxy follow-up | `./.venv/bin/pytest -q`; Python bytecode compilation; `git diff --check` | Passed: 90 backend tests; scheme-less proxy normalization, `pdf.download_timeout`, and generation-time comparison isolation covered | 2026-08-14 EDT |
+| Comparison and proxy follow-up deployment | GitHub Actions run `31812047309` | Both immutable image builds, infrastructure preview, Azure deployment, migrations, and endpoint verification succeeded at `846b4cfdfe5d7db82625a7b87dbf54991febc5bf` | 2026-08-14 EDT |
+| Comparison and proxy live acceptance | Container Apps revision, worker job, and migration execution | Revision `poligrapherc1de43-app--0000025` is healthy; web and worker use immutable `846b4cf` images; migration `poligrapherc1de43-migrations-l0ehpoj` succeeded | 2026-08-14 EDT |
+| Validation, remote-PDF wall-clock bound | `./.venv/bin/pytest -q`; `git diff --check` | Passed: 91 backend tests; trickling proxy streams are bounded per attempt and retain `pdf.download_timeout` taxonomy | 2026-08-14 EDT |
 
 **Validated by:** azure-validate workflow
 
