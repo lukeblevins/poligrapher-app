@@ -262,7 +262,18 @@ Container App revisions and the existing migration-job template.
 | Validation, comparison and proxy follow-up | `./.venv/bin/pytest -q`; Python bytecode compilation; `git diff --check` | Passed: 90 backend tests; scheme-less proxy normalization, `pdf.download_timeout`, and generation-time comparison isolation covered | 2026-08-14 EDT |
 | Comparison and proxy follow-up deployment | GitHub Actions run `31812047309` | Both immutable image builds, infrastructure preview, Azure deployment, migrations, and endpoint verification succeeded at `846b4cfdfe5d7db82625a7b87dbf54991febc5bf` | 2026-08-14 EDT |
 | Comparison and proxy live acceptance | Container Apps revision, worker job, and migration execution | Revision `poligrapherc1de43-app--0000025` is healthy; web and worker use immutable `846b4cf` images; migration `poligrapherc1de43-migrations-l0ehpoj` succeeded | 2026-08-14 EDT |
+| Three-company comparison-isolation acceptance | Task `b355add6-6d7b-4cd4-bc9a-1b410ddb7824` | `partially_succeeded`: Lumentum and Targa recovered because their website graphs survived optional PDF failures; PNC's direct PDF attempts timed out and its proxy transfer reached the 900-second worker guard as standardized `execution.timeout` | 2026-08-14 EDT |
+| S&P coverage reconciliation, comparison isolation | Production graph-aware preview for collection `4cac831c-a33d-438c-a0d5-55ee871418e9` | 444 analyzed and 56 eligible; coverage increased from 442 to 444 | 2026-08-14 EDT |
 | Validation, remote-PDF wall-clock bound | `./.venv/bin/pytest -q`; `git diff --check` | Passed: 91 backend tests; trickling proxy streams are bounded per attempt and retain `pdf.download_timeout` taxonomy | 2026-08-14 EDT |
+| Remote-PDF wall-clock deployment | GitHub Actions run `31813958859` | Immutable images, infrastructure, migrations, and endpoint verification succeeded at `2f979ff`; revision `poligrapherc1de43-app--0000026` and migration `poligrapherc1de43-migrations-vohlsrq` became healthy | 2026-08-14 EDT |
+| Chunk-level deadline acceptance | Task `7db07b86-cb2a-44e8-ab0f-0b98da0e94fe` | PNC still reached the 900-second worker guard because the proxy blocked before yielding a response chunk; terminal taxonomy remained `execution.timeout` | 2026-08-14 EDT |
+| Signal deadline deployment | GitHub Actions run `31815691933` | Immutable images, infrastructure, migrations, and endpoint verification succeeded at `c708bdd`; revision `poligrapherc1de43-app--0000027` and migration `poligrapherc1de43-migrations-657yh5q` became healthy | 2026-08-14 EDT |
+| Signal deadline acceptance | Task `0ab81ffb-9530-4cf9-b37f-0cb7da70b3bb`; worker execution `poligrapherc1de43-worker-594pw` | PNC proved `SIGALRM` could not reliably interrupt the proxy handshake inside the HTTP/OpenSSL stack; the superseded task was cancelled without changing coverage, establishing the need for a killable process boundary | 2026-08-14 EDT |
+| Validation, isolated PDF attempts | `./.venv/bin/pytest -q`; `git diff --check` | Passed: 92 backend tests, including forced termination for pre-response and continuously trickling stalls; whitespace validation passed | 2026-08-14 EDT |
+| Isolated PDF-attempt deployment | GitHub Actions run `31817527600` | Both immutable image builds, infrastructure preview and deployment, migrations, and endpoint verification succeeded at `e3f8aeeeccb5aebc84f277866019bc74f4d2d5aa` | 2026-08-14 EDT |
+| Isolated PDF-attempt live acceptance | Container Apps revision, worker job, and migration execution | Revision `poligrapherc1de43-app--0000028` is healthy; web and worker use exact immutable `e3f8aee` images; migration `poligrapherc1de43-migrations-98lftsn` succeeded | 2026-08-14 EDT |
+| PNC terminal-failure acceptance | Task `9196a8f3-8073-4d3e-8932-f3c649fdbe90` | `partially_succeeded` in about 211 seconds with root issue `pdf.download_timeout`; the issue exposes retry, replacement-source, and official-PDF-upload actions, with no `execution.timeout` or `execution.unclassified` escape | 2026-08-14 EDT |
+| Final S&P coverage reconciliation | Production graph-aware preview for collection `4cac831c-a33d-438c-a0d5-55ee871418e9` | 444 analyzed and 56 eligible; this recovery released four analyses (Cooper Companies, Otis Worldwide, Lumentum, and Targa) while leaving PNC safely retryable | 2026-08-14 EDT |
 
 **Validated by:** azure-validate workflow
 
@@ -280,7 +291,9 @@ Container App revisions and the existing migration-job template.
 
 ## 10. Next Step
 
-Address the remaining 60 eligible companies by failure class. Treat the 18
-`graph.empty` companies as source-representation failures unless a direct crawl
-proves otherwise, and investigate the 42 acquisition failures with reviewed,
-content-bearing official sources rather than automatic retries.
+Address the remaining 56 eligible companies by standardized failure class.
+Treat `graph.empty` companies as source-representation failures unless a direct
+crawl proves otherwise, and use each terminal issue's retry or manual-source
+actions instead of rerunning the whole cohort. PNC is now a bounded,
+standardized `pdf.download_timeout` case suitable for a replacement URL or an
+official PDF upload.
