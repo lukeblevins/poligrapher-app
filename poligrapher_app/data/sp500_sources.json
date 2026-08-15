@@ -1,6 +1,6 @@
 {
   "collection": "S&P 500",
-  "generated_at": "2026-08-15T20:16:06+00:00",
+  "generated_at": "2026-08-15T20:52:07+00:00",
   "sources": [
     {
       "cik": "1000228",
@@ -3883,11 +3883,11 @@
       "cik": "40704",
       "domain": "generalmills.com",
       "name": "General Mills",
-      "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://www.generalmills.com/privacy-security/us-english-privacy-policy",
+      "source_checked_at": "2026-08-15T20:52:07+00:00",
+      "source_final_url": "https://privacy.generalmills.com/",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.generalmills.com/privacy-security/us-english-privacy-policy",
+      "source_url": "https://privacy.generalmills.com/",
       "tickers": [
         "GIS"
       ]
@@ -6067,11 +6067,11 @@
       "cik": "91440",
       "domain": "snapon.com",
       "name": "Snap-on",
-      "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://policies.snapon.com/fr/rw",
+      "source_checked_at": "2026-08-15T20:52:07+00:00",
+      "source_final_url": "https://policies.snapon.com/en/rw",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://policies.snapon.com/fr/rw",
+      "source_url": "https://policies.snapon.com/en/rw",
       "tickers": [
         "SNA"
       ]

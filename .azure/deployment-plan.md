@@ -274,10 +274,24 @@ Container App revisions and the existing migration-job template.
 | Isolated PDF-attempt live acceptance | Container Apps revision, worker job, and migration execution | Revision `poligrapherc1de43-app--0000028` is healthy; web and worker use exact immutable `e3f8aee` images; migration `poligrapherc1de43-migrations-98lftsn` succeeded | 2026-08-14 EDT |
 | PNC terminal-failure acceptance | Task `9196a8f3-8073-4d3e-8932-f3c649fdbe90` | `partially_succeeded` in about 211 seconds with root issue `pdf.download_timeout`; the issue exposes retry, replacement-source, and official-PDF-upload actions, with no `execution.timeout` or `execution.unclassified` escape | 2026-08-14 EDT |
 | Final S&P coverage reconciliation | Production graph-aware preview for collection `4cac831c-a33d-438c-a0d5-55ee871418e9` | 444 analyzed and 56 eligible; this recovery released four analyses (Cooper Companies, Otis Worldwide, Lumentum, and Targa) while leaving PNC safely retryable | 2026-08-14 EDT |
+| Fast-audit failure reproduction | Task `e6118028-3002-4f36-9496-98408b29eaab`; worker `poligrapherc1de43-worker-ksjs8` | Legacy audit stalled at 5/55 and surfaced invalid no-op replacements that repeated the current URL; the read-only task and exact worker execution were cancelled and later settled terminally | 2026-08-15 EDT |
+| Validation, bounded two-phase audit | `./.venv/bin/pytest -q`; Python bytecode compilation; `git diff --check` | Passed: 95 backend tests; fast/deep budgets, cross-path source exclusion, strict replacement validation, and eight-lane audit concurrency covered | 2026-08-15 EDT |
+| Bounded two-phase audit deployment | GitHub Actions run `31905175512` | Both immutable images, infrastructure, migrations, and endpoint verification succeeded at `c35b8df2364fa02be5062bc2719296bb54615554` | 2026-08-15 EDT |
+| Bounded two-phase audit live acceptance | Container Apps revision, worker job, and migration execution | Revision `poligrapherc1de43-app--0000029` was healthy on exact `c35b8df` images; migration `poligrapherc1de43-migrations-ldysy1a` succeeded | 2026-08-15 EDT |
+| Full fast source audit | Task `9a49740c-1708-45ba-8fb3-02631e6f6a27` | `succeeded`: 55/55 completed in about one minute with 0 audit errors; 37 unresolved, 9 nominal same-domain candidates, and 9 review-required candidates; scope review rejected investor, annual-report, jobs, manuals, app-specific, regional, subsidiary, competitor, and lookalike pages | 2026-08-15 EDT |
+| Reviewed two-source recovery | Task `fb21a52f-e829-4b58-b05d-573284e6f092` | `partially_succeeded`: GE Aerospace recovered on its official corporate privacy page; Costco remained `graph.empty` and its experimental URL was reverted | 2026-08-15 EDT |
+| S&P coverage reconciliation, fast audit | Production graph-aware preview | 445 analyzed and 55 eligible; GE Aerospace raised coverage by one | 2026-08-15 EDT |
+| Deep-audit process-boundary finding | Task `07b9d6e1-7a78-41ea-8745-143e50e02824`; worker `poligrapherc1de43-worker-h2q5p` | Deep discovery stalled at 12/54 inside homepage/proxy requests; the read-only execution was cancelled, establishing that HTTP timeouts alone did not bound a complete company audit | 2026-08-15 EDT |
+| Validation, isolated audit attempts | `./.venv/bin/pytest -q`; Python bytecode compilation; `git diff --check` | Passed: 96 backend tests; every fast/deep company audit runs in a killable spawn process with 75/150-second wall-clock deadlines | 2026-08-15 EDT |
+| Isolated audit-attempt deployment | GitHub Actions run `31906534240` | Both immutable images, infrastructure, durable GE Aerospace source import, migrations, and endpoint verification succeeded at `b5dade5fb450babca14d46b6a51f8ba4d2af89a8` | 2026-08-15 EDT |
+| Isolated audit-attempt live acceptance | Container Apps revision, worker job, and migration execution | Revision `poligrapherc1de43-app--0000030` is healthy; web and worker use exact `b5dade5` images; migration `poligrapherc1de43-migrations-o0mjk7p` succeeded | 2026-08-15 EDT |
+| Full bounded deep audit | Task `1f1a989c-7bd1-41d0-9fec-cb3f4450f5a4` | `partially_succeeded`: all 54 completed; 27 unresolved, 4 distinct validated candidates, and 23 explicit 150-second audit errors. The process boundary resumed progress beyond the prior 12-company stall and settled the parent task | 2026-08-15 EDT |
+| Deep-source recovery batch | Task `e29e1c25-f92f-41fa-8743-918c562b70da` | `partially_succeeded`: General Mills and Snap-on recovered; Vulcan Materials returned `source.unsupported_language` and its experimental URL was reverted; Northrop Grumman's audience-specific prospect notice was not applied | 2026-08-15 EDT |
+| Final S&P maximized-safe coverage | Production graph-aware preview and deep-audit root summary | 447 analyzed and 53 eligible. Remaining roots: 17 `graph.empty`, 15 `crawl.navigation_failed`, 9 `source.inaccessible`, 7 `source.not_policy`, 2 `source.unsupported_language`, 2 `pdf.invalid_source`, and 1 `pdf.download_timeout`; no remaining audited replacement is safe for automatic application | 2026-08-15 EDT |
 
 **Validated by:** azure-validate workflow
 
-**Validation timestamp:** 2026-08-14 EDT
+**Validation timestamp:** 2026-08-15 EDT
 
 ## 9. Files
 
@@ -291,9 +305,10 @@ Container App revisions and the existing migration-job template.
 
 ## 10. Next Step
 
-Address the remaining 56 eligible companies by standardized failure class.
-Treat `graph.empty` companies as source-representation failures unless a direct
-crawl proves otherwise, and use each terminal issue's retry or manual-source
-actions instead of rerunning the whole cohort. PNC is now a bounded,
-standardized `pdf.download_timeout` case suitable for a replacement URL or an
-official PDF upload.
+Address the remaining 53 eligible companies through reviewed manual source
+selection or official PDF upload, not another automatic cohort retry. The
+automated fast and bounded-deep discovery passes are exhausted: remaining
+candidates are audience-specific, regional, investor, jobs, subsidiary,
+competitor, lookalike, or otherwise fail the analyzer. Preserve the standardized
+root issue and recovery actions for each company, including PNC's bounded
+`pdf.download_timeout`.
