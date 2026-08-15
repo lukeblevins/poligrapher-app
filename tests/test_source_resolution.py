@@ -1,5 +1,6 @@
 from poligrapher_app.services.acquisition import (
     PolicySourceResolver,
+    discover_links,
     fetch_validated_policy_html,
     is_privacy_document,
     reader_snapshot_url,
@@ -104,6 +105,18 @@ def test_resolver_excludes_current_url_from_site_discovery(monkeypatch):
     )
 
     assert result is None
+
+
+def test_site_discovery_rejects_audience_specific_privacy_pages():
+    html = """
+      <a href="/privacy-policy">Privacy policy</a>
+      <a href="/investors/privacy-policy">Investor privacy policy</a>
+      <a href="/careers/applicant-privacy">Applicant privacy notice</a>
+    """
+
+    assert discover_links(html, "https://example.com", "example.com") == [
+        (9, "https://example.com/privacy-policy")
+    ]
 
 
 def test_privacy_document_requires_brand_for_cross_domain_result():

@@ -79,6 +79,12 @@ export const api = {
     request<IndexSyncSummary>("/api/collections/sp500/sync", { method: "POST" }),
   verifyCollectionSources: (id: string) =>
     request<TaskStatus>(`/api/collections/${id}/verify-sources`, { method: "POST" }),
+  recoverCollectionFailures: (id: string) =>
+    request<TaskStatus>(`/api/collections/${id}/recover-failures`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ deep: true }),
+    }),
   analyzeCollection: (id: string) =>
     request<TaskStatus>(`/api/collections/${id}/runs`, { method: "POST" }),
 

@@ -9,9 +9,10 @@ import os
 import urllib.parse
 import uuid
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from poligrapher_app.api.models import Policy, Provider, TaskIssue
+from poligrapher_app.api.models import Policy, Provider, TaskIssue, TaskRecord
 from poligrapher_app.services.acquisition import (
     PolicySourceResolver,
     fetch_validated_policy_html,
@@ -77,10 +78,12 @@ def source_audit_targets(
     latest_code: dict[str, str] = {}
     issues = (
         db.query(TaskIssue)
+        .join(TaskRecord, TaskIssue.task_id == TaskRecord.id)
         .filter(
             TaskIssue.provider_id.in_([str(provider_id) for provider_id in provider_ids]),
             TaskIssue.severity == "error",
             TaskIssue.code != "execution.subprocess_failed",
+            or_(TaskRecord.kind.is_(None), TaskRecord.kind != "cohort-recovery"),
         )
         .order_by(TaskIssue.occurred_at.desc())
         .all()

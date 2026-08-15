@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import uuid
 
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 from poligrapher_app.api.database import Base
 from poligrapher_app.api.models import Policy, Provider, TaskIssue, TaskRecord
@@ -79,6 +79,49 @@ def test_source_audit_targets_select_latest_unresolved_source_failure():
         ("Graph Failed", "graph.empty"),
         ("Source Failed", "crawl.navigation_failed"),
     ]
+
+
+def test_source_audit_targets_ignore_failed_recovery_experiments():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        provider = Provider(
+            name="Example",
+            domain="example.test",
+            source_url="https://example.test/privacy",
+        )
+        original = TaskRecord(kind="collection-analysis", status="done")
+        recovery = TaskRecord(kind="cohort-recovery", status="done")
+        db.add_all([provider, original, recovery])
+        db.flush()
+        db.add_all([
+            TaskIssue(
+                task_id=original.id,
+                code="source.not_policy",
+                stage="validation",
+                severity="error",
+                retryability="manual",
+                summary="Original source was not a policy",
+                provider_id=str(provider.id),
+                occurred_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+            ),
+            TaskIssue(
+                task_id=recovery.id,
+                code="crawl.navigation_failed",
+                stage="acquisition",
+                severity="error",
+                retryability="transient",
+                summary="Candidate experiment failed",
+                provider_id=str(provider.id),
+                occurred_at=datetime.now(timezone.utc),
+            ),
+        ])
+        db.commit()
+
+        targets = cohort_audit.source_audit_targets(db, [provider.id])
+
+    assert len(targets) == 1
+    assert targets[0].root_code == "source.not_policy"
 
 
 def test_audit_source_target_returns_only_validated_replacement(monkeypatch):

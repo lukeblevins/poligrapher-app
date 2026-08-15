@@ -69,6 +69,13 @@ class CompanyCollectionUpdate(BaseModel):
     provider_ids: list[uuid.UUID] | None = None
 
 
+class CohortRecoveryRequest(BaseModel):
+    """Optional bounds for a repeatable collection recovery run."""
+
+    provider_ids: list[uuid.UUID] | None = None
+    deep: bool = True
+
+
 class CompanyCollectionRead(BaseModel):
     id: uuid.UUID
     name: str

@@ -7,6 +7,7 @@ import analyzeIcon from "@material-symbols/svg-400/rounded/analytics.svg?url";
 import scoreIcon from "@material-symbols/svg-400/rounded/checklist.svg?url";
 import syncIcon from "@material-symbols/svg-400/rounded/sync.svg?url";
 import verifyIcon from "@material-symbols/svg-400/rounded/verified.svg?url";
+import recoverIcon from "@material-symbols/svg-400/rounded/healing.svg?url";
 import closeIcon from "@material-symbols/svg-400/rounded/close.svg?url";
 
 import { api } from "../api/client";
@@ -139,6 +140,13 @@ export function CollectionsWorkspace() {
       setNotice("Source verification queued.");
     },
   });
+  const recover = useMutation({
+    mutationFn: (id: string) => api.recoverCollectionFailures(id),
+    onSuccess: () => {
+      invalidate();
+      setNotice("Coverage recovery queued. Safe repairs will be kept only after analysis succeeds.");
+    },
+  });
 
   const members = useMemo(() => {
     if (!selected) return [];
@@ -153,7 +161,7 @@ export function CollectionsWorkspace() {
   const analyzedCount = selected ? providers.filter((provider) => selected.provider_ids.includes(provider.id) && provider.analyzed_count > 0).length : 0;
   const renderedMembers = members.slice(0, visibleMemberCount);
   const pending = create.isPending || update.isPending;
-  const mutationError = create.error || update.error || remove.error || sync.error || verify.error;
+  const mutationError = create.error || update.error || remove.error || sync.error || verify.error || recover.error;
   const industries = useMemo(() => [...new Set(providers.map((provider) => provider.industry).filter((industry): industry is string => Boolean(industry)))].sort(), [providers]);
   const filteredDraftProviders = useMemo(() => {
     const needle = draftCompanyQuery.trim().toLowerCase();
@@ -358,6 +366,7 @@ export function CollectionsWorkspace() {
                   <div className="m3-collection-action-group" role="group" aria-label="Collection actions">
                     <button type="button" onClick={() => previewBulk("generate", selected)}><span className="m3-button-label"><span className="m3-material-symbol" style={{ "--m3-symbol-url": `url("${analyzeIcon}")` } as CSSProperties} aria-hidden="true" />Analyze</span></button>
                     <button type="button" disabled={verify.isPending} onClick={() => verify.mutate(selected.id)}><span className="m3-button-label"><span className="m3-material-symbol" style={{ "--m3-symbol-url": `url("${verifyIcon}")` } as CSSProperties} aria-hidden="true" />{verify.isPending ? "Queueing…" : "Verify"}</span></button>
+                    <button type="button" disabled={recover.isPending} onClick={() => recover.mutate(selected.id)}><span className="m3-button-label"><span className="m3-material-symbol" style={{ "--m3-symbol-url": `url("${recoverIcon}")` } as CSSProperties} aria-hidden="true" />{recover.isPending ? "Queueing…" : "Recover"}</span></button>
                     <button type="button" onClick={() => previewBulk("score", selected)}><span className="m3-button-label"><span className="m3-material-symbol" style={{ "--m3-symbol-url": `url("${scoreIcon}")` } as CSSProperties} aria-hidden="true" />Score</span></button>
                     {selected.kind === "system" && <button type="button" disabled={sync.isPending} onClick={() => sync.mutate()}><span className="m3-button-label"><span className="m3-material-symbol" style={{ "--m3-symbol-url": `url("${syncIcon}")` } as CSSProperties} aria-hidden="true" />{sync.isPending ? "Syncing…" : "Sync"}</span></button>}
                   </div>

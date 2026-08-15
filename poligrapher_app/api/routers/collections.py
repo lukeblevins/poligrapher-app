@@ -10,6 +10,7 @@ from poligrapher_app.api.schemas import (
     CompanyCollectionCreate,
     CompanyCollectionRead,
     CompanyCollectionUpdate,
+    CohortRecoveryRequest,
     IndexSyncSummary,
     TaskStatus,
 )
@@ -154,6 +155,40 @@ def audit_collection_failures(
             "kind": "cohort-source-audit",
             "provider_ids": [str(target.provider_id) for target in targets],
             "deep": deep,
+        },
+    )
+    return TaskStatus(**registry.get(task_id))
+
+
+@router.post("/{collection_id}/recover-failures", response_model=TaskStatus)
+def recover_collection_failures(
+    collection_id: uuid.UUID,
+    body: CohortRecoveryRequest,
+    request: Request,
+    db: Db,
+):
+    """Discover and verify safe source repairs for unresolved companies."""
+
+    collection = db.get(CompanyCollection, collection_id)
+    if collection is None:
+        raise HTTPException(status_code=404, detail="Collection not found")
+    member_ids = {provider.id for provider in collection.providers}
+    requested_ids = body.provider_ids if body.provider_ids is not None else list(member_ids)
+    if any(provider_id not in member_ids for provider_id in requested_ids):
+        raise HTTPException(status_code=422, detail="Recovery targets must belong to the collection")
+    targets = source_audit_targets(db, requested_ids)
+    registry = request.app.state.tasks
+    task_id = registry.create(
+        kind="cohort-recovery",
+        title=f"Recover {len(targets)} failed company sources",
+        total=len(targets),
+    )
+    registry.enqueue(
+        task_id,
+        {
+            "kind": "cohort-recovery",
+            "provider_ids": [str(target.provider_id) for target in targets],
+            "deep": body.deep,
         },
     )
     return TaskStatus(**registry.get(task_id))

@@ -18,6 +18,8 @@ const OPERATION_LABELS: Record<string, string> = {
   "bulk-score": "Score analyses",
   refresh: "Refresh analyses",
   "source-verification": "Source verification",
+  "cohort-source-audit": "Source audit",
+  "cohort-recovery": "Coverage recovery",
   "retention-cleanup": "Retention cleanup",
   schedule: "Scheduled analysis",
 };
@@ -47,7 +49,7 @@ export function taskPresentation(task: TaskStatus): TaskPresentation {
   const operation = (task.kind && OPERATION_LABELS[task.kind]) || fallbackOperation(task);
   const target = task.provider_name
     || legacyTarget(task)
-    || (task.total > 0 && ["bulk-generate", "bulk-score", "collection-analysis"].includes(task.kind ?? "")
+    || (task.total > 0 && ["bulk-generate", "bulk-score", "collection-analysis", "cohort-recovery"].includes(task.kind ?? "")
       ? `${task.total} ${task.kind === "bulk-score" ? (task.total === 1 ? "policy" : "policies") : (task.total === 1 ? "company" : "companies")}`
       : null);
   return { operation, target };

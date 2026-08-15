@@ -174,8 +174,10 @@ AUTO_CONFIDENCE = 0.75
 
 _PRIVACY_PATH = re.compile(r"privacy[-_/]?(policy|notice|statement|center|centre)?", re.I)
 _NARROW_POLICY_RESULT = re.compile(
-    r"(applicant|candidate|recruit|employee|workday|pension|retiree|"
-    r"hipaa|health[-_ ]fund|benchmark|study|canadian[-_ ]residents?)",
+    r"(?:^|[\s/_-])(?:applicant|candidate|recruit|employee|workday|pension|retiree|"
+    r"hipaa|health[-_ ]fund|benchmark|study|canadian[-_ ]residents?|"
+    r"investors?|annual[-_ ]reports?|careers?|jobs?|manuals?|prospects?|"
+    r"connected[-_ ]apps?)(?:$|[\s/?#&._=-])",
     re.I,
 )
 _PIPELINE_POLICY_PATTERN = re.compile(
@@ -262,6 +264,8 @@ def score_link(text: str, href: str, domain: str) -> int:
     """Heuristic score that ``href`` is the provider's own privacy policy."""
     t = (text or "").strip().lower()
     h = (href or "").lower()
+    if _NARROW_POLICY_RESULT.search(f"{t} {h}"):
+        return -100
     s = 0
     if any(k in t for k in ("privacy policy", "privacy notice", "privacy statement")):
         s += 5
@@ -831,7 +835,11 @@ class PolicySourceResolver:
             if s != 200:
                 continue
             for loc in re.findall(r"<loc>\s*([^<\s]+)\s*</loc>", body):
-                if _PRIVACY_PATH.search(loc) and registrable_domain(loc) == domain:
+                if (
+                    _PRIVACY_PATH.search(loc)
+                    and not _NARROW_POLICY_RESULT.search(loc)
+                    and registrable_domain(loc) == domain
+                ):
                     return SourceCandidate(loc, "sitemap", 0.6, notes="sitemap entry")
         return None
 
