@@ -21,7 +21,8 @@ must be a member of the collection.
    This includes bounded PDF download timeouts as well as source, crawl,
    validation, language, and empty-graph failures.
 2. Audit all targets concurrently with the fast resolver pass, then run the
-   deep pass only for unresolved or timed-out targets.
+   deep pass only for unresolved or timed-out targets. A standardized transient
+   failure retries its configured source directly instead of rediscovering it.
 3. Auto-attempt only the current pipeline-valid source or a validated
    replacement on the provider's official domain that meets the resolver's
    shared auto-confidence threshold. Low-confidence, cross-domain, and

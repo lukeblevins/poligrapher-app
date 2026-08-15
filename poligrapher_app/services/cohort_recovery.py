@@ -40,7 +40,7 @@ class ProviderSourceSnapshot:
 def recovery_url(result: dict) -> str | None:
     """Return only a resolver-validated URL that is safe to auto-try."""
 
-    if result.get("status") == "current_valid":
+    if result.get("status") in {"current_valid", "retry_current"}:
         return result.get("current_resolved_url") or result.get("source_url")
     if result.get("status") == "replacement_found":
         return result.get("replacement_url")

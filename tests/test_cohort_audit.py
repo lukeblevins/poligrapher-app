@@ -79,6 +79,7 @@ def test_source_audit_targets_select_latest_unresolved_source_failure():
         ("Graph Failed", "graph.empty"),
         ("Source Failed", "crawl.navigation_failed"),
     ]
+    assert [target.root_retryability for target in targets] == ["manual", "transient"]
 
 
 def test_source_audit_targets_ignore_failed_recovery_experiments():
@@ -184,6 +185,30 @@ def test_audit_source_target_returns_only_validated_replacement(monkeypatch):
     assert result["current_valid"] is False
     assert result["replacement_url"] == "https://example.com/privacy"
     assert result["replacement_confidence"] == 0.84
+
+
+def test_audit_source_target_retries_transient_current_source_without_discovery(monkeypatch):
+    target = cohort_audit.SourceAuditTarget(
+        provider_id=uuid.uuid4(),
+        provider_name="Example",
+        domain="example.com",
+        source_url="https://example.com/privacy",
+        root_code="crawl.navigation_failed",
+        root_retryability="transient",
+    )
+
+    monkeypatch.setattr(
+        cohort_audit,
+        "PolicySourceResolver",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("transient retries must not spend time on discovery")
+        ),
+    )
+
+    result = cohort_audit.audit_source_target(target, deep=True)
+
+    assert result["status"] == "retry_current"
+    assert result["current_resolved_url"] == target.source_url
 
 
 def test_audit_source_target_requires_review_for_off_domain_candidate(monkeypatch):

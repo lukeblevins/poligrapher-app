@@ -29,6 +29,10 @@ def test_recovery_url_only_allows_pipeline_validated_candidates():
         "replacement_url": "https://example.test/privacy-policy",
     }) == "https://example.test/privacy-policy"
     assert recovery_url({
+        "status": "retry_current",
+        "source_url": "https://example.test/privacy",
+    }) == "https://example.test/privacy"
+    assert recovery_url({
         "status": "review_required",
         "replacement_url": "https://other.test/privacy",
     }) is None

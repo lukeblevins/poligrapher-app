@@ -40,6 +40,7 @@ class SourceAuditTarget:
     domain: str | None
     source_url: str | None
     root_code: str
+    root_retryability: str = "manual"
 
 
 def _matches_provider_domain(url: str, domain: str | None) -> bool:
@@ -77,7 +78,7 @@ def source_audit_targets(
         .all()
         if isinstance(graph_data, dict) and graph_data.get("elements")
     }
-    latest_code: dict[str, str] = {}
+    latest_issue: dict[str, tuple[str, str]] = {}
     issues = (
         db.query(TaskIssue)
         .join(TaskRecord, TaskIssue.task_id == TaskRecord.id)
@@ -92,7 +93,10 @@ def source_audit_targets(
     )
     for issue in issues:
         if issue.provider_id:
-            latest_code.setdefault(issue.provider_id, issue.code)
+            latest_issue.setdefault(
+                issue.provider_id,
+                (issue.code, issue.retryability),
+            )
 
     providers = (
         db.query(Provider)
@@ -106,11 +110,12 @@ def source_audit_targets(
             provider_name=provider.name,
             domain=provider.domain,
             source_url=provider.source_url,
-            root_code=latest_code[str(provider.id)],
+            root_code=latest_issue[str(provider.id)][0],
+            root_retryability=latest_issue[str(provider.id)][1],
         )
         for provider in providers
         if provider.id not in analyzed_ids
-        and latest_code.get(str(provider.id)) in AUDITABLE_FAILURE_CODES
+        and latest_issue.get(str(provider.id), (None, None))[0] in AUDITABLE_FAILURE_CODES
     ]
 
 
@@ -128,6 +133,15 @@ def audit_source_target(target: SourceAuditTarget, *, deep: bool = False) -> dic
         "replacement_confidence": None,
         "replacement_notes": None,
     }
+    # Standardized transient failures already authorize retrying the configured
+    # source. Do that directly instead of spending minutes rediscovering a URL
+    # that is not known to be wrong.
+    if target.source_url and target.root_retryability == "transient":
+        result.update(
+            status="retry_current",
+            current_resolved_url=target.source_url,
+        )
+        return result
     resolver = PolicySourceResolver(allow_headless=False)
     try:
         # An empty graph already proves the current source reached the pipeline.
