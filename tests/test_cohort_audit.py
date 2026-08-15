@@ -219,6 +219,43 @@ def test_audit_source_target_requires_review_for_off_domain_candidate(monkeypatc
     assert result["replacement_url"] == "https://example-privacy.com/privacy"
 
 
+def test_audit_source_target_requires_review_below_auto_confidence(monkeypatch):
+    target = cohort_audit.SourceAuditTarget(
+        provider_id=uuid.uuid4(),
+        provider_name="Example",
+        domain="example.com",
+        source_url="https://example.com/wrong",
+        root_code="source.not_policy",
+    )
+
+    class Resolver:
+        def __init__(self, allow_headless=False):
+            assert allow_headless is False
+
+        def resolve_candidate(self, *_args, **_kwargs):
+            return SimpleNamespace(
+                url="https://privacy.example.com/privacy-policy",
+                strategy="sitemap",
+                confidence=0.6,
+                notes="validated but ambiguous sitemap result",
+            )
+
+    monkeypatch.setattr(cohort_audit, "PolicySourceResolver", Resolver)
+    monkeypatch.setattr(
+        cohort_audit,
+        "fetch_validated_policy_html",
+        lambda url, **_kwargs: (
+            "<html>policy</html>" if url == "https://privacy.example.com/privacy-policy" else ""
+        ),
+    )
+
+    result = cohort_audit.audit_source_target(target, deep=True)
+
+    assert result["status"] == "review_required"
+    assert result["replacement_url"] == "https://privacy.example.com/privacy-policy"
+    assert result["replacement_confidence"] == 0.6
+
+
 def test_graph_empty_audit_skips_current_source_and_finds_alternate(monkeypatch):
     target = cohort_audit.SourceAuditTarget(
         provider_id=uuid.uuid4(),

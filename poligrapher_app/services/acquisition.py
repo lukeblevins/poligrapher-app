@@ -176,7 +176,7 @@ _PRIVACY_PATH = re.compile(r"privacy[-_/]?(policy|notice|statement|center|centre
 _NARROW_POLICY_RESULT = re.compile(
     r"(?:^|[\s/_-])(?:applicant|candidate|recruit|employee|workday|pension|retiree|"
     r"hipaa|health[-_ ]fund|benchmark|study|canadian[-_ ]residents?|"
-    r"investors?|annual[-_ ]reports?|careers?|jobs?|manuals?|prospects?|"
+    r"investors?|investor[-_ ]relations?|ir|annual[-_ ]reports?|careers?|jobs?|manuals?|prospects?|"
     r"connected[-_ ]apps?|human[-_ ]resources?|hr[-_ ]information|"
     r"newsletters?|subscriptions?)(?:$|[\s/?#&._=-])",
     re.I,

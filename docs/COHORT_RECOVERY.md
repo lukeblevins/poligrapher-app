@@ -23,7 +23,8 @@ must be a member of the collection.
 2. Audit all targets concurrently with the fast resolver pass, then run the
    deep pass only for unresolved or timed-out targets.
 3. Auto-attempt only the current pipeline-valid source or a validated
-   replacement on the provider's official domain. Cross-domain and
+   replacement on the provider's official domain that meets the resolver's
+   shared auto-confidence threshold. Low-confidence, cross-domain, and
    audience-specific policies remain review items.
 4. Run the normal company-analysis pipeline in its killable subprocess.
 5. Keep a source only when analysis produces non-empty `graph_data.elements`.

@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from poligrapher_app.api.models import Policy, Provider, TaskIssue, TaskRecord
 from poligrapher_app.services.acquisition import (
+    AUTO_CONFIDENCE,
     PolicySourceResolver,
     fetch_validated_policy_html,
 )
@@ -168,7 +169,10 @@ def audit_source_target(target: SourceAuditTarget, *, deep: bool = False) -> dic
                 return result
         status = (
             "replacement_found"
-            if _matches_provider_domain(candidate.url, target.domain)
+            if (
+                _matches_provider_domain(candidate.url, target.domain)
+                and candidate.confidence >= AUTO_CONFIDENCE
+            )
             else "review_required"
         )
         result.update(
