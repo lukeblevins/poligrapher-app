@@ -44,9 +44,13 @@ class SourceAuditTarget:
 
 
 def _matches_provider_domain(url: str, domain: str | None) -> bool:
-    expected = (domain or "").casefold().strip(". ")
+    expected = (domain or "").casefold().strip(". ").removeprefix("www.")
     host = (urllib.parse.urlparse(url).hostname or "").casefold().strip(".")
-    return bool(expected and (host == expected or host.endswith(f".{expected}")))
+    # A registrable-domain match alone is not enough for unattended recovery:
+    # product, workforce, investor, and historical microsites commonly live on
+    # first-party subdomains. Keep those candidates visible for review, while
+    # allowing only the company's canonical apex/www hosts to auto-run.
+    return bool(expected and host in {expected, f"www.{expected}"})
 
 
 def _source_identity(url: str | None) -> str:
