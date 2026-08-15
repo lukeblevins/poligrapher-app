@@ -18,6 +18,8 @@ must be a member of the collection.
 
 1. Target only collection members without non-empty graph output whose latest
    non-recovery issue is in the auditable failure taxonomy.
+   This includes bounded PDF download timeouts as well as source, crawl,
+   validation, language, and empty-graph failures.
 2. Audit all targets concurrently with the fast resolver pass, then run the
    deep pass only for unresolved or timed-out targets.
 3. Auto-attempt only the current pipeline-valid source or a validated

@@ -26,6 +26,7 @@ SOURCE_FAILURE_CODES = frozenset(
         "source.inaccessible",
         "source.unsupported_language",
         "pdf.invalid_source",
+        "pdf.download_timeout",
     }
 )
 AUDITABLE_FAILURE_CODES = SOURCE_FAILURE_CODES | {"graph.empty"}

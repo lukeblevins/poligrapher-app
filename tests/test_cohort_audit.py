@@ -124,6 +124,35 @@ def test_source_audit_targets_ignore_failed_recovery_experiments():
     assert targets[0].root_code == "source.not_policy"
 
 
+def test_source_audit_targets_include_bounded_pdf_timeouts():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        provider = Provider(
+            name="Example PDF",
+            domain="example.test",
+            source_url="https://example.test/privacy.pdf",
+        )
+        task = TaskRecord(kind="collection-analysis", status="done")
+        db.add_all([provider, task])
+        db.flush()
+        db.add(TaskIssue(
+            task_id=task.id,
+            code="pdf.download_timeout",
+            stage="acquisition",
+            severity="error",
+            retryability="transient",
+            summary="PDF download timed out",
+            provider_id=str(provider.id),
+        ))
+        db.commit()
+
+        targets = cohort_audit.source_audit_targets(db, [provider.id])
+
+    assert len(targets) == 1
+    assert targets[0].root_code == "pdf.download_timeout"
+
+
 def test_audit_source_target_returns_only_validated_replacement(monkeypatch):
     target = cohort_audit.SourceAuditTarget(
         provider_id=uuid.uuid4(),
