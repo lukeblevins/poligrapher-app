@@ -278,3 +278,70 @@ def test_deep_audit_revalidates_discovered_candidate(monkeypatch):
 
     assert result["status"] == "replacement_found"
     assert result["replacement_url"] == "https://example.com/privacy"
+
+
+def test_audit_subprocess_is_terminated_at_wall_clock_deadline():
+    target = cohort_audit.SourceAuditTarget(
+        provider_id=uuid.uuid4(),
+        provider_name="Stalled",
+        domain="stalled.example",
+        source_url="https://stalled.example/privacy",
+        root_code="source.inaccessible",
+    )
+
+    class Connection:
+        def __init__(self):
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+        def poll(self):
+            return False
+
+    class Process:
+        exitcode = None
+
+        def __init__(self):
+            self.alive = True
+            self.terminated = False
+
+        def start(self):
+            return None
+
+        def join(self, _timeout):
+            return None
+
+        def is_alive(self):
+            return self.alive
+
+        def terminate(self):
+            self.terminated = True
+            self.alive = False
+
+    class Context:
+        def __init__(self):
+            self.receiver = Connection()
+            self.sender = Connection()
+            self.process = Process()
+
+        def Pipe(self, duplex=False):
+            assert duplex is False
+            return self.receiver, self.sender
+
+        def Process(self, **kwargs):
+            assert kwargs["target"] is cohort_audit._audit_source_target_child
+            assert kwargs["daemon"] is True
+            return self.process
+
+    context = Context()
+    result = cohort_audit._run_audit_source_target(
+        target,
+        deep=True,
+        timeout_seconds=0.01,
+        context=context,
+    )
+
+    assert context.process.terminated is True
+    assert result["status"] == "audit_error"
+    assert result["error"] == "Source audit exceeded 0.01 seconds"

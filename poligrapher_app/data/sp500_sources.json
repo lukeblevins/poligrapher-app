@@ -1,6 +1,6 @@
 {
   "collection": "S&P 500",
-  "generated_at": "2026-07-28T06:01:09.464199+00:00",
+  "generated_at": "2026-08-15T20:16:06+00:00",
   "sources": [
     {
       "cik": "1000228",
@@ -3868,13 +3868,13 @@
     },
     {
       "cik": "40545",
-      "domain": "ge.com",
+      "domain": "geaerospace.com",
       "name": "GE Aerospace",
-      "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://www.ge.com/privacy",
+      "source_checked_at": "2026-08-15T20:16:06+00:00",
+      "source_final_url": "https://www.geaerospace.com/privacy",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.ge.com/privacy",
+      "source_url": "https://www.geaerospace.com/privacy",
       "tickers": [
         "GE"
       ]

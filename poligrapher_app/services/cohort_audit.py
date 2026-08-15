@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
+import multiprocessing
 import os
 import urllib.parse
 import uuid
@@ -130,8 +131,8 @@ def audit_source_target(target: SourceAuditTarget, *, deep: bool = False) -> dic
         if target.source_url and target.root_code != "graph.empty":
             current_html = fetch_validated_policy_html(
                 target.source_url,
-                timeout=30.0 if deep else 12.0,
-                attempts=2 if deep else 1,
+                timeout=20.0 if deep else 12.0,
+                attempts=1,
             )
             if current_html:
                 result.update(
@@ -146,8 +147,8 @@ def audit_source_target(target: SourceAuditTarget, *, deep: bool = False) -> dic
             target.domain,
             exclude_urls={target.source_url} if target.source_url else None,
             require_validation=True,
-            search_timeout=20.0 if deep else 12.0,
-            max_validation_candidates=5 if deep else 2,
+            search_timeout=15.0 if deep else 12.0,
+            max_validation_candidates=3 if deep else 2,
             allow_site_discovery=deep,
         )
         if candidate is None:
@@ -179,6 +180,71 @@ def audit_source_target(target: SourceAuditTarget, *, deep: bool = False) -> dic
         return result
 
 
+def _audit_source_target_child(target: SourceAuditTarget, deep: bool, connection) -> None:
+    """Run one network-heavy audit in a process the parent can terminate."""
+
+    try:
+        connection.send(audit_source_target(target, deep=deep))
+    except BaseException as exc:  # noqa: BLE001
+        connection.send(
+            {
+                **asdict(target),
+                "provider_id": str(target.provider_id),
+                "status": "audit_error",
+                "error": f"Audit subprocess failed: {type(exc).__name__}: {exc}",
+            }
+        )
+    finally:
+        connection.close()
+
+
+def _run_audit_source_target(
+    target: SourceAuditTarget,
+    *,
+    deep: bool,
+    timeout_seconds: float | None = None,
+    context=None,
+) -> dict:
+    """Return one audit result within a true wall-clock deadline."""
+
+    timeout_seconds = timeout_seconds or (150.0 if deep else 75.0)
+    context = context or multiprocessing.get_context("spawn")
+    receiver, sender = context.Pipe(duplex=False)
+    process = context.Process(
+        target=_audit_source_target_child,
+        args=(target, deep, sender),
+        daemon=True,
+    )
+    try:
+        process.start()
+        sender.close()
+        process.join(timeout_seconds)
+        if process.is_alive():
+            process.terminate()
+            process.join(5.0)
+            if process.is_alive() and hasattr(process, "kill"):
+                process.kill()
+                process.join(5.0)
+            return {
+                **asdict(target),
+                "provider_id": str(target.provider_id),
+                "status": "audit_error",
+                "error": f"Source audit exceeded {timeout_seconds:g} seconds",
+            }
+        if receiver.poll():
+            return receiver.recv()
+        return {
+            **asdict(target),
+            "provider_id": str(target.provider_id),
+            "status": "audit_error",
+            "error": f"Audit subprocess exited with code {process.exitcode} without a result",
+        }
+    finally:
+        receiver.close()
+        if not sender.closed:
+            sender.close()
+
+
 def audit_source_targets(
     targets: list[SourceAuditTarget],
     *,
@@ -200,7 +266,7 @@ def audit_source_targets(
     max_workers = max(1, min(configured, 8))
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
-            executor.submit(audit_source_target, target, deep=deep): target
+            executor.submit(_run_audit_source_target, target, deep=deep): target
             for target in targets
         }
         for future in as_completed(futures):
