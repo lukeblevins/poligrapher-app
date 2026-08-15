@@ -113,6 +113,7 @@ def test_site_discovery_rejects_audience_specific_privacy_pages():
       <a href="/investors/privacy-policy">Investor privacy policy</a>
       <a href="/careers/applicant-privacy">Applicant privacy notice</a>
       <a href="/human-resources-hr-information-system-privacy-notices">HR privacy notices</a>
+      <a href="/newsletter-subscription-privacy-notice">Newsletter privacy notice</a>
     """
 
     assert discover_links(html, "https://example.com", "example.com") == [

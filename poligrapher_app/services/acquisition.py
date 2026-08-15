@@ -177,7 +177,8 @@ _NARROW_POLICY_RESULT = re.compile(
     r"(?:^|[\s/_-])(?:applicant|candidate|recruit|employee|workday|pension|retiree|"
     r"hipaa|health[-_ ]fund|benchmark|study|canadian[-_ ]residents?|"
     r"investors?|annual[-_ ]reports?|careers?|jobs?|manuals?|prospects?|"
-    r"connected[-_ ]apps?|human[-_ ]resources?|hr[-_ ]information)(?:$|[\s/?#&._=-])",
+    r"connected[-_ ]apps?|human[-_ ]resources?|hr[-_ ]information|"
+    r"newsletters?|subscriptions?)(?:$|[\s/?#&._=-])",
     re.I,
 )
 _PIPELINE_POLICY_PATTERN = re.compile(
