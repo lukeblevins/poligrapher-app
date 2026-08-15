@@ -44,6 +44,20 @@ def _matches_provider_domain(url: str, domain: str | None) -> bool:
     return bool(expected and (host == expected or host.endswith(f".{expected}")))
 
 
+def _source_identity(url: str | None) -> str:
+    """Normalize superficial URL differences before comparing source identity."""
+
+    if not url:
+        return ""
+    parsed = urllib.parse.urlsplit(url.strip())
+    host = (parsed.hostname or "").casefold().removeprefix("www.")
+    port = f":{parsed.port}" if parsed.port else ""
+    path = parsed.path.rstrip("/") or "/"
+    return urllib.parse.urlunsplit(
+        ("", f"{host}{port}", path, parsed.query, "")
+    )
+
+
 def source_audit_targets(
     db: Session,
     provider_ids: list[uuid.UUID],
@@ -94,7 +108,7 @@ def source_audit_targets(
     ]
 
 
-def audit_source_target(target: SourceAuditTarget) -> dict:
+def audit_source_target(target: SourceAuditTarget, *, deep: bool = False) -> dict:
     """Validate the current source and, if needed, one official replacement."""
 
     result = {
@@ -114,7 +128,11 @@ def audit_source_target(target: SourceAuditTarget) -> dict:
         # Auditing it again only repeats work; look for a distinct official
         # representation that may expose the policy more cleanly instead.
         if target.source_url and target.root_code != "graph.empty":
-            current_html = fetch_validated_policy_html(target.source_url)
+            current_html = fetch_validated_policy_html(
+                target.source_url,
+                timeout=30.0 if deep else 12.0,
+                attempts=2 if deep else 1,
+            )
             if current_html:
                 result.update(
                     status="current_valid",
@@ -128,9 +146,21 @@ def audit_source_target(target: SourceAuditTarget) -> dict:
             target.domain,
             exclude_urls={target.source_url} if target.source_url else None,
             require_validation=True,
+            search_timeout=20.0 if deep else 12.0,
+            max_validation_candidates=5 if deep else 2,
+            allow_site_discovery=deep,
         )
         if candidate is None:
             return result
+        if _source_identity(candidate.url) == _source_identity(target.source_url):
+            return result
+        # Search candidates were validated by the resolver. Deep discovery and
+        # sitemap candidates must satisfy the same analyzer-facing contract
+        # before the audit is allowed to describe them as replacements.
+        if candidate.strategy != "search":
+            candidate_html = fetch_validated_policy_html(candidate.url)
+            if not candidate_html:
+                return result
         status = (
             "replacement_found"
             if _matches_provider_domain(candidate.url, target.domain)
@@ -154,6 +184,7 @@ def audit_source_targets(
     *,
     on_result=None,
     should_cancel=None,
+    deep: bool = False,
 ) -> dict[str, int]:
     """Audit targets concurrently without mutating provider source records."""
 
@@ -165,10 +196,13 @@ def audit_source_targets(
         "unresolved": 0,
         "audit_error": 0,
     }
-    configured = int(os.getenv("COHORT_AUDIT_MAX_WORKERS", "4"))
+    configured = int(os.getenv("COHORT_AUDIT_MAX_WORKERS", "8"))
     max_workers = max(1, min(configured, 8))
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(audit_source_target, target): target for target in targets}
+        futures = {
+            executor.submit(audit_source_target, target, deep=deep): target
+            for target in targets
+        }
         for future in as_completed(futures):
             if should_cancel and should_cancel():
                 for pending in futures:

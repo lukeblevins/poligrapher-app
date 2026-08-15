@@ -105,7 +105,7 @@ def test_audit_source_target_returns_only_validated_replacement(monkeypatch):
             )
 
     monkeypatch.setattr(cohort_audit, "PolicySourceResolver", Resolver)
-    monkeypatch.setattr(cohort_audit, "fetch_validated_policy_html", lambda _url: "")
+    monkeypatch.setattr(cohort_audit, "fetch_validated_policy_html", lambda _url, **_kwargs: "")
     result = cohort_audit.audit_source_target(target)
 
     assert result["status"] == "replacement_found"
@@ -139,7 +139,7 @@ def test_audit_source_target_requires_review_for_off_domain_candidate(monkeypatc
             )
 
     monkeypatch.setattr(cohort_audit, "PolicySourceResolver", Resolver)
-    monkeypatch.setattr(cohort_audit, "fetch_validated_policy_html", lambda _url: "")
+    monkeypatch.setattr(cohort_audit, "fetch_validated_policy_html", lambda _url, **_kwargs: "")
 
     result = cohort_audit.audit_source_target(target)
 
@@ -177,7 +177,7 @@ def test_graph_empty_audit_skips_current_source_and_finds_alternate(monkeypatch)
     monkeypatch.setattr(
         cohort_audit,
         "fetch_validated_policy_html",
-        lambda _url: (_ for _ in ()).throw(
+        lambda _url, **_kwargs: (_ for _ in ()).throw(
             AssertionError("graph-empty audits must not revalidate the current source")
         ),
     )
@@ -208,10 +208,73 @@ def test_audit_current_source_requires_pipeline_valid_html(monkeypatch):
     monkeypatch.setattr(
         cohort_audit,
         "fetch_validated_policy_html",
-        lambda url: "<html>policy</html>" if url == target.source_url else "",
+        lambda url, **_kwargs: "<html>policy</html>" if url == target.source_url else "",
     )
 
     result = cohort_audit.audit_source_target(target)
 
     assert result["status"] == "current_valid"
     assert result["current_resolved_url"] == target.source_url
+
+
+def test_audit_rejects_superficially_different_current_url(monkeypatch):
+    target = cohort_audit.SourceAuditTarget(
+        provider_id=uuid.uuid4(),
+        provider_name="Example",
+        domain="example.com",
+        source_url="https://www.example.com/privacy/",
+        root_code="graph.empty",
+    )
+
+    class Resolver:
+        def __init__(self, allow_headless=False):
+            assert allow_headless is False
+
+        def resolve_candidate(self, *_args, **_kwargs):
+            return SimpleNamespace(
+                url="https://example.com/privacy",
+                strategy="discovery",
+                confidence=0.8,
+                notes="same source",
+            )
+
+    monkeypatch.setattr(cohort_audit, "PolicySourceResolver", Resolver)
+    result = cohort_audit.audit_source_target(target)
+
+    assert result["status"] == "unresolved"
+    assert result["replacement_url"] is None
+
+
+def test_deep_audit_revalidates_discovered_candidate(monkeypatch):
+    target = cohort_audit.SourceAuditTarget(
+        provider_id=uuid.uuid4(),
+        provider_name="Example",
+        domain="example.com",
+        source_url="https://example.com/old",
+        root_code="graph.empty",
+    )
+
+    class Resolver:
+        def __init__(self, allow_headless=False):
+            assert allow_headless is False
+
+        def resolve_candidate(self, *_args, **kwargs):
+            assert kwargs["allow_site_discovery"] is True
+            return SimpleNamespace(
+                url="https://example.com/privacy",
+                strategy="discovery",
+                confidence=0.8,
+                notes="footer link",
+            )
+
+    monkeypatch.setattr(cohort_audit, "PolicySourceResolver", Resolver)
+    monkeypatch.setattr(
+        cohort_audit,
+        "fetch_validated_policy_html",
+        lambda url, **_kwargs: "<html>policy</html>" if url.endswith("/privacy") else "",
+    )
+
+    result = cohort_audit.audit_source_target(target, deep=True)
+
+    assert result["status"] == "replacement_found"
+    assert result["replacement_url"] == "https://example.com/privacy"

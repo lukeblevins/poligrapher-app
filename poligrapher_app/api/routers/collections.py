@@ -129,7 +129,12 @@ def verify_collection_sources(collection_id: uuid.UUID, request: Request, db: Db
 
 
 @router.post("/{collection_id}/audit-failures", response_model=TaskStatus)
-def audit_collection_failures(collection_id: uuid.UUID, request: Request, db: Db):
+def audit_collection_failures(
+    collection_id: uuid.UUID,
+    request: Request,
+    db: Db,
+    deep: bool = Query(False),
+):
     """Queue a read-only audit of unresolved source or representation failures."""
 
     collection = db.get(CompanyCollection, collection_id)
@@ -140,7 +145,7 @@ def audit_collection_failures(collection_id: uuid.UUID, request: Request, db: Db
     registry = request.app.state.tasks
     task_id = registry.create(
         kind="cohort-source-audit",
-        title=f"Audit {len(targets)} failed company sources",
+        title=f"{'Deep audit' if deep else 'Audit'} {len(targets)} failed company sources",
         total=len(targets),
     )
     registry.enqueue(
@@ -148,6 +153,7 @@ def audit_collection_failures(collection_id: uuid.UUID, request: Request, db: Db
         {
             "kind": "cohort-source-audit",
             "provider_ids": [str(target.provider_id) for target in targets],
+            "deep": deep,
         },
     )
     return TaskStatus(**registry.get(task_id))

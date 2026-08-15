@@ -399,7 +399,12 @@ def validate_policy_html(html: str) -> str:
     return str(soup)
 
 
-def fetch_validated_policy_html(url: str, timeout: float = 30.0) -> str:
+def fetch_validated_policy_html(
+    url: str,
+    timeout: float = 30.0,
+    *,
+    attempts: int = 2,
+) -> str:
     """Fetch pipeline-valid HTML through the application's shared client.
 
     The upstream crawler performs its own request with ``requests`` after
@@ -408,7 +413,7 @@ def fetch_validated_policy_html(url: str, timeout: float = 30.0) -> str:
     already validated bytes lets the crawler process that content locally.
     """
 
-    status, html = fetch_static(url, timeout=timeout, attempts=2)
+    status, html = fetch_static(url, timeout=timeout, attempts=attempts)
     return validate_policy_html(html) if status == 200 and html else ""
 
 
@@ -627,6 +632,9 @@ class PolicySourceResolver:
         exclude_urls: set[str] | None = None,
         prefer_pdf: bool = False,
         require_validation: bool = False,
+        search_timeout: float = 20.0,
+        max_validation_candidates: int = 5,
+        allow_site_discovery: bool = True,
     ) -> SourceCandidate | None:
         """Pick the best source URL for a provider without fetching its text."""
         if override_url:
@@ -644,16 +652,23 @@ class PolicySourceResolver:
             exclude_urls=exclude_urls,
             prefer_pdf=prefer_pdf,
             require_validation=require_validation,
+            search_timeout=search_timeout,
+            max_validation_candidates=max_validation_candidates,
         )
         if searched:
             return searched
-        if prefer_pdf:
+        if prefer_pdf or not allow_site_discovery:
             return None
 
         if domain:
+            excluded = {value.rstrip("/") for value in (exclude_urls or set())}
             html = fetch_html(f"https://www.{domain}", self.allow_headless)
             if html:
-                cands = discover_links(html, f"https://www.{domain}", domain)
+                cands = [
+                    candidate
+                    for candidate in discover_links(html, f"https://www.{domain}", domain)
+                    if candidate[1].rstrip("/") not in excluded
+                ]
                 if cands:
                     score, url = cands[0]
                     # strong path match on same domain -> high confidence
@@ -662,7 +677,7 @@ class PolicySourceResolver:
                                            notes=f"footer/link match (score {score})")
 
             sm = self._sitemap_candidate(domain)
-            if sm:
+            if sm and sm.url.rstrip("/") not in excluded:
                 return sm
         return None
 
@@ -674,6 +689,8 @@ class PolicySourceResolver:
         exclude_urls: set[str] | None = None,
         prefer_pdf: bool = False,
         require_validation: bool = False,
+        search_timeout: float = 20.0,
+        max_validation_candidates: int = 5,
     ) -> SourceCandidate | None:
         """Find and validate an official privacy page when site discovery fails."""
         expected_domain = registrable_domain(domain or "")
@@ -687,7 +704,11 @@ class PolicySourceResolver:
         seen: set[str] = set()
         for query in filter(None, queries):
             try:
-                with httpx.Client(headers=BROWSER_HEADERS, follow_redirects=True, timeout=20.0) as client:
+                with httpx.Client(
+                    headers=BROWSER_HEADERS,
+                    follow_redirects=True,
+                    timeout=search_timeout,
+                ) as client:
                     response = client.get(YAHOO_SEARCH, params={"p": query})
                 if response.status_code != 200:
                     continue
@@ -744,9 +765,9 @@ class PolicySourceResolver:
                     notes="brand-matched indexed privacy document",
                 )
 
-        for score, url in ordered[:5]:
+        for score, url in ordered[:max_validation_candidates]:
             try:
-                with open_client(25.0) as client:
+                with open_client(search_timeout) as client:
                     with client.stream("GET", url) as response:
                         content_length = int(response.headers.get("content-length") or 0)
                         if content_length > 10 * 1024 * 1024:

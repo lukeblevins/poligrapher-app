@@ -427,6 +427,7 @@ def _audit_cohort_sources(task_id: str, payload: dict, registry) -> None:
         targets,
         on_result=record_result,
         should_cancel=lambda: registry.is_cancelled(task_id),
+        deep=bool(payload.get("deep", False)),
     )
     registry.append_output(task_id, "AUDIT SUMMARY: " + json.dumps(counts, sort_keys=True) + "\n")
     if registry.is_cancelled(task_id):

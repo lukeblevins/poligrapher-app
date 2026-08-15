@@ -1,4 +1,5 @@
 from poligrapher_app.services.acquisition import (
+    PolicySourceResolver,
     fetch_validated_policy_html,
     is_privacy_document,
     reader_snapshot_url,
@@ -85,6 +86,24 @@ def test_fetch_validated_policy_html_rejects_non_english_policy(monkeypatch):
     )
 
     assert fetch_validated_policy_html("https://example.com/privacy") == ""
+
+
+def test_resolver_excludes_current_url_from_site_discovery(monkeypatch):
+    resolver = PolicySourceResolver(allow_headless=False)
+    monkeypatch.setattr(resolver, "_search_candidate", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(resolver, "_sitemap_candidate", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        "poligrapher_app.services.acquisition.fetch_html",
+        lambda *_args, **_kwargs: '<a href="/privacy/">Privacy policy</a>',
+    )
+
+    result = resolver.resolve_candidate(
+        "Example",
+        "example.com",
+        exclude_urls={"https://www.example.com/privacy"},
+    )
+
+    assert result is None
 
 
 def test_privacy_document_requires_brand_for_cross_domain_result():
