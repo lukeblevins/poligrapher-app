@@ -279,6 +279,7 @@ def audit_source_targets(
     counts = {
         "checked": 0,
         "current_valid": 0,
+        "retry_current": 0,
         "replacement_found": 0,
         "review_required": 0,
         "unresolved": 0,

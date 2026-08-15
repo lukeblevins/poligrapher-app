@@ -211,6 +211,27 @@ def test_audit_source_target_retries_transient_current_source_without_discovery(
     assert result["current_resolved_url"] == target.source_url
 
 
+def test_audit_source_targets_counts_transient_current_retries(monkeypatch):
+    target = cohort_audit.SourceAuditTarget(
+        provider_id=uuid.uuid4(),
+        provider_name="Example",
+        domain="example.com",
+        source_url="https://example.com/privacy",
+        root_code="crawl.navigation_failed",
+        root_retryability="transient",
+    )
+    monkeypatch.setattr(
+        cohort_audit,
+        "_run_audit_source_target",
+        lambda item, **_kwargs: cohort_audit.audit_source_target(item),
+    )
+
+    counts = cohort_audit.audit_source_targets([target])
+
+    assert counts["checked"] == 1
+    assert counts["retry_current"] == 1
+
+
 def test_audit_source_target_requires_review_for_off_domain_candidate(monkeypatch):
     target = cohort_audit.SourceAuditTarget(
         provider_id=uuid.uuid4(),
