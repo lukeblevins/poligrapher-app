@@ -52,6 +52,10 @@ def test_packaged_sp500_catalog_contains_500_ready_sources():
 def test_packaged_sp500_catalog_keeps_reviewed_source_replacements():
     sources = {source["name"]: source for source in load_source_catalog(CATALOG_PATH)}
 
+    assert sources["Amazon"]["source_url"].startswith(
+        "https://www.amazon.com/gp/help/customer/display.html"
+    )
+    assert sources["Ametek"]["source_url"] == "https://www.ametek.com/privacy"
     assert sources["Ameriprise Financial"]["source_url"] == (
         "https://www.ameriprise.com/privacy-security-fraud"
     )
@@ -65,6 +69,15 @@ def test_packaged_sp500_catalog_keeps_reviewed_source_replacements():
         "https://www.tysonfoods.com/legal/privacy-policy"
     )
     assert sources["Xcel Energy"]["source_url"].endswith("/Privacy%20Notice.pdf")
+    assert sources["Extra Space Storage"]["source_url"] == (
+        "https://www.extraspace.com/help/privacy/"
+    )
+    assert sources["Ralph Lauren Corporation"]["source_url"].endswith(
+        "/privacy-policy/privacy-policy.html"
+    )
+    assert sources["United Rentals"]["source_url"] == (
+        "https://www.unitedrentals.com/legal/privacy-policy"
+    )
 
 
 def test_apply_source_catalog_updates_matching_provider():

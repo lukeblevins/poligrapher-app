@@ -1,6 +1,6 @@
 {
   "collection": "S&P 500",
-  "generated_at": "2026-08-16T19:52:59+00:00",
+  "generated_at": "2026-08-16T20:19:54+00:00",
   "sources": [
     {
       "cik": "1000228",
@@ -173,13 +173,13 @@
     },
     {
       "cik": "1018724",
-      "domain": null,
+      "domain": "amazon.com",
       "name": "Amazon",
-      "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://www.amazon.in/gp/aw/help/?id=200534380",
+      "source_checked_at": "2026-08-16T20:19:54+00:00",
+      "source_final_url": "https://www.amazon.com/gp/help/customer/display.html?nodeId=GX7NJQ4ZB8MHFRNJ",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.amazon.in/gp/aw/help/?id=200534380",
+      "source_url": "https://www.amazon.com/gp/help/customer/display.html?nodeId=GX7NJQ4ZB8MHFRNJ",
       "tickers": [
         "AMZN"
       ]
@@ -331,11 +331,11 @@
       "cik": "1037038",
       "domain": "ralphlauren.com",
       "name": "Ralph Lauren Corporation",
-      "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://www.ralphlauren.com",
+      "source_checked_at": "2026-08-16T20:19:54+00:00",
+      "source_final_url": "https://www.ralphlauren.com/privacy-policy/privacy-policy.html",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.ralphlauren.com",
+      "source_url": "https://www.ralphlauren.com/privacy-policy/privacy-policy.html",
       "tickers": [
         "RL"
       ]
@@ -368,13 +368,13 @@
     },
     {
       "cik": "1037868",
-      "domain": "ametek.co.jp",
+      "domain": "ametek.com",
       "name": "Ametek",
-      "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://www.ametek.co.jp/privacy",
+      "source_checked_at": "2026-08-16T20:19:54+00:00",
+      "source_final_url": "https://www.ametek.com/privacy",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.ametek.co.jp/privacy",
+      "source_url": "https://www.ametek.com/privacy",
       "tickers": [
         "AME"
       ]
@@ -721,11 +721,11 @@
       "cik": "1067701",
       "domain": "unitedrentals.com",
       "name": "United Rentals",
-      "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://www.unitedrentals.com/en-gb/privacy-policy",
+      "source_checked_at": "2026-08-16T20:19:54+00:00",
+      "source_final_url": "https://www.unitedrentals.com/legal/privacy-policy",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.unitedrentals.com/en-gb/privacy-policy",
+      "source_url": "https://www.unitedrentals.com/legal/privacy-policy",
       "tickers": [
         "URI"
       ]
@@ -1540,11 +1540,11 @@
       "cik": "1289490",
       "domain": "extraspace.com",
       "name": "Extra Space Storage",
-      "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://web.archive.org/web/20260514092600/https://www.extraspace.com/blog/home-organization/how-to-create-privacy-in-your-backyard/",
-      "source_http_status": 403,
+      "source_checked_at": "2026-08-16T20:19:54+00:00",
+      "source_final_url": "https://www.extraspace.com/help/privacy/",
+      "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.extraspace.com/blog/home-organization/how-to-create-privacy-in-your-backyard/",
+      "source_url": "https://www.extraspace.com/help/privacy/",
       "tickers": [
         "EXR"
       ]
