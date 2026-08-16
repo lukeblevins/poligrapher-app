@@ -12,14 +12,57 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from poligrapher_app.api import database
 from poligrapher_app.api.database import Base
-from poligrapher_app.api.models import TaskRecord
+from poligrapher_app.api.models import Provider, TaskRecord
 from poligrapher_app.api.routers.analysis import get_task_output
 from poligrapher_app import collection_subtask
 from poligrapher_app.services import task_execution
 from poligrapher_app.services import tasks as task_module
 from poligrapher_app.services.task_execution import execute_task
 from poligrapher_app.services.task_output import _TaskLogSink, capture_task_output
+
+
+def test_collection_analysis_keeps_source_fallback_discovery_bounded(
+    tmp_path,
+    monkeypatch,
+):
+    from poligrapher_app.services import acquisition, runs
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'source-fallback.db'}")
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine, expire_on_commit=False)
+    monkeypatch.setattr(database, "SessionLocal", session)
+    with session() as db:
+        provider = Provider(
+            name="Example",
+            domain="example.test",
+            source_url="https://example.test/blocked",
+            source_status="restricted",
+        )
+        db.add(provider)
+        db.commit()
+        provider_id = provider.id
+
+    requested = {}
+
+    class Resolver:
+        def resolve_candidate(self, *_args, **kwargs):
+            requested.update(kwargs)
+            return None
+
+    monkeypatch.setattr(acquisition, "PolicySourceResolver", lambda **_kwargs: Resolver())
+    monkeypatch.setattr(acquisition, "wayback_snapshot_url", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(runs, "run_comparison", lambda *_args, **_kwargs: "ok")
+
+    assert task_execution.analyze_collection_provider(provider_id, "task", object()) == "ok"
+    assert requested == {
+        "exclude_urls": {"https://example.test/blocked"},
+        "require_validation": True,
+        "search_timeout": 12.0,
+        "max_validation_candidates": 2,
+        "allow_site_discovery": False,
+    }
 
 
 def test_model_compatibility_warning_is_diagnostic_not_task_issue(caplog):

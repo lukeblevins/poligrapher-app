@@ -480,6 +480,9 @@ def analyze_collection_provider(provider_id: uuid.UUID, task_id: str, registry) 
                 provider.domain,
                 exclude_urls={source_url},
                 require_validation=True,
+                search_timeout=12.0,
+                max_validation_candidates=2,
+                allow_site_discovery=False,
             )
             if fallback:
                 source_url = fallback.url
