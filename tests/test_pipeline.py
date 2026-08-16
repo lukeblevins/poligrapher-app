@@ -1,6 +1,8 @@
 import json
 import time
 
+import pytest
+
 from poligrapher.scripts import build_graph, html_crawler, init_document, run_annotators
 
 from poligrapher_app.services import pipeline
@@ -122,7 +124,22 @@ def test_fallback_proxy_replaces_static_shell_with_rendered_capture(
     assert (output / "output.pdf").read_bytes() == b"rendered"
 
 
-def test_fallback_proxy_retries_known_direct_navigation_dead_end(monkeypatch, tmp_path):
+@pytest.mark.parametrize(
+    "direct_error",
+    [
+        (
+            "html_crawler failure: Chromium navigation failed and the HTTP source "
+            "fallback was unavailable"
+        ),
+        "html_crawler failure: Got HTTP error 403",
+        "html_crawler failure: Got HTTP error 429",
+    ],
+)
+def test_fallback_proxy_retries_known_direct_navigation_dead_end(
+    monkeypatch,
+    tmp_path,
+    direct_error,
+):
     monkeypatch.setenv("CRAWL_PROXY", "http://proxy.test")
     monkeypatch.setattr(pipeline, "httpx_proxy", lambda: "http://proxy.test")
     monkeypatch.setattr(pipeline, "crawl_proxy_mode", lambda: "fallback")
@@ -132,10 +149,7 @@ def test_fallback_proxy_retries_known_direct_navigation_dead_end(monkeypatch, tm
         proxied = "CRAWL_PROXY" in pipeline.os.environ
         calls.append(proxied)
         if not proxied:
-            raise RuntimeError(
-                "html_crawler failure: Chromium navigation failed and the HTTP source "
-                "fallback was unavailable"
-            )
+            raise RuntimeError(direct_error)
         pipeline.os.makedirs(output, exist_ok=True)
         with open(pipeline.os.path.join(output, "readability.json"), "w") as stream:
             json.dump({"applied": True}, stream)
@@ -148,6 +162,27 @@ def test_fallback_proxy_retries_known_direct_navigation_dead_end(monkeypatch, tm
     )
 
     assert calls == [False, True]
+
+
+def test_fallback_proxy_does_not_retry_permanent_http_error(monkeypatch, tmp_path):
+    monkeypatch.setenv("CRAWL_PROXY", "http://proxy.test")
+    monkeypatch.setattr(pipeline, "httpx_proxy", lambda: "http://proxy.test")
+    monkeypatch.setattr(pipeline, "crawl_proxy_mode", lambda: "fallback")
+    calls = []
+
+    def crawl(_path, _output, pdf_output=None):
+        calls.append("CRAWL_PROXY" in pipeline.os.environ)
+        raise RuntimeError("html_crawler failure: Got HTTP error 404")
+
+    crawler = type("Crawler", (), {"main": staticmethod(crawl)})
+    with pytest.raises(RuntimeError, match="HTTP error 404"):
+        pipeline._crawl_html(
+            crawler,
+            "https://example.test/privacy",
+            str(tmp_path / "out"),
+        )
+
+    assert calls == [False]
 
 
 def test_live_navigation_dead_end_retries_once_from_wayback(monkeypatch, tmp_path):

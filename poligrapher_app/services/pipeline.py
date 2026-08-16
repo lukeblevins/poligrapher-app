@@ -145,7 +145,7 @@ def _crawl_html(
         with _crawl_proxy_disabled():
             html_crawler.main(path, output_dir, pdf_output=pdf_output)
     except Exception as direct_error:  # noqa: BLE001
-        if not _should_retry_crawl_from_archive(path, direct_error):
+        if not _should_retry_crawl_via_proxy(path, direct_error):
             raise
         logger.warning(
             "Direct browser navigation failed; retrying through the configured proxy"
@@ -366,6 +366,23 @@ def _should_retry_crawl_from_archive(path: str, error: BaseException) -> bool:
         and not _is_wayback_url(path)
         and "chromium navigation failed" in detail
         and "http source fallback was unavailable" in detail
+    )
+
+
+def _should_retry_crawl_via_proxy(path: str, error: BaseException) -> bool:
+    """Retry only browser/network failures a different egress route may fix."""
+
+    if _should_retry_crawl_from_archive(path, error):
+        return True
+    try:
+        parsed = urllib.parse.urlparse(path)
+    except Exception:
+        return False
+    detail = str(error).casefold()
+    return (
+        parsed.scheme in ("http", "https")
+        and not _is_wayback_url(path)
+        and any(f"got http error {status}" in detail for status in (403, 429))
     )
 
 
