@@ -288,6 +288,10 @@ Container App revisions and the existing migration-job template.
 | Full bounded deep audit | Task `1f1a989c-7bd1-41d0-9fec-cb3f4450f5a4` | `partially_succeeded`: all 54 completed; 27 unresolved, 4 distinct validated candidates, and 23 explicit 150-second audit errors. The process boundary resumed progress beyond the prior 12-company stall and settled the parent task | 2026-08-15 EDT |
 | Deep-source recovery batch | Task `e29e1c25-f92f-41fa-8743-918c562b70da` | `partially_succeeded`: General Mills and Snap-on recovered; Vulcan Materials returned `source.unsupported_language` and its experimental URL was reverted; Northrop Grumman's audience-specific prospect notice was not applied | 2026-08-15 EDT |
 | Final S&P maximized-safe coverage | Production graph-aware preview and deep-audit root summary | 447 analyzed and 53 eligible. Remaining roots: 17 `graph.empty`, 15 `crawl.navigation_failed`, 9 `source.inaccessible`, 7 `source.not_policy`, 2 `source.unsupported_language`, 2 `pdf.invalid_source`, and 1 `pdf.download_timeout`; no remaining audited replacement is safe for automatic application | 2026-08-15 EDT |
+| Repeatable cohort recovery pipeline | `POST /api/collections/{collection_id}/recover-failures`; collection **Recover** action | Selects only unresolved auditable failures, uses bounded parallel fast/deep audits, retries standardized transient failures directly, runs normal isolated analysis, retains only non-empty graphs, restores every source field on failure/cancellation, and emits resumable JSONL evidence | 2026-08-15 EDT |
+| Recovery safety-gate deployment | GitHub Actions run `31915414696` | Exact `8802ba99d4c8d25c7cafd7c6ce399d6511a2b50b` images deployed; revision `poligrapherc1de43-app--0000038` is healthy and migration `poligrapherc1de43-migrations-56m9aeb` succeeded | 2026-08-15 EDT |
+| Guarded full-cohort recovery acceptance | Task `81239bec-2a9f-44c5-aca6-6ac4f109aea7` | 53/53 terminal: 17 attempted, Henry Schein recovered on its existing canonical source, 16 analysis failures settled, 15 audit errors bounded, and 21 manual failures remained unresolved; no replacement URL was auto-committed | 2026-08-15 EDT |
+| S&P coverage reconciliation, repeatable recovery | Production graph-aware preview and provider drift comparison | 448 analyzed and 52 eligible. Confirmed narrow eCummins and 2011 annual-report experiments were exact-deleted and their source URLs restored; final run introduced no replacement-source drift | 2026-08-15 EDT |
 
 **Validated by:** azure-validate workflow
 
@@ -305,7 +309,7 @@ Container App revisions and the existing migration-job template.
 
 ## 10. Next Step
 
-Address the remaining 53 eligible companies through reviewed manual source
+Address the remaining 52 eligible companies through reviewed manual source
 selection or official PDF upload, not another automatic cohort retry. The
 automated fast and bounded-deep discovery passes are exhausted: remaining
 candidates are audience-specific, regional, investor, jobs, subsidiary,
