@@ -1,6 +1,6 @@
 # Azure Deployment Plan
 
-> **Status:** Validated
+> **Status:** Deployed
 
 Generated: 2026-07-28
 
@@ -308,6 +308,8 @@ Container App revisions and the existing migration-job template.
 | Worker queue-resilience acceptance | Container Apps Job configuration and execution history | Two post-queue scaler executions both exited successfully in 44 seconds; the two-slot configuration avoided blockage and left no running worker execution | 2026-08-16 00:56 EDT |
 | Production recovery UI audit | In-app browser, Tasks workspace | Standardized recovery issues and recommended actions rendered, but recovery cards lacked the task-level `Retry failed` control despite backend support | 2026-08-16 00:58 EDT |
 | Validation, recovery retry control | Frontend typecheck, test suite, production build, and `git diff --check` | Passed: 36 frontend tests; completed cohort-recovery tasks expose transient-only retry while active tasks remain inert | 2026-08-16 00:59 EDT |
+| Recovery retry control deployment | GitHub Actions run `31927946905` | Exact `7f6cd3764eca5cd895481f784a4fe1158e5c99cc` images deployed; revision `poligrapherc1de43-app--0000041`, migration `poligrapherc1de43-migrations-mhrivwl`, and endpoint verification succeeded; worker `maxExecutions` remains 2 | 2026-08-16 01:05 EDT |
+| Recovery retry control production acceptance | In-app browser, Tasks workspace | Completed 26-company and 52-company cohort-recovery cards expose `Retry failed` alongside standardized issues and recommended actions; the control was verified without queuing another retry | 2026-08-16 01:06 EDT |
 
 **Validated by:** azure-validate workflow
 
@@ -325,8 +327,10 @@ Container App revisions and the existing migration-job template.
 
 ## 10. Next Step
 
-Deploy and visually verify the recovery-card `Retry failed` control. Then route
-the remaining 49 companies to reviewed official source selection or PDF upload.
+Route the remaining 49 companies to reviewed official source selection or PDF
+upload through the existing company workflow. The production recovery cards now
+expose the task-level transient retry control; do not queue another bulk retry
+unless underlying source availability changes.
 Automated fast audit, bounded deep audit, safe retry-current analysis, and one
 transient-only task retry are exhausted. Preserve each standardized root issue
 and avoid applying audience-specific, regional, investor, jobs, subsidiary,
