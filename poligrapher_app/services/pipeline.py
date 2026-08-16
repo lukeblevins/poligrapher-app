@@ -8,6 +8,7 @@ import json
 import logging
 import multiprocessing
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -331,6 +332,15 @@ def resolve_crawl_url(url: str) -> str:
     # falling back to the archive. Binary document checks remain strict.
     if test_document_url(url, allow_browser_challenge=True):
         return url
+    original_url = _wayback_original_url(url)
+    if original_url:
+        logger.warning(
+            "Wayback snapshot unreachable, trying its original URL: %s", original_url
+        )
+        if test_document_url(original_url, allow_browser_challenge=True):
+            return original_url
+        # Look up another snapshot for the actual source, never for a replay URL.
+        url = original_url
     logger.warning("Live URL unreachable, trying Wayback Machine: %s", url)
     # Trust the availability API rather than re-downloading the (often large,
     # slow) archived page just to verify it — that probe was timing out. The
@@ -348,6 +358,29 @@ def _is_wayback_url(url: str) -> bool:
     except Exception:
         return False
     return hostname == "web.archive.org" or hostname.endswith(".web.archive.org")
+
+
+def _wayback_original_url(url: str) -> str | None:
+    """Extract the original http(s) source embedded in a Wayback replay URL."""
+
+    if not _is_wayback_url(url):
+        return None
+    try:
+        parsed = urllib.parse.urlparse(url)
+        match = re.match(r"^/web/[^/]+/(https?://.+)$", parsed.path, re.IGNORECASE)
+        if not match:
+            return None
+        original = urllib.parse.unquote(match.group(1))
+        if parsed.query:
+            original = f"{original}?{parsed.query}"
+        original_parsed = urllib.parse.urlparse(original)
+        if original_parsed.scheme not in ("http", "https") or not original_parsed.netloc:
+            return None
+        if _is_wayback_url(original):
+            return None
+        return original
+    except (TypeError, ValueError):
+        return None
 
 
 def _should_retry_crawl_from_archive(path: str, error: BaseException) -> bool:

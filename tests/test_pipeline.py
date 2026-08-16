@@ -228,6 +228,55 @@ def test_live_navigation_dead_end_retries_once_from_wayback(monkeypatch, tmp_pat
     assert not list(tmp_path.glob("output.staging-*"))
 
 
+def test_unreachable_wayback_source_retries_embedded_original(monkeypatch):
+    archive_url = (
+        "https://web.archive.org/web/20260701id_/"
+        "https://example.com/privacy?region=us"
+    )
+    original_url = "https://example.com/privacy?region=us"
+    probes = []
+    archive_lookups = []
+
+    def probe(url, **_kwargs):
+        probes.append(url)
+        return url == original_url
+
+    monkeypatch.setattr(pipeline, "test_document_url", probe)
+    monkeypatch.setattr(
+        pipeline,
+        "wayback_snapshot_url",
+        lambda *args, **kwargs: archive_lookups.append((args, kwargs)),
+    )
+
+    assert pipeline.resolve_crawl_url(archive_url) == original_url
+    assert probes == [archive_url, original_url]
+    assert archive_lookups == []
+
+
+def test_unreachable_wayback_source_looks_up_original_not_replay(monkeypatch):
+    archive_url = "https://web.archive.org/web/20260701/https://example.com/privacy"
+    original_url = "https://example.com/privacy"
+    replacement = "https://web.archive.org/web/20260801/https://example.com/privacy"
+    probes = []
+    archive_lookups = []
+
+    monkeypatch.setattr(
+        pipeline,
+        "test_document_url",
+        lambda url, **_kwargs: probes.append(url) or False,
+    )
+
+    def lookup(url, *, raw):
+        archive_lookups.append((url, raw))
+        return replacement
+
+    monkeypatch.setattr(pipeline, "wayback_snapshot_url", lookup)
+
+    assert pipeline.resolve_crawl_url(archive_url) == replacement
+    assert probes == [archive_url, original_url]
+    assert archive_lookups == [(original_url, False)]
+
+
 def test_validation_failure_does_not_try_archive(monkeypatch, tmp_path):
     archive_lookups = []
     monkeypatch.setattr(pipeline, "test_document_url", lambda url, **_kwargs: True)
