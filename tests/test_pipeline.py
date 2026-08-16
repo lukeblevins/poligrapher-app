@@ -25,6 +25,35 @@ def test_url_probe_attempt_has_hard_wall_clock_deadline(monkeypatch):
     assert error == "reachability probe exceeded 0.05 seconds"
 
 
+def test_browser_challenge_status_skips_slow_proxy_fallback(monkeypatch):
+    attempts = []
+
+    def probe(_url, _timeout, proxy):
+        attempts.append(proxy)
+        return 403, None
+
+    monkeypatch.setattr(pipeline, "_run_url_probe_attempt", probe)
+    monkeypatch.setattr(pipeline, "httpx_proxy", lambda: "http://proxy.test")
+    monkeypatch.setattr(pipeline, "crawl_proxy_mode", lambda: "fallback")
+
+    assert pipeline.test_document_url(
+        "https://example.test/privacy",
+        allow_browser_challenge=True,
+    )
+    assert attempts == [None]
+
+
+def test_document_probe_keeps_browser_challenge_status_strict(monkeypatch):
+    monkeypatch.setattr(
+        pipeline,
+        "_run_url_probe_attempt",
+        lambda *_args: (403, None),
+    )
+    monkeypatch.setattr(pipeline, "httpx_proxy", lambda: None)
+
+    assert not pipeline.test_document_url("https://example.test/privacy.pdf")
+
+
 def _stub_remaining_stages(monkeypatch):
     monkeypatch.setattr(init_document, "main", lambda **_kwargs: None)
     monkeypatch.setattr(run_annotators, "main", lambda: None)
@@ -38,7 +67,7 @@ def test_live_navigation_dead_end_retries_once_from_wayback(monkeypatch, tmp_pat
 
     probes = []
 
-    def probe(url):
+    def probe(url, **_kwargs):
         probes.append(url)
         return url == live_url
 
@@ -75,7 +104,7 @@ def test_live_navigation_dead_end_retries_once_from_wayback(monkeypatch, tmp_pat
 
 def test_validation_failure_does_not_try_archive(monkeypatch, tmp_path):
     archive_lookups = []
-    monkeypatch.setattr(pipeline, "test_document_url", lambda url: True)
+    monkeypatch.setattr(pipeline, "test_document_url", lambda url, **_kwargs: True)
     monkeypatch.setattr(pipeline, "fetch_validated_policy_html", lambda _url: "")
     monkeypatch.setattr(
         pipeline,
@@ -107,7 +136,7 @@ def test_validation_failure_does_not_try_archive(monkeypatch, tmp_path):
 def test_archive_navigation_dead_end_is_not_retried(monkeypatch, tmp_path):
     archive_url = "https://web.archive.org/web/20260701/https://example.com/privacy"
     archive_lookups = []
-    monkeypatch.setattr(pipeline, "test_document_url", lambda url: True)
+    monkeypatch.setattr(pipeline, "test_document_url", lambda url, **_kwargs: True)
     monkeypatch.setattr(pipeline, "fetch_validated_policy_html", lambda _url: "")
     monkeypatch.setattr(
         pipeline,
@@ -145,7 +174,7 @@ def test_live_navigation_dead_end_prefers_materialized_wayback_html(monkeypatch,
     crawled = []
     snapshot_lookups = []
 
-    monkeypatch.setattr(pipeline, "test_document_url", lambda _url: True)
+    monkeypatch.setattr(pipeline, "test_document_url", lambda _url, **_kwargs: True)
     monkeypatch.setattr(pipeline, "fetch_validated_policy_html", lambda _url: "")
     monkeypatch.setattr(pipeline, "fetch_wayback", lambda url: archived_html if url == live_url else "")
     monkeypatch.setattr(
@@ -184,7 +213,7 @@ def test_live_navigation_dead_end_prefers_validated_direct_html(monkeypatch, tmp
     direct_html = "<html><body>Example privacy policy</body></html>"
     crawled = []
 
-    monkeypatch.setattr(pipeline, "test_document_url", lambda _url: True)
+    monkeypatch.setattr(pipeline, "test_document_url", lambda _url, **_kwargs: True)
     monkeypatch.setattr(
         pipeline,
         "fetch_validated_policy_html",

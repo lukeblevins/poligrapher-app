@@ -165,12 +165,20 @@ def _run_url_probe_attempt(
             sender.close()
 
 
-def _url_reachable(url: str, timeout: float = 15.0, attempts: int = 2) -> bool:
+def _url_reachable(
+    url: str,
+    timeout: float = 15.0,
+    attempts: int = 2,
+    *,
+    allow_browser_challenge: bool = False,
+) -> bool:
     """Reachability probe with a realistic browser identity and retries.
 
     Uses GET (many WAFs reject or stall bare HEAD requests) with the shared
     browser headers, retrying transient timeouts/5xx. A response below 400 (after
-    redirect following) counts as reachable.
+    redirect following) counts as reachable. Website callers may also accept a
+    403/429 challenge as evidence that a bounded browser navigation is worth
+    attempting.
     """
     configured_proxy = httpx_proxy()
     mode = crawl_proxy_mode()
@@ -183,7 +191,9 @@ def _url_reachable(url: str, timeout: float = 15.0, attempts: int = 2) -> bool:
             if status is not None:
                 if status >= 500 and i < attempts - 1:
                     continue
-                if status < 400:
+                if status < 400 or (
+                    allow_browser_challenge and status in {403, 429}
+                ):
                     return True
                 break
             if i < attempts - 1:
@@ -192,7 +202,7 @@ def _url_reachable(url: str, timeout: float = 15.0, attempts: int = 2) -> bool:
     return False
 
 
-def test_document_url(url: str) -> bool:
+def test_document_url(url: str, *, allow_browser_challenge: bool = False) -> bool:
     """Return True if the URL is a reachable http(s) resource.
 
     Returns False silently for local paths / non-http schemes to avoid noisy
@@ -206,18 +216,25 @@ def test_document_url(url: str) -> bool:
             return False
     except Exception:
         return False
-    return _url_reachable(url)
+    return _url_reachable(
+        url,
+        allow_browser_challenge=allow_browser_challenge,
+    )
 
 
 def resolve_crawl_url(url: str) -> str:
     """Return a crawlable URL for a live source, with a Wayback fallback.
 
-    If the live URL is reachable, use it. Otherwise (timeout, DNS failure, 404,
-    or a bot-block that fails the probe) fall back to the closest Wayback Machine
-    snapshot, which sidesteps live-site blocking. Raises FileNotFoundError only
-    when neither the live URL nor an archived copy is reachable.
+    If the live URL is reachable or returns a browser-challenge status, use it.
+    Otherwise (timeout, DNS failure, or a missing resource) fall back to the
+    closest Wayback Machine snapshot. A challenged browser crawl can still use
+    the existing post-navigation archive fallback. Raises FileNotFoundError only
+    when neither the live URL nor an archived copy is usable.
     """
-    if test_document_url(url):
+    # A 403/429 response proves the public URL exists and commonly reflects an
+    # HTTP-client challenge. Let the bounded browser crawler try it before
+    # falling back to the archive. Binary document checks remain strict.
+    if test_document_url(url, allow_browser_challenge=True):
         return url
     logger.warning("Live URL unreachable, trying Wayback Machine: %s", url)
     # Trust the availability API rather than re-downloading the (often large,
