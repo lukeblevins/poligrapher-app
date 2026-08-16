@@ -15,6 +15,26 @@ class FakeSession:
         self.rollbacks += 1
 
 
+def test_comparison_source_retries_live_url_after_browser_challenge():
+    provider = SimpleNamespace(
+        source_url="https://example.test/privacy",
+        source_final_url=(
+            "https://web.archive.org/web/20260701/https://example.test/privacy"
+        ),
+        source_status="available",
+        source_http_status=403,
+    )
+
+    assert runs._comparison_source_url(provider) == provider.source_url
+
+    provider.source_http_status = 200
+    assert runs._comparison_source_url(provider) == provider.source_final_url
+
+    provider.source_http_status = 403
+    provider.source_final_url = "https://r.jina.ai/https://example.test/privacy"
+    assert runs._comparison_source_url(provider) == provider.source_final_url
+
+
 def test_comparison_method_failure_preserves_sibling_result(tmp_path, monkeypatch):
     website = SimpleNamespace(
         method="website",

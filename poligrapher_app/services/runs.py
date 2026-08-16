@@ -238,6 +238,22 @@ def _persist_generated_method(
         return exc
 
 
+def _comparison_source_url(provider) -> str | None:
+    """Choose the live source when a stored archive only reflects a web challenge."""
+
+    canonical_url = provider.source_url
+    verified_fallback = provider.source_final_url or ""
+    if provider.source_status != "available":
+        return canonical_url
+    if verified_fallback.startswith("https://r.jina.ai/"):
+        return verified_fallback
+    if verified_fallback.startswith("https://web.archive.org/") and (
+        not canonical_url or provider.source_http_status not in {403, 429}
+    ):
+        return verified_fallback
+    return canonical_url
+
+
 def run_comparison(
     provider_id, *, scheduled: bool, registry=None, task_id=None, link_task: bool = True
 ) -> str:
@@ -258,15 +274,7 @@ def run_comparison(
         if not provider:
             return "needs_source"
 
-        url = provider.source_url
-        verified_fallback = provider.source_final_url or ""
-        if (
-            provider.source_status == "available"
-            and verified_fallback.startswith(
-                ("https://web.archive.org/", "https://r.jina.ai/")
-            )
-        ):
-            url = verified_fallback
+        url = _comparison_source_url(provider)
         if not url:
             # Fall back to discovery so a run can proceed without a set source.
             cand = PolicySourceResolver().resolve_candidate(provider.name, provider.domain)
