@@ -46,6 +46,21 @@ def test_browser_challenge_status_skips_slow_proxy_fallback(monkeypatch):
     assert attempts == [None]
 
 
+def test_content_negotiation_challenge_is_a_browser_candidate(monkeypatch):
+    monkeypatch.setattr(
+        pipeline,
+        "_run_url_probe_attempt",
+        lambda *_args: (406, None),
+    )
+    monkeypatch.setattr(pipeline, "httpx_proxy", lambda: None)
+
+    assert not pipeline.test_document_url("https://example.test/privacy")
+    assert pipeline.test_document_url(
+        "https://example.test/privacy",
+        allow_browser_challenge=True,
+    )
+
+
 def test_document_probe_keeps_browser_challenge_status_strict(monkeypatch):
     monkeypatch.setattr(
         pipeline,

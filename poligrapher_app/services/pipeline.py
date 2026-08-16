@@ -44,6 +44,7 @@ _CRAWL_ARTIFACTS = (
     "readability.json",
     "output.pdf",
 )
+_BROWSER_CHALLENGE_STATUSES = frozenset({403, 406, 429})
 
 
 class PipelineCancelled(Exception):
@@ -273,7 +274,7 @@ def _url_reachable(
     Uses GET (many WAFs reject or stall bare HEAD requests) with the shared
     browser headers, retrying transient timeouts/5xx. A response below 400 (after
     redirect following) counts as reachable. Website callers may also accept a
-    403/429 challenge as evidence that a bounded browser navigation is worth
+    403/406/429 challenge as evidence that a bounded browser navigation is worth
     attempting.
     """
     configured_proxy = httpx_proxy()
@@ -288,7 +289,7 @@ def _url_reachable(
                 if status >= 500 and i < attempts - 1:
                     continue
                 if status < 400 or (
-                    allow_browser_challenge and status in {403, 429}
+                    allow_browser_challenge and status in _BROWSER_CHALLENGE_STATUSES
                 ):
                     return True
                 break
@@ -416,7 +417,10 @@ def _should_retry_crawl_via_proxy(path: str, error: BaseException) -> bool:
         parsed.scheme in ("http", "https")
         and not _is_wayback_url(path)
         and (
-            any(f"got http error {status}" in detail for status in (403, 429))
+            any(
+                f"got http error {status}" in detail
+                for status in _BROWSER_CHALLENGE_STATUSES
+            )
             or "content language unknown isn't english" in detail
         )
     )
