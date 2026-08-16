@@ -49,6 +49,24 @@ def test_packaged_sp500_catalog_contains_500_ready_sources():
     assert all(source["source_status"] == "available" for source in sources)
 
 
+def test_packaged_sp500_catalog_keeps_reviewed_source_replacements():
+    sources = {source["name"]: source for source in load_source_catalog(CATALOG_PATH)}
+
+    assert sources["Ameriprise Financial"]["source_url"] == (
+        "https://www.ameriprise.com/privacy-security-fraud"
+    )
+    assert sources["American Water Works"]["source_url"].endswith(
+        "/American-Water-Privacy-Policy.pdf"
+    )
+    assert sources["Fortive"]["source_url"] == (
+        "https://fortive.com/global-privacy-policy"
+    )
+    assert sources["Tyson Foods"]["source_url"] == (
+        "https://www.tysonfoods.com/legal/privacy-policy"
+    )
+    assert sources["Xcel Energy"]["source_url"].endswith("/Privacy%20Notice.pdf")
+
+
 def test_apply_source_catalog_updates_matching_provider():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)

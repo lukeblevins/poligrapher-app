@@ -1,6 +1,6 @@
 {
   "collection": "S&P 500",
-  "generated_at": "2026-08-15T20:52:07+00:00",
+  "generated_at": "2026-08-16T19:52:59+00:00",
   "sources": [
     {
       "cik": "1000228",
@@ -69,13 +69,13 @@
     },
     {
       "cik": "100493",
-      "domain": "tyson.com",
+      "domain": "tysonfoods.com",
       "name": "Tyson Foods",
-      "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://www.tyson.com",
+      "source_checked_at": "2026-08-16T19:52:59+00:00",
+      "source_final_url": "https://www.tysonfoods.com/legal/privacy-policy",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.tyson.com",
+      "source_url": "https://www.tysonfoods.com/legal/privacy-policy",
       "tickers": [
         "TSN"
       ]
@@ -1982,11 +1982,11 @@
       "cik": "1410636",
       "domain": "amwater.com",
       "name": "American Water Works",
-      "source_checked_at": "2026-07-28T05:46:10.194754",
-      "source_final_url": "https://www.amwater.com/corp/privacy-policy",
+      "source_checked_at": "2026-08-16T19:52:59+00:00",
+      "source_final_url": "https://www.amwater.com/corp/resources/PDF/Data-Privacy/American-Water-Privacy-Policy.pdf",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.amwater.com/corp/privacy-policy",
+      "source_url": "https://www.amwater.com/corp/resources/PDF/Data-Privacy/American-Water-Privacy-Policy.pdf",
       "tickers": [
         "AWK"
       ]
@@ -2582,11 +2582,11 @@
       "cik": "1659166",
       "domain": "fortive.com",
       "name": "Fortive",
-      "source_checked_at": "2026-07-28T05:46:10.194754",
-      "source_final_url": "https://fortive.com/GDPR-privacy-notice",
+      "source_checked_at": "2026-08-16T19:52:59+00:00",
+      "source_final_url": "https://fortive.com/global-privacy-policy",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://fortive.com/GDPR-privacy-notice",
+      "source_url": "https://fortive.com/global-privacy-policy",
       "tickers": [
         "FTV"
       ]
@@ -4624,11 +4624,11 @@
       "cik": "72903",
       "domain": "xcelenergy.com",
       "name": "Xcel Energy",
-      "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://my.xcelenergy.com/s/our-commitment/clean-energy-technology/agis-smart-meters",
+      "source_checked_at": "2026-08-16T19:52:59+00:00",
+      "source_final_url": "https://www.xcelenergy.com/staticfiles/xe-responsive/Privacy%20Notice.pdf",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://my.xcelenergy.com/s/our-commitment/clean-energy-technology/agis-smart-meters",
+      "source_url": "https://www.xcelenergy.com/staticfiles/xe-responsive/Privacy%20Notice.pdf",
       "tickers": [
         "XEL"
       ]
@@ -5222,11 +5222,11 @@
       "cik": "820027",
       "domain": "ameriprise.com",
       "name": "Ameriprise Financial",
-      "source_checked_at": "2026-07-28T05:44:53.520009",
-      "source_final_url": "https://www.ameriprise.com/binaries/content/assets/ampcom/wcm/AMP_PRIVACY-NOTICE.PDF",
+      "source_checked_at": "2026-08-16T19:52:59+00:00",
+      "source_final_url": "https://www.ameriprise.com/privacy-security-fraud",
       "source_http_status": 200,
       "source_status": "available",
-      "source_url": "https://www.ameriprise.com/binaries/content/assets/ampcom/wcm/AMP_PRIVACY-NOTICE.PDF",
+      "source_url": "https://www.ameriprise.com/privacy-security-fraud",
       "tickers": [
         "AMP"
       ]
