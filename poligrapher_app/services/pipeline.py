@@ -5,6 +5,7 @@ graph) for a captured policy. Pure business logic — no HTTP or view concerns.
 """
 
 import logging
+import multiprocessing
 import os
 import shutil
 import sys
@@ -111,6 +112,59 @@ def ensure_source_pdf_copy(source_path: str | None, output_dir: str) -> bool:
         logger.warning("Failed to copy source PDF %s -> %s: %s", source_path, dest_path, exc)
         return False
 
+def _url_probe_attempt(url: str, timeout: float, proxy: str | None) -> int:
+    """Return one HTTP status; the caller supplies the killable boundary."""
+
+    with open_client(timeout, proxy) as client:
+        return client.get(url).status_code
+
+
+def _url_probe_attempt_child(connection, url: str, timeout: float, proxy: str | None) -> None:
+    try:
+        connection.send(("ok", _url_probe_attempt(url, timeout, proxy)))
+    except BaseException as exc:  # noqa: BLE001
+        connection.send(("error", str(exc)))
+    finally:
+        connection.close()
+
+
+def _run_url_probe_attempt(
+    url: str,
+    timeout: float,
+    proxy: str | None,
+    *,
+    max_attempt_seconds: float | None = None,
+) -> tuple[int | None, str | None]:
+    """Run one reachability probe with a true wall-clock deadline."""
+
+    deadline = max_attempt_seconds or timeout + 5.0
+    context = multiprocessing.get_context("fork")
+    receiver, sender = context.Pipe(duplex=False)
+    process = context.Process(
+        target=_url_probe_attempt_child,
+        args=(sender, url, timeout, proxy),
+    )
+    try:
+        process.start()
+        sender.close()
+        process.join(deadline)
+        if process.is_alive():
+            process.terminate()
+            process.join(5.0)
+            if process.is_alive():
+                process.kill()
+                process.join()
+            return None, f"reachability probe exceeded {deadline:g} seconds"
+        if receiver.poll():
+            category, value = receiver.recv()
+            return (int(value), None) if category == "ok" else (None, str(value))
+        return None, f"reachability probe exited with code {process.exitcode}"
+    finally:
+        receiver.close()
+        if not sender.closed:
+            sender.close()
+
+
 def _url_reachable(url: str, timeout: float = 15.0, attempts: int = 2) -> bool:
     """Reachability probe with a realistic browser identity and retries.
 
@@ -125,18 +179,16 @@ def _url_reachable(url: str, timeout: float = 15.0, attempts: int = 2) -> bool:
         routes.append(configured_proxy)
     for proxy in routes:
         for i in range(attempts):
-            try:
-                with open_client(timeout, proxy) as client:
-                    r = client.get(url)
-                if r.status_code >= 500 and i < attempts - 1:
+            status, error = _run_url_probe_attempt(url, timeout, proxy)
+            if status is not None:
+                if status >= 500 and i < attempts - 1:
                     continue
-                if r.status_code < 400:
+                if status < 400:
                     return True
                 break
-            except Exception as e:  # noqa: BLE001
-                if i < attempts - 1:
-                    continue
-                logger.info("Error accessing URL %s: %s", url, str(e))
+            if i < attempts - 1:
+                continue
+            logger.info("Error accessing URL %s: %s", url, error)
     return False
 
 

@@ -1,6 +1,28 @@
+import time
+
 from poligrapher.scripts import build_graph, html_crawler, init_document, run_annotators
 
 from poligrapher_app.services import pipeline
+
+
+def test_url_probe_attempt_has_hard_wall_clock_deadline(monkeypatch):
+    def hang(*_args):
+        time.sleep(5)
+        return 200
+
+    monkeypatch.setattr(pipeline, "_url_probe_attempt", hang)
+
+    started = time.monotonic()
+    status, error = pipeline._run_url_probe_attempt(
+        "https://example.test/privacy",
+        1.0,
+        None,
+        max_attempt_seconds=0.05,
+    )
+
+    assert time.monotonic() - started < 1.0
+    assert status is None
+    assert error == "reachability probe exceeded 0.05 seconds"
 
 
 def _stub_remaining_stages(monkeypatch):
