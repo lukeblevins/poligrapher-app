@@ -194,3 +194,41 @@ def test_manual_recovery_issues_drive_partial_outcome_without_failure_count(tmp_
     assert public["status"] == "done"
     assert public["failed"] == 0
     assert public["outcome"] == "partially_succeeded"
+
+
+def test_retry_failed_subtasks_requeues_transient_cohort_recovery_targets(tmp_path, monkeypatch):
+    engine = create_engine(f"sqlite:///{tmp_path / 'recovery-retry.db'}")
+    session = sessionmaker(bind=engine, expire_on_commit=False)
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(task_module, "SessionLocal", session)
+    registry = TaskRegistry()
+    provider_id = "11111111-1111-1111-1111-111111111111"
+
+    with session() as db:
+        task = TaskRecord(
+            id=uuid.uuid4(),
+            kind="cohort-recovery",
+            title="Recover failed company sources",
+            total=1,
+        )
+        db.add(task)
+        db.commit()
+        task_id = str(task.id)
+
+    registry.record_issue(
+        task_id,
+        classify_failure("Provider analysis exceeded 900 seconds"),
+        provider_id=provider_id,
+    )
+    enqueued = []
+    monkeypatch.setattr(registry, "enqueue", lambda retry_id, payload: enqueued.append((retry_id, payload)))
+
+    retry_id = registry.retry_failed_subtasks(task_id)
+
+    assert retry_id is not None
+    assert registry.get(retry_id)["kind"] == "cohort-recovery"
+    assert registry.get(retry_id)["total"] == 1
+    assert enqueued == [(
+        retry_id,
+        {"kind": "cohort-recovery", "provider_ids": [provider_id], "deep": True},
+    )]

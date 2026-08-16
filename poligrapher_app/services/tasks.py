@@ -343,18 +343,24 @@ class TaskRegistry:
             return None
         with SessionLocal() as db:
             original = db.get(TaskRecord, uuid.UUID(task_id))
-            if original is None or original.kind != "collection-analysis":
+            if original is None:
                 return None
-            title = f"Retry failed companies from {original.title or 'company analysis'}"
+            if original.kind == "collection-analysis":
+                kind = "collection-analysis"
+                title = f"Retry failed companies from {original.title or 'company analysis'}"
+                payload = {"kind": kind, "provider_ids": provider_ids}
+            elif original.kind == "cohort-recovery":
+                kind = "cohort-recovery"
+                title = f"Retry transient failures from {original.title or 'cohort recovery'}"
+                payload = {"kind": kind, "provider_ids": provider_ids, "deep": True}
+            else:
+                return None
         retry_id = self.create(
-            kind="collection-analysis",
+            kind=kind,
             title=title,
             total=len(provider_ids),
         )
-        self.enqueue(
-            retry_id,
-            {"kind": "collection-analysis", "provider_ids": provider_ids},
-        )
+        self.enqueue(retry_id, payload)
         return retry_id
 
     def get_output(self, task_id: str) -> dict | None:

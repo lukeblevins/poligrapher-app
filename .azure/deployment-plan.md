@@ -296,6 +296,12 @@ Container App revisions and the existing migration-job template.
 | Bicep core validation, recovery architecture consolidation | Azure validation helper against `poligrapher-rg` | Azure CLI authentication, Bicep compilation, ARM validation, and what-if completed successfully | 2026-08-15 22:40 EDT |
 | Resource-level what-if, recovery architecture consolidation | `az deployment group what-if --result-format ResourceIdOnly` | 15 existing resources deploy, 1 GitHub identity ignored, and 0 resources delete | 2026-08-15 22:40 EDT |
 | Policy and RBAC validation, recovery architecture consolidation | Azure Policy assignment inventory; `infra/main.bicep`; live app and worker identity configuration | East US 2 remains permitted; MFA write/delete and audit-only Security Center policies reviewed; no Bicep role assignments; app and worker identities remain `None` with existing secret-backed access unchanged | 2026-08-15 22:40 EDT |
+| Recovery architecture deployment | GitHub Actions run `31922495243` | Exact `bc38bbda6ff3a9f400ce47f2fbdee7ef405e5753` images deployed; revision `poligrapherc1de43-app--0000039`, migrations, and endpoint verification succeeded | 2026-08-15 22:53 EDT |
+| Representative recovery smoke | Task `6c25d88a-ae1c-4d6b-910d-c95ecc24f642` | 3/3 terminal with standardized unresolved, audit-error, and crawl-failure outcomes; all original source fields were preserved | 2026-08-15 23:03 EDT |
+| Full repeatable cohort recovery | Task `f7f93b4b-8d72-4180-b767-304f03e9efb5` | 52/52 terminal: 16 attempted, Johnson Controls, Newmont, and SBA Communications recovered, 13 analyses failed, 15 audits timed out, 21 remained unresolved, and no replacement source was auto-committed | 2026-08-16 00:03 EDT |
+| S&P coverage reconciliation, consolidated recovery | Production graph-aware bulk preview | 451 analyzed and 49 eligible; coverage increased from 89.6% to 90.2% through the generic retry-current path | 2026-08-16 00:03 EDT |
+| Validation, queue resilience and cohort retry | `./.venv/bin/pytest -q`; frontend typecheck, tests, and build; `az bicep build`; `git diff --check` | Passed: 112 backend tests, 35 frontend tests, production bundle, Bicep compilation, and whitespace validation | 2026-08-16 00:05 EDT |
+| ARM validation, queue resilience and cohort retry | `az deployment group validate`; resource-level what-if | Validation succeeded with correlation `c5954a42-a2cc-4945-9386-ae0213b92a80`; 15 existing resources deploy, 1 GitHub identity ignored, and 0 resources delete | 2026-08-16 00:07 EDT |
 
 **Validated by:** azure-validate workflow
 
@@ -313,10 +319,9 @@ Container App revisions and the existing migration-job template.
 
 ## 10. Next Step
 
-Address the remaining 52 eligible companies through reviewed manual source
-selection or official PDF upload, not another automatic cohort retry. The
-automated fast and bounded-deep discovery passes are exhausted: remaining
-candidates are audience-specific, regional, investor, jobs, subsidiary,
-competitor, lookalike, or otherwise fail the analyzer. Preserve the standardized
-root issue and recovery actions for each company, including PNC's bounded
-`pdf.download_timeout`.
+Deploy the queue-resilience and cohort-retry update, then use the task-level
+Retry action once for transient-only providers from the terminal recovery task.
+After that bounded pass, route remaining manual providers to reviewed official
+source selection or PDF upload. Preserve each standardized root issue and avoid
+applying audience-specific, regional, investor, jobs, subsidiary, competitor,
+lookalike, or otherwise analyzer-invalid candidates.

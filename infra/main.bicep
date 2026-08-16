@@ -309,7 +309,10 @@ resource analysisWorker 'Microsoft.App/jobs@2024-03-01' = {
         replicaCompletionCount: 1
         scale: {
           minExecutions: 0
-          maxExecutions: 1
+          // Keep one spare execution slot so a platform-level replica stuck
+          // before container startup cannot block the durable queue for hours.
+          // Task claims remain atomic, so duplicate delivery is still a no-op.
+          maxExecutions: 2
           pollingInterval: 30
           rules: [
             {
