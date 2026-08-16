@@ -130,6 +130,33 @@ describe("TaskRow", () => {
     expect(Array.from(container.querySelectorAll("md-filled-button")).map((action) => action.textContent?.trim())).toEqual(["Retry failed"]);
   });
 
+  it("offers the same transient-only retry for completed cohort recovery", () => {
+    const { container } = render(<TaskRow task={task({
+      status: "done",
+      outcome: "partially_succeeded",
+      kind: "cohort-recovery",
+      failed: 1,
+      issues: [
+        {
+          issue_id: "issue-1",
+          code: "recovery.audit_error",
+          stage: "source_resolution",
+          severity: "error",
+          retryability: "transient",
+          summary: "The policy-source audit could not complete",
+          technical_detail: "Source audit exceeded 150 seconds",
+          provider_id: "provider-1",
+          provider_name: "Example Company",
+          policy_id: null,
+          actions: [{ action: "retry", label: "Retry recovery" }],
+          occurred_at: null,
+        },
+      ],
+    })} expanded={false} onToggleOutput={vi.fn()} />);
+
+    expect(Array.from(container.querySelectorAll("md-filled-button")).map((action) => action.textContent?.trim())).toEqual(["Retry failed"]);
+  });
+
   it("does not offer automatic retry when a specific manual cause accompanies a subprocess failure", () => {
     const transientIssue = {
       issue_id: "issue-1",

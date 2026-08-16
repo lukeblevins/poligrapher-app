@@ -96,7 +96,8 @@ export function TaskRow({
     }
     return providers;
   }, {});
-  const canRetryFailures = task.kind === "collection-analysis"
+  const canRetryFailures = !isTaskActive(task.status)
+    && ["collection-analysis", "cohort-recovery"].includes(task.kind ?? "")
     && Object.values(retryabilityByProvider).some(
       (retryabilities) => retryabilities.has("transient")
         && !retryabilities.has("manual")

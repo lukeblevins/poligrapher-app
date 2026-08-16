@@ -1,6 +1,6 @@
 # Azure Deployment Plan
 
-> **Status:** Deployed
+> **Status:** Validated
 
 Generated: 2026-07-28
 
@@ -306,6 +306,8 @@ Container App revisions and the existing migration-job template.
 | Production task-level transient retry | Task `00613732-0cde-4d49-99ae-a19a118644cd` | Retry action selected exactly 26 transient-only providers; 26/26 settled with 11 analysis failures, 15 bounded audit errors, 0 recoveries, 0 rollbacks, and no manual-only targets | 2026-08-16 00:55 EDT |
 | Final S&P coverage reconciliation | Production graph-aware bulk preview | 451 analyzed and 49 eligible (90.2% coverage); the transient-only retry produced no additional safe graphs and confirms the automatic boundary | 2026-08-16 00:55 EDT |
 | Worker queue-resilience acceptance | Container Apps Job configuration and execution history | Two post-queue scaler executions both exited successfully in 44 seconds; the two-slot configuration avoided blockage and left no running worker execution | 2026-08-16 00:56 EDT |
+| Production recovery UI audit | In-app browser, Tasks workspace | Standardized recovery issues and recommended actions rendered, but recovery cards lacked the task-level `Retry failed` control despite backend support | 2026-08-16 00:58 EDT |
+| Validation, recovery retry control | Frontend typecheck, test suite, production build, and `git diff --check` | Passed: 36 frontend tests; completed cohort-recovery tasks expose transient-only retry while active tasks remain inert | 2026-08-16 00:59 EDT |
 
 **Validated by:** azure-validate workflow
 
@@ -323,8 +325,9 @@ Container App revisions and the existing migration-job template.
 
 ## 10. Next Step
 
-Route the remaining 49 companies to reviewed official source selection or PDF
-upload. Automated fast audit, bounded deep audit, safe retry-current analysis,
-and one transient-only task retry are exhausted. Preserve each standardized
-root issue and avoid applying audience-specific, regional, investor, jobs,
-subsidiary, competitor, lookalike, or otherwise analyzer-invalid candidates.
+Deploy and visually verify the recovery-card `Retry failed` control. Then route
+the remaining 49 companies to reviewed official source selection or PDF upload.
+Automated fast audit, bounded deep audit, safe retry-current analysis, and one
+transient-only task retry are exhausted. Preserve each standardized root issue
+and avoid applying audience-specific, regional, investor, jobs, subsidiary,
+competitor, lookalike, or otherwise analyzer-invalid candidates.
