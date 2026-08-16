@@ -133,6 +133,7 @@ def test_fallback_proxy_replaces_static_shell_with_rendered_capture(
         ),
         "html_crawler failure: Got HTTP error 403",
         "html_crawler failure: Got HTTP error 429",
+        "html_crawler failure: Content language UNKNOWN isn't English",
     ],
 )
 def test_fallback_proxy_retries_known_direct_navigation_dead_end(

@@ -52,6 +52,20 @@ def recovery_url(result: SourceAuditResult) -> str | None:
     return result.auto_attempt_url
 
 
+def _merge_audit_result(
+    fast_result: SourceAuditResult,
+    deep_result: SourceAuditResult,
+) -> SourceAuditResult:
+    """Keep a completed fast decision when optional enrichment times out."""
+
+    if (
+        deep_result.status is AuditStatus.AUDIT_ERROR
+        and fast_result.status is not AuditStatus.AUDIT_ERROR
+    ):
+        return fast_result
+    return deep_result
+
+
 def stage_source(db: Session, provider: Provider, url: str) -> ProviderSourceSnapshot:
     snapshot = ProviderSourceSnapshot.capture(provider)
     provider.source_url = url
@@ -209,7 +223,10 @@ class CohortRecoveryRunner:
 
             def record_deep(result: SourceAuditResult) -> None:
                 nonlocal deep_completed
-                final_results[result.provider_id] = result
+                final_results[result.provider_id] = _merge_audit_result(
+                    fast_results[result.provider_id],
+                    result,
+                )
                 deep_completed += 1
                 self.registry.update(
                     self.task_id,

@@ -382,7 +382,10 @@ def _should_retry_crawl_via_proxy(path: str, error: BaseException) -> bool:
     return (
         parsed.scheme in ("http", "https")
         and not _is_wayback_url(path)
-        and any(f"got http error {status}" in detail for status in (403, 429))
+        and (
+            any(f"got http error {status}" in detail for status in (403, 429))
+            or "content language unknown isn't english" in detail
+        )
     )
 
 

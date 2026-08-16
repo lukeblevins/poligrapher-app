@@ -12,12 +12,52 @@ from poligrapher_app.api.routers.collections import recover_collection_failures
 from poligrapher_app.api.schemas import CohortRecoveryRequest
 from poligrapher_app.services import cohort_audit, task_execution
 from poligrapher_app.services.cohort_recovery import (
+    _merge_audit_result,
     accept_source,
     has_completed_graph,
     recovery_url,
     restore_source,
     stage_source,
 )
+
+
+def test_deep_audit_timeout_preserves_completed_fast_result():
+    target = cohort_audit.SourceAuditTarget(
+        provider_id=uuid.uuid4(),
+        provider_name="Example",
+        domain="example.test",
+        source_url="https://example.test/privacy",
+        root_code="source.not_policy",
+    )
+    fast_result = cohort_audit.SourceAuditResult(
+        target,
+        status=cohort_audit.AuditStatus.UNRESOLVED,
+    )
+    deep_result = cohort_audit.SourceAuditResult(
+        target,
+        status=cohort_audit.AuditStatus.AUDIT_ERROR,
+        error="Source audit exceeded 150 seconds",
+    )
+
+    assert _merge_audit_result(fast_result, deep_result) is fast_result
+
+
+def test_deep_audit_decision_replaces_fast_result():
+    target = cohort_audit.SourceAuditTarget(
+        provider_id=uuid.uuid4(),
+        provider_name="Example",
+        domain="example.test",
+        source_url="https://example.test/privacy",
+        root_code="source.not_policy",
+    )
+    fast_result = cohort_audit.SourceAuditResult(target)
+    deep_result = cohort_audit.SourceAuditResult(
+        target,
+        status=cohort_audit.AuditStatus.REPLACEMENT_FOUND,
+        replacement_url="https://example.test/privacy-policy",
+    )
+
+    assert _merge_audit_result(fast_result, deep_result) is deep_result
 
 
 def test_recovery_url_only_allows_pipeline_validated_candidates():
