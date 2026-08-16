@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from enum import StrEnum
 import multiprocessing
 import os
@@ -54,6 +55,7 @@ class SourceAuditTarget:
     source_url: str | None
     root_code: str
     root_retryability: str = "manual"
+    source_revalidated: bool = False
 
 
 @dataclass
@@ -123,6 +125,24 @@ def _source_identity(url: str | None) -> str:
     )
 
 
+def _utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _is_after(left: datetime | None, right: datetime | None) -> bool:
+    normalized_left = _utc(left)
+    normalized_right = _utc(right)
+    return bool(
+        normalized_left is not None
+        and normalized_right is not None
+        and normalized_left > normalized_right
+    )
+
+
 def source_audit_targets(
     db: Session,
     provider_ids: list[uuid.UUID],
@@ -138,7 +158,7 @@ def source_audit_targets(
         .all()
         if has_graph_elements(graph_data)
     }
-    latest_issue: dict[str, tuple[str, str]] = {}
+    latest_issue: dict[str, tuple[str, str, datetime]] = {}
     issues = (
         db.query(TaskIssue)
         .join(TaskRecord, TaskIssue.task_id == TaskRecord.id)
@@ -155,7 +175,7 @@ def source_audit_targets(
         if issue.provider_id:
             latest_issue.setdefault(
                 issue.provider_id,
-                (issue.code, issue.retryability),
+                (issue.code, issue.retryability, issue.occurred_at),
             )
 
     providers = (
@@ -172,10 +192,17 @@ def source_audit_targets(
             source_url=provider.source_url,
             root_code=latest_issue[str(provider.id)][0],
             root_retryability=latest_issue[str(provider.id)][1],
+            source_revalidated=bool(
+                provider.source_status == "available"
+                and _is_after(
+                    provider.source_checked_at,
+                    latest_issue[str(provider.id)][2],
+                )
+            ),
         )
         for provider in providers
         if provider.id not in analyzed_ids
-        and latest_issue.get(str(provider.id), (None, None))[0] in AUDITABLE_FAILURE_CODES
+        and latest_issue.get(str(provider.id), (None, None, None))[0] in AUDITABLE_FAILURE_CODES
     ]
 
 
@@ -183,10 +210,13 @@ def audit_source_target(target: SourceAuditTarget, *, deep: bool = False) -> Sou
     """Validate the current source and, if needed, one official replacement."""
 
     result = SourceAuditResult(target=target)
-    # Standardized transient failures already authorize retrying the configured
-    # source. Do that directly instead of spending minutes rediscovering a URL
-    # that is not known to be wrong.
-    if target.source_url and target.root_retryability == "transient":
+    # A source verified after the recorded failure is a new recovery input,
+    # including for graph.empty. Analyze it once before searching for another
+    # representation. Standardized transient failures likewise authorize a
+    # direct retry of the configured source.
+    if target.source_url and (
+        target.source_revalidated or target.root_retryability == "transient"
+    ):
         result.status = AuditStatus.RETRY_CURRENT
         result.current_resolved_url = target.source_url
         return result

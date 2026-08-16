@@ -55,11 +55,14 @@ ENV HOME=/home/user \
 WORKDIR /home/user/app
 RUN pip install --user --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch
 COPY --chown=user:user pyproject.toml ./
-COPY --chown=user:user poligrapher_app ./poligrapher_app
-COPY --chown=user:user alembic.ini ./
-COPY --chown=user:user alembic ./alembic
 COPY --chown=user:user docker/install_poligrapher_extra_data.py /tmp/install_poligrapher_extra_data.py
-RUN pip install --user --no-cache-dir '.[analysis]'
+# Install the declared dependency graph from a minimal package skeleton. The
+# final worker copies the real application separately, so source and catalog
+# edits no longer invalidate the expensive analysis/model layers below.
+RUN mkdir poligrapher_app \
+    && touch poligrapher_app/__init__.py \
+    && pip install --user --no-cache-dir '.[analysis]' \
+    && rm -rf poligrapher_app
 RUN python -m spacy download en_core_web_md \
     && playwright install chromium \
     && poligrapher-fetch-data \

@@ -211,6 +211,61 @@ def test_audit_source_target_retries_transient_current_source_without_discovery(
     assert result.current_resolved_url == target.source_url
 
 
+def test_audit_source_target_retries_source_revalidated_after_failure(monkeypatch):
+    target = cohort_audit.SourceAuditTarget(
+        provider_id=uuid.uuid4(),
+        provider_name="Example",
+        domain="example.com",
+        source_url="https://example.com/reviewed-privacy.pdf",
+        root_code="graph.empty",
+        source_revalidated=True,
+    )
+
+    monkeypatch.setattr(
+        cohort_audit,
+        "PolicySourceResolver",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("a newly verified source must be analyzed before discovery")
+        ),
+    )
+
+    result = cohort_audit.audit_source_target(target, deep=True)
+
+    assert result.status is cohort_audit.AuditStatus.RETRY_CURRENT
+    assert result.current_resolved_url == target.source_url
+
+
+def test_source_audit_target_marks_newer_available_source_revalidated():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    now = datetime.now(timezone.utc)
+    with Session(engine) as db:
+        provider = Provider(
+            name="Reviewed",
+            source_url="https://example.com/reviewed-privacy.pdf",
+            source_status="available",
+            source_checked_at=now,
+        )
+        task = TaskRecord(kind="collection-analysis", status="done")
+        db.add_all([provider, task])
+        db.flush()
+        db.add(TaskIssue(
+            task_id=task.id,
+            code="graph.empty",
+            stage="graph",
+            severity="error",
+            retryability="manual",
+            summary="Old representation failed",
+            provider_id=str(provider.id),
+            occurred_at=now - timedelta(minutes=1),
+        ))
+        db.commit()
+
+        target = cohort_audit.source_audit_targets(db, [provider.id])[0]
+
+    assert target.source_revalidated is True
+
+
 def test_audit_source_targets_counts_transient_current_retries(monkeypatch):
     target = cohort_audit.SourceAuditTarget(
         provider_id=uuid.uuid4(),
