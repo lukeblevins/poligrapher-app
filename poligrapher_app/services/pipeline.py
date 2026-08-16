@@ -4,6 +4,7 @@ Runs the four-stage PoliGraph pipeline (crawl/parse → init → annotate → bu
 graph) for a captured policy. Pure business logic — no HTTP or view concerns.
 """
 
+import json
 import logging
 import multiprocessing
 import os
@@ -30,6 +31,18 @@ from poligrapher_app.services.acquisition import (
 )
 
 logger = logging.getLogger(__name__)
+
+_CRAWL_PROXY_ENV = (
+    "CRAWL_PROXY",
+    "CRAWL_PROXY_USERNAME",
+    "CRAWL_PROXY_PASSWORD",
+)
+_CRAWL_ARTIFACTS = (
+    "accessibility_tree.json",
+    "cleaned.html",
+    "readability.json",
+    "output.pdf",
+)
 
 
 class PipelineCancelled(Exception):
@@ -75,6 +88,79 @@ def _argv(*args):
         yield
     finally:
         sys.argv = old
+
+
+@contextmanager
+def _crawl_proxy_disabled():
+    """Temporarily hide the crawler-specific proxy without affecting HTTP clients."""
+
+    configured = {
+        name: os.environ.pop(name)
+        for name in _CRAWL_PROXY_ENV
+        if name in os.environ
+    }
+    try:
+        yield
+    finally:
+        os.environ.update(configured)
+
+
+def _used_http_crawl_fallback(output_dir: str) -> bool:
+    try:
+        with open(os.path.join(output_dir, "readability.json"), encoding="utf-8") as stream:
+            return json.load(stream).get("reason") == "http_fallback"
+    except (FileNotFoundError, json.JSONDecodeError, OSError, AttributeError):
+        return False
+
+
+def _replace_crawl_artifacts(source_dir: str, output_dir: str) -> None:
+    for name in _CRAWL_ARTIFACTS:
+        source = os.path.join(source_dir, name)
+        if os.path.isfile(source):
+            shutil.copy2(source, os.path.join(output_dir, name))
+
+
+def _crawl_html(
+    html_crawler,
+    path: str,
+    output_dir: str,
+    pdf_output: str | None = None,
+) -> None:
+    """Render directly first and use the configured proxy only as a fallback.
+
+    PoliGraph's crawler reads ``CRAWL_PROXY`` directly and therefore otherwise
+    routes every browser navigation through it, even when the application is
+    configured for ``fallback`` mode. A valid static-HTML fallback remains
+    usable, but a successful browser render is preferred because dynamic policy
+    pages often expose only a shell to plain HTTP clients.
+    """
+
+    remote = urllib.parse.urlparse(path).scheme in ("http", "https")
+    fallback_mode = crawl_proxy_mode() == "fallback" and bool(httpx_proxy())
+    if not remote or not fallback_mode:
+        html_crawler.main(path, output_dir, pdf_output=pdf_output)
+        return
+
+    with _crawl_proxy_disabled():
+        html_crawler.main(path, output_dir, pdf_output=pdf_output)
+    if not _used_http_crawl_fallback(output_dir):
+        return
+
+    with tempfile.TemporaryDirectory(prefix="poligrapher-proxy-crawl-") as candidate:
+        candidate_pdf = os.path.join(candidate, "output.pdf") if pdf_output else None
+        try:
+            html_crawler.main(path, candidate, pdf_output=candidate_pdf)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Proxy browser fallback failed; keeping validated direct HTML: %s",
+                exc,
+            )
+            return
+        if _used_http_crawl_fallback(candidate):
+            logger.info("Proxy browser also used static HTML; keeping the direct capture")
+            return
+        logger.info("Proxy browser recovered a rendered policy page")
+        _replace_crawl_artifacts(candidate, output_dir)
 
 
 def _resolve_local_pdf_path(path: str | None) -> str | None:
@@ -363,7 +449,7 @@ def generate_graph_from_html(
             pdf_output = os.path.join(staging, "output.pdf") if emit_pdf else None
             steps.append(
                 ("Crawling source via html_crawler",
-                 lambda: html_crawler.main(path, staging, pdf_output=pdf_output))
+                 lambda: _crawl_html(html_crawler, path, staging, pdf_output=pdf_output))
             )
 
         def _run_annotators():

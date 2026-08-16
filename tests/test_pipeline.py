@@ -1,3 +1,4 @@
+import json
 import time
 
 from poligrapher.scripts import build_graph, html_crawler, init_document, run_annotators
@@ -58,6 +59,67 @@ def _stub_remaining_stages(monkeypatch):
     monkeypatch.setattr(init_document, "main", lambda **_kwargs: None)
     monkeypatch.setattr(run_annotators, "main", lambda: None)
     monkeypatch.setattr(build_graph, "main", lambda: None)
+
+
+def test_fallback_proxy_mode_prefers_direct_browser_render(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setenv("CRAWL_PROXY", "http://proxy.test")
+    monkeypatch.setenv("CRAWL_PROXY_USERNAME", "user")
+    monkeypatch.setattr(pipeline, "httpx_proxy", lambda: "http://user@proxy.test")
+    monkeypatch.setattr(pipeline, "crawl_proxy_mode", lambda: "fallback")
+
+    def crawl(_path, output, pdf_output=None):
+        calls.append(("CRAWL_PROXY" in pipeline.os.environ, pdf_output))
+        pipeline.os.makedirs(output, exist_ok=True)
+        with open(pipeline.os.path.join(output, "readability.json"), "w") as stream:
+            json.dump({"applied": True}, stream)
+
+    crawler = type("Crawler", (), {"main": staticmethod(crawl)})
+    pipeline._crawl_html(
+        crawler,
+        "https://example.test/privacy",
+        str(tmp_path / "out"),
+    )
+
+    assert calls == [(False, None)]
+    assert pipeline.os.environ["CRAWL_PROXY"] == "http://proxy.test"
+    assert pipeline.os.environ["CRAWL_PROXY_USERNAME"] == "user"
+
+
+def test_fallback_proxy_replaces_static_shell_with_rendered_capture(
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.setenv("CRAWL_PROXY", "http://proxy.test")
+    monkeypatch.setattr(pipeline, "httpx_proxy", lambda: "http://proxy.test")
+    monkeypatch.setattr(pipeline, "crawl_proxy_mode", lambda: "fallback")
+    calls = []
+
+    def crawl(_path, output, pdf_output=None):
+        proxied = "CRAWL_PROXY" in pipeline.os.environ
+        calls.append(proxied)
+        pipeline.os.makedirs(output, exist_ok=True)
+        reason = "rendered" if proxied else "http_fallback"
+        with open(pipeline.os.path.join(output, "readability.json"), "w") as stream:
+            json.dump({"reason": reason}, stream)
+        with open(pipeline.os.path.join(output, "cleaned.html"), "w") as stream:
+            stream.write(reason)
+        if pdf_output:
+            with open(pdf_output, "wb") as stream:
+                stream.write(reason.encode())
+
+    crawler = type("Crawler", (), {"main": staticmethod(crawl)})
+    output = tmp_path / "out"
+    pipeline._crawl_html(
+        crawler,
+        "https://example.test/privacy",
+        str(output),
+        pdf_output=str(output / "output.pdf"),
+    )
+
+    assert calls == [False, True]
+    assert (output / "cleaned.html").read_text() == "rendered"
+    assert (output / "output.pdf").read_bytes() == b"rendered"
 
 
 def test_live_navigation_dead_end_retries_once_from_wayback(monkeypatch, tmp_path):
