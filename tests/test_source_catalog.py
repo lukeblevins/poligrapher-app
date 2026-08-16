@@ -78,6 +78,17 @@ def test_packaged_sp500_catalog_keeps_reviewed_source_replacements():
     assert sources["United Rentals"]["source_url"] == (
         "https://www.unitedrentals.com/legal/privacy-policy"
     )
+    for revalidated_name in (
+        "CMS Energy",
+        "Erie Indemnity",
+        "International Flavors & Fragrances",
+        "Pinnacle West Capital",
+        "PNC Financial Services",
+        "Prologis",
+    ):
+        assert sources[revalidated_name]["source_checked_at"] == (
+            "2026-08-16T20:37:00+00:00"
+        )
 
 
 def test_apply_source_catalog_updates_matching_provider():
