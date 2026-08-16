@@ -53,6 +53,7 @@ def classify_failure(error: BaseException | str) -> dict:
         )
     elif (
         "chromium navigation failed" in text
+        or "html_crawler failure: got http error" in text
         or "playwrighttimeout" in text
         or "timed out" in text
         or "net::err_" in text

@@ -59,6 +59,13 @@ def test_failure_classifier_exposes_stable_codes_and_safe_actions():
             "retry",
         ),
         (
+            "html_crawler failure: Got HTTP error 403",
+            "crawl.navigation_failed",
+            "acquisition",
+            "transient",
+            "retry",
+        ),
+        (
             "Invalid role: emphasis",
             "document.unsupported_structure",
             "extraction",
