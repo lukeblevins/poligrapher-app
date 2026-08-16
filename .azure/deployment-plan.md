@@ -310,10 +310,20 @@ Container App revisions and the existing migration-job template.
 | Validation, recovery retry control | Frontend typecheck, test suite, production build, and `git diff --check` | Passed: 36 frontend tests; completed cohort-recovery tasks expose transient-only retry while active tasks remain inert | 2026-08-16 00:59 EDT |
 | Recovery retry control deployment | GitHub Actions run `31927946905` | Exact `7f6cd3764eca5cd895481f784a4fe1158e5c99cc` images deployed; revision `poligrapherc1de43-app--0000041`, migration `poligrapherc1de43-migrations-mhrivwl`, and endpoint verification succeeded; worker `maxExecutions` remains 2 | 2026-08-16 01:05 EDT |
 | Recovery retry control production acceptance | In-app browser, Tasks workspace | Completed 26-company and 52-company cohort-recovery cards expose `Retry failed` alongside standardized issues and recommended actions; the control was verified without queuing another retry | 2026-08-16 01:06 EDT |
+| Reviewed source recovery | Tasks `edcab660-3401-4384-8551-80cf84be3b34` and `fbf37e4b-1caf-4907-898e-b078d4dd016d` | Xcel Energy, American Water Works, Fortive, and Tyson Foods recovered through versioned official sources; graph-aware coverage increased from 451 to 455 | 2026-08-16 EDT |
+| Source-freshness and worker-cache deployment | GitHub Actions run `31970066339`; commit `43e81f79444a8ad4b4432ec0f9fa031de823072c` | Newly verified sources are retried when their catalog timestamp is newer than the original failure; revision `poligrapherc1de43-app--0000043` succeeded, and the cold worker build fell from 10m27s to 6m19s | 2026-08-16 EDT |
+| Warm catalog deployment acceptance | GitHub Actions runs `31970438994` and `31971143229` | Exact `6307d46` and `e3afafd` source snapshots deployed as revisions `--0000044` and `--0000045`; warm worker builds completed in 1m31s and 1m26s | 2026-08-16 EDT |
+| Reachability hard-deadline deployment | GitHub Actions run `31971342188`; commit `eb79a6b5cc4501258364ef41e1c3705f421a8fd9` | Revision `poligrapherc1de43-app--0000046`, exact web/worker images, and migration `poligrapherc1de43-migrations-dhw6wef` succeeded; Amazon's previously 6m15s probe settled in 61 seconds | 2026-08-16 EDT |
+| Browser-challenge routing deployment | GitHub Actions run `31971967524`; commit `520c23ef620178fc5de9dd24395b2e7e2f281238` | Revision `poligrapherc1de43-app--0000047`, exact images, and migration `poligrapherc1de43-migrations-8mmold5` succeeded; website 403/429 responses now proceed directly to bounded Chromium while binary document checks remain strict | 2026-08-16 EDT |
+| Browser-challenge recovery acceptance | Tasks `12d7d02a-315b-4545-9854-c40742677de6` and `7e436f45-b02b-4dd6-a8c6-58be4baa950a` | CMS Energy, Pinnacle West Capital, Prologis, and United Rentals recovered with non-empty graphs; Amazon, Extra Space Storage, and IFF retained standardized terminal failures | 2026-08-16 EDT |
+| Canonical challenged-source deployment | GitHub Actions run `31972761839`; commit `82b044a1917fb7a9ae2002e44304a7a084aecd4c` | Revision `poligrapherc1de43-app--0000048`, exact web/worker images, and migration `poligrapherc1de43-migrations-9hulej7` succeeded; canonical live URLs now precede stale Wayback finals only for persisted 403/429 sources, while Jina and non-challenge archive provenance remain unchanged | 2026-08-16 EDT |
+| Validation, challenge-class recovery | `./.venv/bin/pytest -q`; focused pipeline and comparison tests; `git diff --check` | Passed: 119 backend tests, including hard probe termination, strict PDF probing, browser-challenge routing, and canonical-vs-archive source selection; whitespace validation passed | 2026-08-16 EDT |
+| Final S&P coverage reconciliation | Production graph-aware bulk preview for collection `4cac831c-a33d-438c-a0d5-55ee871418e9` | 459 analyzed and 41 eligible (91.8% coverage), up from 451 analyzed at the start of this recovery phase; all remaining companies retain terminal or bounded recovery evidence | 2026-08-16 EDT |
+| Remaining recovery taxonomy | Latest issue per graph-uncovered provider | 13 `recovery.unresolved`, 12 `crawl.navigation_failed`, 9 bounded `recovery.audit_error`, 3 `graph.empty`, 2 `pdf.download_timeout`, and 2 `source.not_policy`; no `execution.unclassified` result remains | 2026-08-16 EDT |
 
 **Validated by:** azure-validate workflow
 
-**Validation timestamp:** 2026-08-15 22:40 EDT
+**Validation timestamp:** 2026-08-16 21:23 EDT
 
 ## 9. Files
 
@@ -327,11 +337,13 @@ Container App revisions and the existing migration-job template.
 
 ## 10. Next Step
 
-Route the remaining 49 companies to reviewed official source selection or PDF
-upload through the existing company workflow. The production recovery cards now
-expose the task-level transient retry control; do not queue another bulk retry
-unless underlying source availability changes.
-Automated fast audit, bounded deep audit, safe retry-current analysis, and one
-transient-only task retry are exhausted. Preserve each standardized root issue
-and avoid applying audience-specific, regional, investor, jobs, subsidiary,
-competitor, lookalike, or otherwise analyzer-invalid candidates.
+Route the remaining 41 companies by root class: reviewed source replacement or
+PDF upload for unresolved/not-policy/download failures, and a future extractor
+or representation improvement for graph-empty policies. The production recovery
+cards expose task-level transient retry, but another unchanged bulk retry is not
+expected to improve coverage.
+Automated fast/deep audit, fresh-source retry, hard process deadlines, browser
+challenge routing, canonical live retry, and the persisted-403 class run are
+exhausted. Preserve each standardized root issue and avoid audience-specific,
+regional, investor, jobs, subsidiary, competitor, lookalike, or otherwise
+analyzer-invalid candidates.
