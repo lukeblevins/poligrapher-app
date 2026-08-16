@@ -1,6 +1,6 @@
 # Azure Deployment Plan
 
-> **Status:** Validated
+> **Status:** Deployed
 
 Generated: 2026-07-28
 
@@ -302,6 +302,10 @@ Container App revisions and the existing migration-job template.
 | S&P coverage reconciliation, consolidated recovery | Production graph-aware bulk preview | 451 analyzed and 49 eligible; coverage increased from 89.6% to 90.2% through the generic retry-current path | 2026-08-16 00:03 EDT |
 | Validation, queue resilience and cohort retry | `./.venv/bin/pytest -q`; frontend typecheck, tests, and build; `az bicep build`; `git diff --check` | Passed: 112 backend tests, 35 frontend tests, production bundle, Bicep compilation, and whitespace validation | 2026-08-16 00:05 EDT |
 | ARM validation, queue resilience and cohort retry | `az deployment group validate`; resource-level what-if | Validation succeeded with correlation `c5954a42-a2cc-4945-9386-ae0213b92a80`; 15 existing resources deploy, 1 GitHub identity ignored, and 0 resources delete | 2026-08-16 00:07 EDT |
+| Queue resilience and cohort retry deployment | GitHub Actions run `31925892068` | Exact `118b6e0cdeea2ea53765c4de3b434fba005ed177` images deployed; revision `poligrapherc1de43-app--0000040`, migration `poligrapherc1de43-migrations-bj4w31m`, and endpoint verification succeeded; worker `maxExecutions` is 2 | 2026-08-16 00:18 EDT |
+| Production task-level transient retry | Task `00613732-0cde-4d49-99ae-a19a118644cd` | Retry action selected exactly 26 transient-only providers; 26/26 settled with 11 analysis failures, 15 bounded audit errors, 0 recoveries, 0 rollbacks, and no manual-only targets | 2026-08-16 00:55 EDT |
+| Final S&P coverage reconciliation | Production graph-aware bulk preview | 451 analyzed and 49 eligible (90.2% coverage); the transient-only retry produced no additional safe graphs and confirms the automatic boundary | 2026-08-16 00:55 EDT |
+| Worker queue-resilience acceptance | Container Apps Job configuration and execution history | Two post-queue scaler executions both exited successfully in 44 seconds; the two-slot configuration avoided blockage and left no running worker execution | 2026-08-16 00:56 EDT |
 
 **Validated by:** azure-validate workflow
 
@@ -319,9 +323,8 @@ Container App revisions and the existing migration-job template.
 
 ## 10. Next Step
 
-Deploy the queue-resilience and cohort-retry update, then use the task-level
-Retry action once for transient-only providers from the terminal recovery task.
-After that bounded pass, route remaining manual providers to reviewed official
-source selection or PDF upload. Preserve each standardized root issue and avoid
-applying audience-specific, regional, investor, jobs, subsidiary, competitor,
-lookalike, or otherwise analyzer-invalid candidates.
+Route the remaining 49 companies to reviewed official source selection or PDF
+upload. Automated fast audit, bounded deep audit, safe retry-current analysis,
+and one transient-only task retry are exhausted. Preserve each standardized
+root issue and avoid applying audience-specific, regional, investor, jobs,
+subsidiary, competitor, lookalike, or otherwise analyzer-invalid candidates.
