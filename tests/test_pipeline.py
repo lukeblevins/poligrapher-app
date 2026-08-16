@@ -122,6 +122,34 @@ def test_fallback_proxy_replaces_static_shell_with_rendered_capture(
     assert (output / "output.pdf").read_bytes() == b"rendered"
 
 
+def test_fallback_proxy_retries_known_direct_navigation_dead_end(monkeypatch, tmp_path):
+    monkeypatch.setenv("CRAWL_PROXY", "http://proxy.test")
+    monkeypatch.setattr(pipeline, "httpx_proxy", lambda: "http://proxy.test")
+    monkeypatch.setattr(pipeline, "crawl_proxy_mode", lambda: "fallback")
+    calls = []
+
+    def crawl(_path, output, pdf_output=None):
+        proxied = "CRAWL_PROXY" in pipeline.os.environ
+        calls.append(proxied)
+        if not proxied:
+            raise RuntimeError(
+                "html_crawler failure: Chromium navigation failed and the HTTP source "
+                "fallback was unavailable"
+            )
+        pipeline.os.makedirs(output, exist_ok=True)
+        with open(pipeline.os.path.join(output, "readability.json"), "w") as stream:
+            json.dump({"applied": True}, stream)
+
+    crawler = type("Crawler", (), {"main": staticmethod(crawl)})
+    pipeline._crawl_html(
+        crawler,
+        "https://example.test/privacy",
+        str(tmp_path / "out"),
+    )
+
+    assert calls == [False, True]
+
+
 def test_live_navigation_dead_end_retries_once_from_wayback(monkeypatch, tmp_path):
     live_url = "https://example.com/privacy"
     archive_url = "https://web.archive.org/web/20260701/https://example.com/privacy"

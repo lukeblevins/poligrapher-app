@@ -141,8 +141,17 @@ def _crawl_html(
         html_crawler.main(path, output_dir, pdf_output=pdf_output)
         return
 
-    with _crawl_proxy_disabled():
+    try:
+        with _crawl_proxy_disabled():
+            html_crawler.main(path, output_dir, pdf_output=pdf_output)
+    except Exception as direct_error:  # noqa: BLE001
+        if not _should_retry_crawl_from_archive(path, direct_error):
+            raise
+        logger.warning(
+            "Direct browser navigation failed; retrying through the configured proxy"
+        )
         html_crawler.main(path, output_dir, pdf_output=pdf_output)
+        return
     if not _used_http_crawl_fallback(output_dir):
         return
 
