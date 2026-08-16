@@ -181,10 +181,10 @@ def test_audit_source_target_returns_only_validated_replacement(monkeypatch):
     monkeypatch.setattr(cohort_audit, "fetch_validated_policy_html", lambda _url, **_kwargs: "")
     result = cohort_audit.audit_source_target(target)
 
-    assert result["status"] == "replacement_found"
-    assert result["current_valid"] is False
-    assert result["replacement_url"] == "https://example.com/privacy"
-    assert result["replacement_confidence"] == 0.84
+    assert result.status is cohort_audit.AuditStatus.REPLACEMENT_FOUND
+    assert result.current_valid is False
+    assert result.replacement_url == "https://example.com/privacy"
+    assert result.replacement_confidence == 0.84
 
 
 def test_audit_source_target_retries_transient_current_source_without_discovery(monkeypatch):
@@ -207,8 +207,8 @@ def test_audit_source_target_retries_transient_current_source_without_discovery(
 
     result = cohort_audit.audit_source_target(target, deep=True)
 
-    assert result["status"] == "retry_current"
-    assert result["current_resolved_url"] == target.source_url
+    assert result.status is cohort_audit.AuditStatus.RETRY_CURRENT
+    assert result.current_resolved_url == target.source_url
 
 
 def test_audit_source_targets_counts_transient_current_retries(monkeypatch):
@@ -261,8 +261,8 @@ def test_audit_source_target_requires_review_for_off_domain_candidate(monkeypatc
 
     result = cohort_audit.audit_source_target(target)
 
-    assert result["status"] == "review_required"
-    assert result["replacement_url"] == "https://example-privacy.com/privacy"
+    assert result.status is cohort_audit.AuditStatus.REVIEW_REQUIRED
+    assert result.replacement_url == "https://example-privacy.com/privacy"
 
 
 def test_audit_source_target_requires_review_below_auto_confidence(monkeypatch):
@@ -297,9 +297,9 @@ def test_audit_source_target_requires_review_below_auto_confidence(monkeypatch):
 
     result = cohort_audit.audit_source_target(target, deep=True)
 
-    assert result["status"] == "review_required"
-    assert result["replacement_url"] == "https://privacy.example.com/privacy-policy"
-    assert result["replacement_confidence"] == 0.6
+    assert result.status is cohort_audit.AuditStatus.REVIEW_REQUIRED
+    assert result.replacement_url == "https://privacy.example.com/privacy-policy"
+    assert result.replacement_confidence == 0.6
 
 
 def test_audit_source_target_requires_review_for_noncanonical_subdomain(monkeypatch):
@@ -328,8 +328,8 @@ def test_audit_source_target_requires_review_for_noncanonical_subdomain(monkeypa
 
     result = cohort_audit.audit_source_target(target)
 
-    assert result["status"] == "review_required"
-    assert result["replacement_confidence"] == 0.84
+    assert result.status is cohort_audit.AuditStatus.REVIEW_REQUIRED
+    assert result.replacement_confidence == 0.84
 
 
 def test_graph_empty_audit_skips_current_source_and_finds_alternate(monkeypatch):
@@ -369,8 +369,8 @@ def test_graph_empty_audit_skips_current_source_and_finds_alternate(monkeypatch)
 
     result = cohort_audit.audit_source_target(target)
 
-    assert result["status"] == "replacement_found"
-    assert result["replacement_url"] == "https://www.example.com/privacy-policy"
+    assert result.status is cohort_audit.AuditStatus.REPLACEMENT_FOUND
+    assert result.replacement_url == "https://www.example.com/privacy-policy"
 
 
 def test_audit_current_source_requires_pipeline_valid_html(monkeypatch):
@@ -398,8 +398,8 @@ def test_audit_current_source_requires_pipeline_valid_html(monkeypatch):
 
     result = cohort_audit.audit_source_target(target)
 
-    assert result["status"] == "current_valid"
-    assert result["current_resolved_url"] == target.source_url
+    assert result.status is cohort_audit.AuditStatus.CURRENT_VALID
+    assert result.current_resolved_url == target.source_url
 
 
 def test_audit_rejects_superficially_different_current_url(monkeypatch):
@@ -426,8 +426,8 @@ def test_audit_rejects_superficially_different_current_url(monkeypatch):
     monkeypatch.setattr(cohort_audit, "PolicySourceResolver", Resolver)
     result = cohort_audit.audit_source_target(target)
 
-    assert result["status"] == "unresolved"
-    assert result["replacement_url"] is None
+    assert result.status is cohort_audit.AuditStatus.UNRESOLVED
+    assert result.replacement_url is None
 
 
 def test_deep_audit_revalidates_discovered_candidate(monkeypatch):
@@ -461,8 +461,8 @@ def test_deep_audit_revalidates_discovered_candidate(monkeypatch):
 
     result = cohort_audit.audit_source_target(target, deep=True)
 
-    assert result["status"] == "replacement_found"
-    assert result["replacement_url"] == "https://example.com/privacy"
+    assert result.status is cohort_audit.AuditStatus.REPLACEMENT_FOUND
+    assert result.replacement_url == "https://example.com/privacy"
 
 
 def test_audit_subprocess_is_terminated_at_wall_clock_deadline():
@@ -528,5 +528,5 @@ def test_audit_subprocess_is_terminated_at_wall_clock_deadline():
     )
 
     assert context.process.terminated is True
-    assert result["status"] == "audit_error"
-    assert result["error"] == "Source audit exceeded 0.01 seconds"
+    assert result.status is cohort_audit.AuditStatus.AUDIT_ERROR
+    assert result.error == "Source audit exceeded 0.01 seconds"

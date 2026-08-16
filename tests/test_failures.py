@@ -173,3 +173,24 @@ def test_task_issues_survive_output_truncation_and_drive_partial_outcome(tmp_pat
         provider_id="11111111-1111-1111-1111-111111111111",
     )
     assert registry.retryable_provider_ids(task_id) == []
+
+
+def test_manual_recovery_issues_drive_partial_outcome_without_failure_count(tmp_path, monkeypatch):
+    engine = create_engine(f"sqlite:///{tmp_path / 'manual-issues.db'}")
+    session = sessionmaker(bind=engine, expire_on_commit=False)
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(task_module, "SessionLocal", session)
+    registry = TaskRegistry()
+
+    with session() as db:
+        task = TaskRecord(id=uuid.uuid4(), kind="cohort-recovery", total=1)
+        db.add(task)
+        db.commit()
+        task_id = str(task.id)
+
+    registry.set_done(task_id, has_issues=True)
+    public = registry.get(task_id)
+
+    assert public["status"] == "done"
+    assert public["failed"] == 0
+    assert public["outcome"] == "partially_succeeded"

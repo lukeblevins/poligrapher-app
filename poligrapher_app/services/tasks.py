@@ -231,7 +231,11 @@ class TaskRegistry:
                     TaskRecord.settled_at >= cutoff,
                     and_(
                         TaskRecord.settled_at >= failed_cutoff,
-                        or_(TaskRecord.status == "failed", TaskRecord.failed > 0),
+                        or_(
+                            TaskRecord.status == "failed",
+                            TaskRecord.failed > 0,
+                            TaskRecord.outcome == "partially_succeeded",
+                        ),
                     ),
                 ))
                 .order_by(TaskRecord.created_at.desc())
@@ -447,14 +451,14 @@ class TaskRegistry:
             db.commit()
             return True
 
-    def set_done(self, task_id: str) -> None:
+    def set_done(self, task_id: str, *, has_issues: bool = False) -> None:
         with SessionLocal() as db:
             task = db.get(TaskRecord, uuid.UUID(task_id))
             failed = int(task.failed or 0) if task else 0
         self._settle(
             task_id,
             "done",
-            outcome="partially_succeeded" if failed else "succeeded",
+            outcome="partially_succeeded" if failed or has_issues else "succeeded",
         )
 
     def set_failed(self, task_id: str, error: str) -> None:

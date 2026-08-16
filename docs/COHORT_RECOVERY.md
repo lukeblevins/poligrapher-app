@@ -33,6 +33,27 @@ must be a member of the collection.
 6. Emit one JSON record per company plus a `RECOVERY SUMMARY` record. A worker
    restart resumes from the durable completed-company cursor.
 
+## Internal contracts
+
+- `SourceAuditResult` and `AuditStatus` are the single contract between source
+  discovery, recovery, reporting, and tests. Adding a status updates aggregate
+  audit counters automatically instead of requiring parallel string-key lists.
+- `CohortRecoveryRunner` owns the recovery state machine. The generic task
+  executor only dispatches the durable payload and supplies the existing
+  killable company-analysis function.
+- Active recovery tasks publish fast-audit, deep-audit, and analysis phases in
+  their task label while `completed` remains the restart-safe company cursor.
+- Results that cannot be attempted safely become structured `TaskIssue`
+  records. The Status Center can therefore identify affected companies and
+  show supported review actions without asking users to interpret JSON logs.
+- Policy completion everywhere is defined by the shared `has_graph_elements`
+  predicate.
+
+Audience- or document-specific search results are rejected by named,
+reason-bearing rules such as `audience.workforce`, `audience.investor`, and
+`document.report`. These are general source-selection rules, not company
+exceptions.
+
 The checked-in S&P 500 source catalog is only bootstrap data. Recovery does not
 read company-specific corrections from it, and a fresh database can reproduce
 the same discovery, validation, analysis, and rollback workflow.

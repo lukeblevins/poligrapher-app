@@ -47,6 +47,20 @@ describe("TaskRow", () => {
     expect(Array.from(container.querySelectorAll("md-text-button")).map((action) => action.textContent?.trim())).toEqual(["Details", "Cancel"]);
   });
 
+  it("shows the current recovery phase alongside numeric progress", () => {
+    render(<TaskRow task={task({
+      status: "running",
+      kind: "cohort-recovery",
+      title: "Recover 53 failed company sources",
+      label: "Deep-auditing sources (8/15)",
+      total: 53,
+      completed: 0,
+    })} expanded={false} onToggleOutput={vi.fn()} />);
+
+    expect(screen.getByText("Deep-auditing sources (8/15)")).toBeInTheDocument();
+    expect(screen.getByText("0 of 53 (0%)")).toBeInTheDocument();
+  });
+
   it("makes retry the primary first action for supported failures", () => {
     const { container } = render(<TaskRow task={task({ status: "failed", kind: "score-all", completed: 37, failed: 2, has_output: true })} expanded={false} onToggleOutput={vi.fn()} />);
 

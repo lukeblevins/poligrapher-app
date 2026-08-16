@@ -3,6 +3,7 @@ from poligrapher_app.services.acquisition import (
     discover_links,
     fetch_validated_policy_html,
     is_privacy_document,
+    narrow_policy_reason,
     reader_snapshot_url,
     search_result_links,
     validate_policy_html,
@@ -120,6 +121,14 @@ def test_site_discovery_rejects_audience_specific_privacy_pages():
     assert discover_links(html, "https://example.com", "example.com") == [
         (9, "https://example.com/privacy-policy")
     ]
+
+
+def test_narrow_policy_rejections_have_stable_reason_codes():
+    assert narrow_policy_reason("/careers/applicant-privacy") == "audience.workforce"
+    assert narrow_policy_reason("/investors/privacy-policy") == "audience.investor"
+    assert narrow_policy_reason("/2025-annual-report-privacy") == "document.report"
+    assert narrow_policy_reason("/newsletter-subscription-privacy") == "document.subscription"
+    assert narrow_policy_reason("/privacy-policy") is None
 
 
 def test_privacy_document_requires_brand_for_cross_domain_result():

@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
+import uuid
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -20,23 +21,30 @@ from poligrapher_app.services.cohort_recovery import (
 
 
 def test_recovery_url_only_allows_pipeline_validated_candidates():
-    assert recovery_url({
-        "status": "current_valid",
-        "source_url": "https://example.test/privacy",
-    }) == "https://example.test/privacy"
-    assert recovery_url({
-        "status": "replacement_found",
-        "replacement_url": "https://example.test/privacy-policy",
-    }) == "https://example.test/privacy-policy"
-    assert recovery_url({
-        "status": "retry_current",
-        "source_url": "https://example.test/privacy",
-    }) == "https://example.test/privacy"
-    assert recovery_url({
-        "status": "review_required",
-        "replacement_url": "https://other.test/privacy",
-    }) is None
-    assert recovery_url({"status": "unresolved"}) is None
+    target = cohort_audit.SourceAuditTarget(
+        provider_id=uuid.uuid4(),
+        provider_name="Example",
+        domain="example.test",
+        source_url="https://example.test/privacy",
+        root_code="source.not_policy",
+    )
+    assert recovery_url(cohort_audit.SourceAuditResult(
+        target, status=cohort_audit.AuditStatus.CURRENT_VALID,
+    )) == "https://example.test/privacy"
+    assert recovery_url(cohort_audit.SourceAuditResult(
+        target,
+        status=cohort_audit.AuditStatus.REPLACEMENT_FOUND,
+        replacement_url="https://example.test/privacy-policy",
+    )) == "https://example.test/privacy-policy"
+    assert recovery_url(cohort_audit.SourceAuditResult(
+        target, status=cohort_audit.AuditStatus.RETRY_CURRENT,
+    )) == "https://example.test/privacy"
+    assert recovery_url(cohort_audit.SourceAuditResult(
+        target,
+        status=cohort_audit.AuditStatus.REVIEW_REQUIRED,
+        replacement_url="https://other.test/privacy",
+    )) is None
+    assert recovery_url(cohort_audit.SourceAuditResult(target)) is None
 
 
 def test_failed_candidate_restores_every_source_field():
@@ -149,12 +157,11 @@ def test_recovery_task_keeps_proven_source_and_rolls_back_failed_candidate(
 
     def audit(targets, *, on_result, **_kwargs):
         for target in targets:
-            on_result({
-                **target.__dict__,
-                "provider_id": str(target.provider_id),
-                "status": "replacement_found",
-                "replacement_url": f"https://{target.domain}/privacy-policy",
-            })
+            on_result(cohort_audit.SourceAuditResult(
+                target=target,
+                status=cohort_audit.AuditStatus.REPLACEMENT_FOUND,
+                replacement_url=f"https://{target.domain}/privacy-policy",
+            ))
         return {"checked": len(targets)}
 
     monkeypatch.setattr(cohort_audit, "audit_source_targets", audit)
@@ -193,8 +200,12 @@ def test_recovery_task_keeps_proven_source_and_rolls_back_failed_candidate(
         def update(self, _task_id, **values):
             self.task.update(values)
 
-        def set_done(self, _task_id):
+        def set_done(self, _task_id, *, has_issues=False):
             self.task["status"] = "done"
+            self.task["outcome"] = "partially_succeeded" if has_issues else "succeeded"
+
+        def record_issue(self, *_args, **_kwargs):
+            return None
 
     registry = Registry()
     task_execution._recover_cohort(
@@ -218,6 +229,85 @@ def test_recovery_task_keeps_proven_source_and_rolls_back_failed_candidate(
     assert registry.task["failed"] == 1
     assert '"recovered": 1' in registry.output
     assert '"rolled_back": 1' in registry.output
+
+
+def test_recovery_routes_unsafe_candidate_to_structured_review_issue(monkeypatch):
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    sessions = lambda: Session(engine, expire_on_commit=False)  # noqa: E731
+    monkeypatch.setattr(database, "SessionLocal", sessions)
+    with sessions() as db:
+        provider = Provider(
+            name="Example",
+            domain="example.test",
+            source_url="https://example.test/old",
+        )
+        db.add(provider)
+        db.commit()
+        provider_id = provider.id
+
+    target = cohort_audit.SourceAuditTarget(
+        provider_id=provider_id,
+        provider_name="Example",
+        domain="example.test",
+        source_url="https://example.test/old",
+        root_code="source.not_policy",
+    )
+    monkeypatch.setattr(cohort_audit, "source_audit_targets", lambda *_args: [target])
+
+    def audit(targets, *, on_result, **_kwargs):
+        on_result(cohort_audit.SourceAuditResult(
+            target=targets[0],
+            status=cohort_audit.AuditStatus.REVIEW_REQUIRED,
+            replacement_url="https://privacy.example-cdn.test/policy",
+            replacement_confidence=0.84,
+        ))
+        return {"checked": 1}
+
+    monkeypatch.setattr(cohort_audit, "audit_source_targets", audit)
+
+    class Registry:
+        def __init__(self):
+            self.task = {"completed": 0, "failed": 0}
+            self.output = ""
+            self.issues = []
+
+        def get(self, _task_id):
+            return dict(self.task)
+
+        def is_cancelled(self, _task_id):
+            return False
+
+        def incr(self, _task_id, field, by=1):
+            self.task[field] = self.task.get(field, 0) + by
+
+        def append_output(self, _task_id, value):
+            self.output += value
+
+        def update(self, _task_id, **values):
+            self.task.update(values)
+
+        def record_issue(self, _task_id, issue, **context):
+            self.issues.append((issue, context))
+
+        def set_done(self, _task_id, *, has_issues=False):
+            self.task["status"] = "done"
+            self.task["outcome"] = "partially_succeeded" if has_issues else "succeeded"
+
+    registry = Registry()
+    task_execution._recover_cohort(
+        "task-id",
+        {"provider_ids": [str(provider_id)], "deep": False},
+        registry,
+    )
+
+    assert registry.task["completed"] == 1
+    assert registry.task["failed"] == 0
+    assert registry.task["outcome"] == "partially_succeeded"
+    assert registry.issues[0][0]["code"] == "recovery.review_required"
+    assert registry.issues[0][0]["actions"][0]["action"] == "replace_source"
+    assert registry.issues[0][1]["provider_id"] == provider_id
+    assert "https://privacy.example-cdn.test/policy" in registry.output
 
 
 def test_collection_recovery_endpoint_queues_only_unresolved_members():

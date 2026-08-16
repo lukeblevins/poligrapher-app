@@ -139,7 +139,7 @@ export function TaskRow({
           {isTaskActive(task.status) && (
             <div className="m3-task-progress-block">
               <div className="m3-task-progress-summary">
-                <span>Progress</span>
+                <span>{task.kind === "cohort-recovery" && task.label ? task.label : "Progress"}</span>
                 <span className="data-value">{progress?.text ?? "Starting"}</span>
               </div>
               <ExpressiveProgressIndicator label={`${accessibleName} progress`} value={progress?.value} />

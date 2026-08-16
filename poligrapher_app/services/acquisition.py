@@ -173,13 +173,40 @@ def fetch_via_unblocker(url: str, timeout: float = 60.0) -> str:
 AUTO_CONFIDENCE = 0.75
 
 _PRIVACY_PATH = re.compile(r"privacy[-_/]?(policy|notice|statement|center|centre)?", re.I)
-_NARROW_POLICY_RESULT = re.compile(
-    r"(?:^|[\s/_-])(?:applicant|candidate|recruit|employee|workday|pension|retiree|"
-    r"hipaa|health[-_ ]fund|benchmark|study|canadian[-_ ]residents?|"
-    r"investors?|investor[-_ ]relations?|ir|annual[-_ ]reports?|careers?|jobs?|manuals?|prospects?|"
-    r"connected[-_ ]apps?|human[-_ ]resources?|hr[-_ ]information|"
-    r"newsletters?|subscriptions?)(?:$|[\s/?#&._=-])",
-    re.I,
+_NARROW_POLICY_RULES = (
+    ("audience.workforce", re.compile(
+        r"(?:^|[\s/_-])(?:applicant|candidate|recruit|employee|workday|pension|retiree|"
+        r"careers?|jobs?|human[-_ ]resources?|hr[-_ ]information)(?:$|[\s/?#&._=-])",
+        re.I,
+    )),
+    ("audience.investor", re.compile(
+        r"(?:^|[\s/_-])(?:investors?|investor[-_ ]relations?|ir|prospects?)(?:$|[\s/?#&._=-])",
+        re.I,
+    )),
+    ("audience.health", re.compile(
+        r"(?:^|[\s/_-])(?:hipaa|health[-_ ]fund)(?:$|[\s/?#&._=-])",
+        re.I,
+    )),
+    ("audience.regional", re.compile(
+        r"(?:^|[\s/_-])canadian[-_ ]residents?(?:$|[\s/?#&._=-])",
+        re.I,
+    )),
+    ("document.research", re.compile(
+        r"(?:^|[\s/_-])(?:benchmark|study)(?:$|[\s/?#&._=-])",
+        re.I,
+    )),
+    ("document.report", re.compile(
+        r"(?:^|[\s/_-])annual[-_ ]reports?(?:$|[\s/?#&._=-])",
+        re.I,
+    )),
+    ("document.product", re.compile(
+        r"(?:^|[\s/_-])(?:manuals?|connected[-_ ]apps?)(?:$|[\s/?#&._=-])",
+        re.I,
+    )),
+    ("document.subscription", re.compile(
+        r"(?:^|[\s/_-])(?:newsletters?|subscriptions?)(?:$|[\s/?#&._=-])",
+        re.I,
+    )),
 )
 _PIPELINE_POLICY_PATTERN = re.compile(
     r"(data|privacy)\s*(?:policy|notice|statement)", re.I
@@ -223,6 +250,15 @@ class ResolvedSource:
 
 # ── pure helpers ──────────────────────────────────────────────────────────────
 
+def narrow_policy_reason(value: str) -> str | None:
+    """Return the stable reason a result is too audience- or document-specific."""
+
+    for reason, pattern in _NARROW_POLICY_RULES:
+        if pattern.search(value):
+            return reason
+    return None
+
+
 def registrable_domain(url_or_host: str) -> str:
     """Return the registrable domain (e.g. ``www.abbott.com`` -> ``abbott.com``)."""
     host = url_or_host
@@ -265,7 +301,7 @@ def score_link(text: str, href: str, domain: str) -> int:
     """Heuristic score that ``href`` is the provider's own privacy policy."""
     t = (text or "").strip().lower()
     h = (href or "").lower()
-    if _NARROW_POLICY_RESULT.search(f"{t} {h}"):
+    if narrow_policy_reason(f"{t} {h}"):
         return -100
     s = 0
     if any(k in t for k in ("privacy policy", "privacy notice", "privacy statement")):
@@ -728,7 +764,7 @@ class PolicySourceResolver:
                 combined = f"{title} {url}".casefold()
                 if "privacy" not in combined:
                     continue
-                if _NARROW_POLICY_RESULT.search(combined):
+                if narrow_policy_reason(combined):
                     continue
                 brand_match = any(token in combined for token in _company_tokens(provider_name))
                 if not same_domain and not brand_match:
@@ -838,7 +874,7 @@ class PolicySourceResolver:
             for loc in re.findall(r"<loc>\s*([^<\s]+)\s*</loc>", body):
                 if (
                     _PRIVACY_PATH.search(loc)
-                    and not _NARROW_POLICY_RESULT.search(loc)
+                    and not narrow_policy_reason(loc)
                     and registrable_domain(loc) == domain
                 ):
                     return SourceCandidate(loc, "sitemap", 0.6, notes="sitemap entry")

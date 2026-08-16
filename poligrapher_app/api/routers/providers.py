@@ -16,6 +16,7 @@ from poligrapher_app.api.schemas import (
     ProviderRead,
 )
 from poligrapher_app.domain.industries import INDUSTRIES
+from poligrapher_app.domain.policy_state import has_graph_elements
 from poligrapher_app.services.importer import import_policies, read_policy_csv
 from poligrapher_app.services.company_catalog import search_open_terms
 from poligrapher_app.services.source_verification import verify_provider_sources
@@ -31,7 +32,7 @@ def _provider_read(provider: Provider) -> ProviderRead:
     analyzed = sum(
         1
         for policy in provider.policies
-        if isinstance(policy.graph_data, dict) and policy.graph_data.get("elements")
+        if has_graph_elements(policy.graph_data)
     )
     source_checked_at = provider.source_checked_at
     if source_checked_at is not None and source_checked_at.tzinfo is None:

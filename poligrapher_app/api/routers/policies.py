@@ -19,6 +19,7 @@ from poligrapher_app.api.schemas import (
     RetentionRequest,
     TaskStatus,
 )
+from poligrapher_app.domain.policy_state import has_graph_elements
 from poligrapher_app.services.retention import preview_retention
 
 router = APIRouter(tags=["policies"])
@@ -84,7 +85,7 @@ def _bulk_analysis_targets(body: BulkActionRequest, db: Session) -> tuple[list[P
             .filter(Policy.provider_id.in_(provider_ids))
             .all()
         )
-        if isinstance(graph_data, dict) and graph_data.get("elements")
+        if has_graph_elements(graph_data)
     }
 
     eligible: list[Provider] = []

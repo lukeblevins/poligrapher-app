@@ -411,6 +411,7 @@ def _verify_sources(task_id: str, payload: dict, registry) -> None:
 def _audit_cohort_sources(task_id: str, payload: dict, registry) -> None:
     from poligrapher_app.api.database import SessionLocal
     from poligrapher_app.services.cohort_audit import (
+        AuditStatus,
         audit_source_targets,
         source_audit_targets,
     )
@@ -419,10 +420,10 @@ def _audit_cohort_sources(task_id: str, payload: dict, registry) -> None:
     with SessionLocal() as db:
         targets = source_audit_targets(db, provider_ids)
 
-    def record_result(result: dict) -> None:
-        registry.append_output(task_id, json.dumps(result, sort_keys=True) + "\n")
+    def record_result(result) -> None:
+        registry.append_output(task_id, json.dumps(result.as_record(), sort_keys=True) + "\n")
         registry.incr(task_id, "completed")
-        if result["status"] == "audit_error":
+        if result.status is AuditStatus.AUDIT_ERROR:
             registry.incr(task_id, "failed")
 
     counts = audit_source_targets(
@@ -444,141 +445,18 @@ def _audit_cohort_sources(task_id: str, payload: dict, registry) -> None:
 
 
 def _recover_cohort(task_id: str, payload: dict, registry) -> None:
-    """Audit, analyze, and transactionally retain only proven source repairs."""
+    """Dispatch recovery through its domain coordinator."""
 
     from poligrapher_app.api.database import SessionLocal
-    from poligrapher_app.api.models import Provider
-    from poligrapher_app.services.cohort_audit import (
-        audit_source_targets,
-        source_audit_targets,
-    )
-    from poligrapher_app.services.cohort_recovery import (
-        accept_source,
-        has_completed_graph,
-        recovery_url,
-        restore_source,
-        stage_source,
-    )
+    from poligrapher_app.services.cohort_recovery import CohortRecoveryRunner
 
-    all_provider_ids = [uuid.UUID(value) for value in payload.get("provider_ids", [])]
-    task = registry.get(task_id) or {}
-    start_index = min(int(task.get("completed") or 0), len(all_provider_ids))
-    provider_ids = all_provider_ids[start_index:]
-    with SessionLocal() as db:
-        targets = source_audit_targets(db, provider_ids)
-    targets_by_id = {target.provider_id: target for target in targets}
-
-    fast_results: dict[uuid.UUID, dict] = {}
-    audit_source_targets(
-        targets,
-        on_result=lambda result: fast_results.__setitem__(uuid.UUID(result["provider_id"]), result),
-        should_cancel=lambda: registry.is_cancelled(task_id),
-        deep=False,
-    )
-    final_results = dict(fast_results)
-    if payload.get("deep", True) and not registry.is_cancelled(task_id):
-        deep_targets = [
-            targets_by_id[provider_id]
-            for provider_id, result in fast_results.items()
-            if result["status"] in {"unresolved", "audit_error"}
-        ]
-        audit_source_targets(
-            deep_targets,
-            on_result=lambda result: final_results.__setitem__(uuid.UUID(result["provider_id"]), result),
-            should_cancel=lambda: registry.is_cancelled(task_id),
-            deep=True,
-        )
-    if registry.is_cancelled(task_id):
-        registry.set_cancelled(task_id)
-        return
-
-    counts = {
-        "targeted": len(provider_ids),
-        "attempted": 0,
-        "recovered": 0,
-        "rolled_back": 0,
-        "analysis_failed": 0,
-        "review_required": 0,
-        "unresolved": 0,
-        "audit_error": 0,
-        "already_resolved": 0,
-    }
-    for provider_id in provider_ids:
-        if registry.is_cancelled(task_id):
-            registry.set_cancelled(task_id)
-            return
-        result = final_results.get(provider_id)
-        if result is None:
-            counts["already_resolved"] += 1
-            registry.append_output(task_id, json.dumps({
-                "provider_id": str(provider_id), "status": "already_resolved",
-            }, sort_keys=True) + "\n")
-            registry.incr(task_id, "completed")
-            continue
-        url = recovery_url(result)
-        if not url:
-            status = result["status"]
-            if status in counts:
-                counts[status] += 1
-            if status == "audit_error":
-                registry.incr(task_id, "failed")
-            registry.append_output(task_id, json.dumps(result, sort_keys=True) + "\n")
-            registry.incr(task_id, "completed")
-            continue
-
-        counts["attempted"] += 1
-        replacement = result["status"] == "replacement_found"
-        snapshot = None
-        try:
-            with SessionLocal() as db:
-                provider = db.get(Provider, provider_id)
-                if provider is None:
-                    raise RuntimeError(f"Provider {provider_id} no longer exists")
-                snapshot = stage_source(db, provider, url)
-            analysis_result = _run_collection_subtask(task_id, provider_id, registry)
-            if analysis_result == "cancelled":
-                with SessionLocal() as db:
-                    provider = db.get(Provider, provider_id)
-                    if provider is not None and snapshot is not None:
-                        restore_source(db, provider, snapshot)
-                registry.set_cancelled(task_id)
-                return
-            with SessionLocal() as db:
-                provider = db.get(Provider, provider_id)
-                recovered = analysis_result in {"ok", "unchanged"} and has_completed_graph(db, provider_id)
-                if recovered:
-                    accept_source(db, provider, url)
-                elif snapshot is not None:
-                    restore_source(db, provider, snapshot)
-            if recovered:
-                counts["recovered"] += 1
-                result["recovery_status"] = "recovered"
-            else:
-                counts["rolled_back"] += int(replacement)
-                counts["analysis_failed"] += int(not replacement)
-                registry.incr(task_id, "failed")
-                result["recovery_status"] = "rolled_back" if replacement else "analysis_failed"
-                result["analysis_result"] = analysis_result
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("Cohort recovery failed for provider %s", provider_id)
-            if snapshot is not None:
-                with SessionLocal() as db:
-                    provider = db.get(Provider, provider_id)
-                    if provider is not None:
-                        restore_source(db, provider, snapshot)
-                counts["rolled_back"] += int(replacement)
-                counts["analysis_failed"] += int(not replacement)
-            registry.incr(task_id, "failed")
-            result["recovery_status"] = "rolled_back" if replacement else "analysis_failed"
-            result["error"] = str(exc)
-        registry.append_output(task_id, json.dumps(result, sort_keys=True) + "\n")
-        registry.incr(task_id, "completed")
-
-    registry.append_output(task_id, "RECOVERY SUMMARY: " + json.dumps(counts, sort_keys=True) + "\n")
-    settled = registry.get(task_id) or {}
-    if int(settled.get("failed") or 0):
-        registry.update(task_id, error="Recovery completed with unresolved execution errors; successful repairs were retained.")
-    registry.set_done(task_id)
+    CohortRecoveryRunner(
+        task_id=task_id,
+        payload=payload,
+        registry=registry,
+        session_factory=SessionLocal,
+        analyze_provider=_run_collection_subtask,
+    ).run()
 
 
 def analyze_collection_provider(provider_id: uuid.UUID, task_id: str, registry) -> str:

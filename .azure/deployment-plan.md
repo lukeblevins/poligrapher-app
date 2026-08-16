@@ -1,6 +1,6 @@
 # Azure Deployment Plan
 
-> **Status:** Deployed
+> **Status:** Validated
 
 Generated: 2026-07-28
 
@@ -292,10 +292,14 @@ Container App revisions and the existing migration-job template.
 | Recovery safety-gate deployment | GitHub Actions run `31915414696` | Exact `8802ba99d4c8d25c7cafd7c6ce399d6511a2b50b` images deployed; revision `poligrapherc1de43-app--0000038` is healthy and migration `poligrapherc1de43-migrations-56m9aeb` succeeded | 2026-08-15 EDT |
 | Guarded full-cohort recovery acceptance | Task `81239bec-2a9f-44c5-aca6-6ac4f109aea7` | 53/53 terminal: 17 attempted, Henry Schein recovered on its existing canonical source, 16 analysis failures settled, 15 audit errors bounded, and 21 manual failures remained unresolved; no replacement URL was auto-committed | 2026-08-15 EDT |
 | S&P coverage reconciliation, repeatable recovery | Production graph-aware preview and provider drift comparison | 448 analyzed and 52 eligible. Confirmed narrow eCummins and 2011 annual-report experiments were exact-deleted and their source URLs restored; final run introduced no replacement-source drift | 2026-08-15 EDT |
+| Validation, recovery architecture consolidation | `./.venv/bin/pytest -q`; `npm --prefix frontend run typecheck`; `npm --prefix frontend test -- --run`; `npm --prefix frontend run build`; `git diff --check` | Passed: 111 backend tests, 35 frontend tests, TypeScript validation, production bundle, and whitespace validation | 2026-08-15 22:40 EDT |
+| Bicep core validation, recovery architecture consolidation | Azure validation helper against `poligrapher-rg` | Azure CLI authentication, Bicep compilation, ARM validation, and what-if completed successfully | 2026-08-15 22:40 EDT |
+| Resource-level what-if, recovery architecture consolidation | `az deployment group what-if --result-format ResourceIdOnly` | 15 existing resources deploy, 1 GitHub identity ignored, and 0 resources delete | 2026-08-15 22:40 EDT |
+| Policy and RBAC validation, recovery architecture consolidation | Azure Policy assignment inventory; `infra/main.bicep`; live app and worker identity configuration | East US 2 remains permitted; MFA write/delete and audit-only Security Center policies reviewed; no Bicep role assignments; app and worker identities remain `None` with existing secret-backed access unchanged | 2026-08-15 22:40 EDT |
 
 **Validated by:** azure-validate workflow
 
-**Validation timestamp:** 2026-08-15 EDT
+**Validation timestamp:** 2026-08-15 22:40 EDT
 
 ## 9. Files
 

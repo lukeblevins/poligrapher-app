@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
+from enum import StrEnum
 import multiprocessing
 import os
 import urllib.parse
@@ -13,6 +14,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from poligrapher_app.api.models import Policy, Provider, TaskIssue, TaskRecord
+from poligrapher_app.domain.policy_state import has_graph_elements
 from poligrapher_app.services.acquisition import (
     AUTO_CONFIDENCE,
     PolicySourceResolver,
@@ -33,6 +35,17 @@ SOURCE_FAILURE_CODES = frozenset(
 AUDITABLE_FAILURE_CODES = SOURCE_FAILURE_CODES | {"graph.empty"}
 
 
+class AuditStatus(StrEnum):
+    """Every terminal decision produced by a source audit."""
+
+    CURRENT_VALID = "current_valid"
+    RETRY_CURRENT = "retry_current"
+    REPLACEMENT_FOUND = "replacement_found"
+    REVIEW_REQUIRED = "review_required"
+    UNRESOLVED = "unresolved"
+    AUDIT_ERROR = "audit_error"
+
+
 @dataclass(frozen=True)
 class SourceAuditTarget:
     provider_id: uuid.UUID
@@ -41,6 +54,49 @@ class SourceAuditTarget:
     source_url: str | None
     root_code: str
     root_retryability: str = "manual"
+
+
+@dataclass
+class SourceAuditResult:
+    """Typed contract shared by audit, recovery, reporting, and tests."""
+
+    target: SourceAuditTarget
+    status: AuditStatus = AuditStatus.UNRESOLVED
+    current_valid: bool = False
+    current_resolved_url: str | None = None
+    replacement_url: str | None = None
+    replacement_strategy: str | None = None
+    replacement_confidence: float | None = None
+    replacement_notes: str | None = None
+    error: str | None = None
+
+    @property
+    def provider_id(self) -> uuid.UUID:
+        return self.target.provider_id
+
+    @property
+    def auto_attempt_url(self) -> str | None:
+        if self.status in {AuditStatus.CURRENT_VALID, AuditStatus.RETRY_CURRENT}:
+            return self.current_resolved_url or self.target.source_url
+        if self.status is AuditStatus.REPLACEMENT_FOUND:
+            return self.replacement_url
+        return None
+
+    def as_record(self) -> dict:
+        record = {
+            **asdict(self.target),
+            "provider_id": str(self.target.provider_id),
+            "status": self.status.value,
+            "current_valid": self.current_valid,
+            "current_resolved_url": self.current_resolved_url,
+            "replacement_url": self.replacement_url,
+            "replacement_strategy": self.replacement_strategy,
+            "replacement_confidence": self.replacement_confidence,
+            "replacement_notes": self.replacement_notes,
+        }
+        if self.error:
+            record["error"] = self.error
+        return record
 
 
 def _matches_provider_domain(url: str, domain: str | None) -> bool:
@@ -80,7 +136,7 @@ def source_audit_targets(
         for provider_id, graph_data in db.query(Policy.provider_id, Policy.graph_data)
         .filter(Policy.provider_id.in_(provider_ids))
         .all()
-        if isinstance(graph_data, dict) and graph_data.get("elements")
+        if has_graph_elements(graph_data)
     }
     latest_issue: dict[str, tuple[str, str]] = {}
     issues = (
@@ -123,28 +179,16 @@ def source_audit_targets(
     ]
 
 
-def audit_source_target(target: SourceAuditTarget, *, deep: bool = False) -> dict:
+def audit_source_target(target: SourceAuditTarget, *, deep: bool = False) -> SourceAuditResult:
     """Validate the current source and, if needed, one official replacement."""
 
-    result = {
-        **asdict(target),
-        "provider_id": str(target.provider_id),
-        "status": "unresolved",
-        "current_valid": False,
-        "current_resolved_url": None,
-        "replacement_url": None,
-        "replacement_strategy": None,
-        "replacement_confidence": None,
-        "replacement_notes": None,
-    }
+    result = SourceAuditResult(target=target)
     # Standardized transient failures already authorize retrying the configured
     # source. Do that directly instead of spending minutes rediscovering a URL
     # that is not known to be wrong.
     if target.source_url and target.root_retryability == "transient":
-        result.update(
-            status="retry_current",
-            current_resolved_url=target.source_url,
-        )
+        result.status = AuditStatus.RETRY_CURRENT
+        result.current_resolved_url = target.source_url
         return result
     resolver = PolicySourceResolver(allow_headless=False)
     try:
@@ -158,11 +202,9 @@ def audit_source_target(target: SourceAuditTarget, *, deep: bool = False) -> dic
                 attempts=1,
             )
             if current_html:
-                result.update(
-                    status="current_valid",
-                    current_valid=True,
-                    current_resolved_url=target.source_url,
-                )
+                result.status = AuditStatus.CURRENT_VALID
+                result.current_valid = True
+                result.current_resolved_url = target.source_url
                 return result
 
         candidate = resolver.resolve_candidate(
@@ -185,24 +227,22 @@ def audit_source_target(target: SourceAuditTarget, *, deep: bool = False) -> dic
             candidate_html = fetch_validated_policy_html(candidate.url)
             if not candidate_html:
                 return result
-        status = (
-            "replacement_found"
+        result.status = (
+            AuditStatus.REPLACEMENT_FOUND
             if (
                 _matches_provider_domain(candidate.url, target.domain)
                 and candidate.confidence >= AUTO_CONFIDENCE
             )
-            else "review_required"
+            else AuditStatus.REVIEW_REQUIRED
         )
-        result.update(
-            status=status,
-            replacement_url=candidate.url,
-            replacement_strategy=candidate.strategy,
-            replacement_confidence=candidate.confidence,
-            replacement_notes=candidate.notes,
-        )
+        result.replacement_url = candidate.url
+        result.replacement_strategy = candidate.strategy
+        result.replacement_confidence = candidate.confidence
+        result.replacement_notes = candidate.notes
         return result
     except Exception as exc:  # noqa: BLE001
-        result.update(status="audit_error", error=str(exc))
+        result.status = AuditStatus.AUDIT_ERROR
+        result.error = str(exc)
         return result
 
 
@@ -212,14 +252,11 @@ def _audit_source_target_child(target: SourceAuditTarget, deep: bool, connection
     try:
         connection.send(audit_source_target(target, deep=deep))
     except BaseException as exc:  # noqa: BLE001
-        connection.send(
-            {
-                **asdict(target),
-                "provider_id": str(target.provider_id),
-                "status": "audit_error",
-                "error": f"Audit subprocess failed: {type(exc).__name__}: {exc}",
-            }
-        )
+        connection.send(SourceAuditResult(
+            target=target,
+            status=AuditStatus.AUDIT_ERROR,
+            error=f"Audit subprocess failed: {type(exc).__name__}: {exc}",
+        ))
     finally:
         connection.close()
 
@@ -230,7 +267,7 @@ def _run_audit_source_target(
     deep: bool,
     timeout_seconds: float | None = None,
     context=None,
-) -> dict:
+) -> SourceAuditResult:
     """Return one audit result within a true wall-clock deadline."""
 
     timeout_seconds = timeout_seconds or (150.0 if deep else 75.0)
@@ -251,20 +288,18 @@ def _run_audit_source_target(
             if process.is_alive() and hasattr(process, "kill"):
                 process.kill()
                 process.join(5.0)
-            return {
-                **asdict(target),
-                "provider_id": str(target.provider_id),
-                "status": "audit_error",
-                "error": f"Source audit exceeded {timeout_seconds:g} seconds",
-            }
+            return SourceAuditResult(
+                target=target,
+                status=AuditStatus.AUDIT_ERROR,
+                error=f"Source audit exceeded {timeout_seconds:g} seconds",
+            )
         if receiver.poll():
             return receiver.recv()
-        return {
-            **asdict(target),
-            "provider_id": str(target.provider_id),
-            "status": "audit_error",
-            "error": f"Audit subprocess exited with code {process.exitcode} without a result",
-        }
+        return SourceAuditResult(
+            target=target,
+            status=AuditStatus.AUDIT_ERROR,
+            error=f"Audit subprocess exited with code {process.exitcode} without a result",
+        )
     finally:
         receiver.close()
         if not sender.closed:
@@ -280,15 +315,7 @@ def audit_source_targets(
 ) -> dict[str, int]:
     """Audit targets concurrently without mutating provider source records."""
 
-    counts = {
-        "checked": 0,
-        "current_valid": 0,
-        "retry_current": 0,
-        "replacement_found": 0,
-        "review_required": 0,
-        "unresolved": 0,
-        "audit_error": 0,
-    }
+    counts = {"checked": 0, **{status.value: 0 for status in AuditStatus}}
     configured = int(os.getenv("COHORT_AUDIT_MAX_WORKERS", "8"))
     max_workers = max(1, min(configured, 8))
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -303,7 +330,7 @@ def audit_source_targets(
                 break
             result = future.result()
             counts["checked"] += 1
-            counts[result["status"]] += 1
+            counts[result.status.value] += 1
             if on_result:
                 on_result(result)
     return counts
