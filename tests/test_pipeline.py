@@ -78,6 +78,53 @@ def _stub_remaining_stages(monkeypatch):
     monkeypatch.setattr(build_graph, "main", lambda: None)
 
 
+def test_pdf_policy_heading_is_derived_only_for_substantial_policy_text(tmp_path):
+    policy = tmp_path / "policy.html"
+    policy.write_text(
+        "<html><body><h1>Consumer facts</h1><p>"
+        + (
+            "We collect and share your personal information. We protect your "
+            "privacy and explain how you may limit our use of your information. "
+        ) * 12
+        + "</p></body></html>"
+    )
+
+    assert pipeline._ensure_pdf_policy_heading(str(policy))
+    updated = policy.read_text()
+    assert 'data-poligrapher-derived="document-type"' in updated
+    assert "Privacy Notice" in updated
+    assert not pipeline._ensure_pdf_policy_heading(str(policy))
+
+
+def test_pdf_policy_heading_rejects_generic_personal_information_page(tmp_path):
+    page = tmp_path / "generic.html"
+    page.write_text(
+        "<html><body><p>"
+        + ("Personal information appears in this generic account help page. " * 20)
+        + "</p></body></html>"
+    )
+
+    assert not pipeline._ensure_pdf_policy_heading(str(page))
+    assert "data-poligrapher-derived" not in page.read_text()
+
+
+def test_pdf_policy_heading_supports_markdown_html_fragment(tmp_path):
+    policy = tmp_path / "fragment.html"
+    policy.write_text(
+        "<h1>Consumer facts</h1><p>"
+        + (
+            "We collect and share your personal information. We protect your "
+            "privacy and explain how you may limit our use of your information. "
+        ) * 12
+        + "</p>"
+    )
+
+    assert pipeline._ensure_pdf_policy_heading(str(policy))
+    assert policy.read_text().startswith(
+        '<h1 data-poligrapher-derived="document-type">Privacy Notice</h1>'
+    )
+
+
 def test_fallback_proxy_mode_prefers_direct_browser_render(monkeypatch, tmp_path):
     calls = []
     monkeypatch.setenv("CRAWL_PROXY", "http://proxy.test")

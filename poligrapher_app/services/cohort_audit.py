@@ -237,15 +237,27 @@ def audit_source_target(target: SourceAuditTarget, *, deep: bool = False) -> Sou
                 result.current_resolved_url = target.source_url
                 return result
 
-        candidate = resolver.resolve_candidate(
-            target.provider_name,
-            target.domain,
-            exclude_urls={target.source_url} if target.source_url else None,
-            require_validation=True,
-            search_timeout=15.0 if deep else 12.0,
-            max_validation_candidates=3 if deep else 2,
-            allow_site_discovery=deep,
-        )
+        candidate = None
+        if target.source_url and target.root_code == "graph.empty":
+            linked_resolver = getattr(resolver, "resolve_linked_candidate", None)
+            if linked_resolver:
+                candidate = linked_resolver(
+                    target.provider_name,
+                    target.domain,
+                    target.source_url,
+                    timeout=15.0 if deep else 12.0,
+                    max_validation_candidates=3 if deep else 2,
+                )
+        if candidate is None:
+            candidate = resolver.resolve_candidate(
+                target.provider_name,
+                target.domain,
+                exclude_urls={target.source_url} if target.source_url else None,
+                require_validation=True,
+                search_timeout=15.0 if deep else 12.0,
+                max_validation_candidates=3 if deep else 2,
+                allow_site_discovery=deep,
+            )
         if candidate is None:
             return result
         if _source_identity(candidate.url) == _source_identity(target.source_url):
@@ -253,7 +265,10 @@ def audit_source_target(target: SourceAuditTarget, *, deep: bool = False) -> Sou
         # Search candidates were validated by the resolver. Deep discovery and
         # sitemap candidates must satisfy the same analyzer-facing contract
         # before the audit is allowed to describe them as replacements.
-        if candidate.strategy != "search":
+        if (
+            candidate.strategy != "search"
+            and not getattr(candidate, "validated", False)
+        ):
             candidate_html = fetch_validated_policy_html(candidate.url)
             if not candidate_html:
                 return result

@@ -400,6 +400,9 @@ def test_graph_empty_audit_skips_current_source_and_finds_alternate(monkeypatch)
         def __init__(self, allow_headless=False):
             assert allow_headless is False
 
+        def resolve_linked_candidate(self, *_args, **_kwargs):
+            return None
+
         def resolve(self, *_args):
             raise AssertionError("graph-empty audits must not revalidate the current source")
 
@@ -426,6 +429,47 @@ def test_graph_empty_audit_skips_current_source_and_finds_alternate(monkeypatch)
 
     assert result.status is cohort_audit.AuditStatus.REPLACEMENT_FOUND
     assert result.replacement_url == "https://www.example.com/privacy-policy"
+
+
+def test_graph_empty_audit_prefers_validated_linked_source(monkeypatch):
+    target = cohort_audit.SourceAuditTarget(
+        provider_id=uuid.uuid4(),
+        provider_name="Example",
+        domain="example.com",
+        source_url="https://www.example.com/privacy-center",
+        root_code="graph.empty",
+    )
+
+    class Resolver:
+        def __init__(self, allow_headless=False):
+            assert allow_headless is False
+
+        def resolve_linked_candidate(self, *_args, **_kwargs):
+            return SimpleNamespace(
+                url="https://www.example.com/privacy-notice.pdf",
+                strategy="linked",
+                confidence=0.86,
+                notes="validated link from current official source",
+                validated=True,
+            )
+
+        def resolve_candidate(self, *_args, **_kwargs):
+            raise AssertionError("broad discovery must follow linked-source discovery")
+
+    monkeypatch.setattr(cohort_audit, "PolicySourceResolver", Resolver)
+    monkeypatch.setattr(
+        cohort_audit,
+        "fetch_validated_policy_html",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("validated linked sources must not be fetched as HTML")
+        ),
+    )
+
+    result = cohort_audit.audit_source_target(target)
+
+    assert result.status is cohort_audit.AuditStatus.REPLACEMENT_FOUND
+    assert result.replacement_url == "https://www.example.com/privacy-notice.pdf"
+    assert result.replacement_strategy == "linked"
 
 
 def test_audit_current_source_requires_pipeline_valid_html(monkeypatch):

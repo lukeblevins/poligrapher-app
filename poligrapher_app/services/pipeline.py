@@ -24,6 +24,7 @@ from poligrapher_app.domain.policy_analysis import (
 )
 from poligrapher_app.services.acquisition import (
     crawl_proxy_mode,
+    extract_text,
     fetch_validated_policy_html,
     fetch_wayback,
     httpx_proxy,
@@ -45,6 +46,13 @@ _CRAWL_ARTIFACTS = (
     "output.pdf",
 )
 _BROWSER_CHALLENGE_STATUSES = frozenset({403, 406, 429})
+_CONVENTIONAL_POLICY_PATTERN = re.compile(
+    r"(data|privacy)\s*(?:policy|notice|statement)", re.IGNORECASE
+)
+_PDF_POLICY_ACTIONS = ("collect", "use", "share", "disclos", "protect", "retain")
+_DERIVED_PDF_POLICY_HEADING = (
+    '<h1 data-poligrapher-derived="document-type">Privacy Notice</h1>'
+)
 
 
 class PipelineCancelled(Exception):
@@ -208,6 +216,43 @@ def ensure_source_pdf_copy(source_path: str | None, output_dir: str) -> bool:
     except Exception as exc:
         logger.warning("Failed to copy source PDF %s -> %s: %s", source_path, dest_path, exc)
         return False
+
+
+def _ensure_pdf_policy_heading(html_path: str) -> bool:
+    """Label policy-like PDF HTML when the source omits a conventional title.
+
+    PoliGraph's crawler requires a data/privacy policy/notice phrase even after
+    the PDF parser has produced substantial policy text. Some regulated notices
+    describe personal-information practices without that title. Add a traceable
+    derived heading only when several independent content signals agree.
+    """
+
+    try:
+        with open(html_path, encoding="utf-8") as stream:
+            html = stream.read()
+    except OSError:
+        return False
+    text = extract_text(html)
+    normalized = text.casefold()
+    if _CONVENTIONAL_POLICY_PATTERN.search(text) or _DERIVED_PDF_POLICY_HEADING in html:
+        return False
+    if (
+        len(text) < 500
+        or "privacy" not in normalized
+        or "personal information" not in normalized
+        or sum(action in normalized for action in _PDF_POLICY_ACTIONS) < 2
+    ):
+        return False
+    body = re.search(r"<body(?:\s[^>]*)?>", html, flags=re.IGNORECASE)
+    updated = (
+        html[:body.end()] + _DERIVED_PDF_POLICY_HEADING + html[body.end():]
+        if body is not None
+        else _DERIVED_PDF_POLICY_HEADING + html
+    )
+    with open(html_path, "w", encoding="utf-8") as stream:
+        stream.write(updated)
+    logger.info("Added a derived privacy-notice heading to parsed PDF HTML")
+    return True
 
 def _url_probe_attempt(url: str, timeout: float, proxy: str | None) -> int:
     """Return one HTTP status; the caller supplies the killable boundary."""
@@ -502,9 +547,14 @@ def generate_graph_from_html(
             html_path = os.path.join(staging, "output.html")
 
             if not os.path.exists(html_path):
-                steps.append(("Extracting PDF to HTML via pdf_parser", lambda: pdf_parser.main(path, staging)))
+                def _parse_pdf():
+                    pdf_parser.main(path, staging)
+                    _ensure_pdf_policy_heading(html_path)
+
+                steps.append(("Extracting PDF to HTML via pdf_parser", _parse_pdf))
             else:
                 logger.info("Cached PDF conversion detected (%s); skipping pdf_parser", html_path)
+                _ensure_pdf_policy_heading(html_path)
 
             steps.append(
                 ("Crawling parsed HTML via html_crawler", lambda: html_crawler.main(html_path, staging))

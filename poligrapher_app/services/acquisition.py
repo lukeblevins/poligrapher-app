@@ -207,6 +207,14 @@ _NARROW_POLICY_RULES = (
         r"(?:^|[\s/_-])(?:newsletters?|subscriptions?)(?:$|[\s/?#&._=-])",
         re.I,
     )),
+    ("document.support", re.compile(
+        r"(?:^|[\s/_-])(?:faqs?|frequently[-_ ]asked[-_ ]questions?)(?:$|[\s/?#&._=-])",
+        re.I,
+    )),
+    ("document.security", re.compile(
+        r"(?:^|[\s/_-])(?:vulnerability|security)[-_ ]disclosure(?:$|[\s/?#&._=-])",
+        re.I,
+    )),
 )
 _PIPELINE_POLICY_PATTERN = re.compile(
     r"(data|privacy)\s*(?:policy|notice|statement)", re.I
@@ -231,6 +239,7 @@ class SourceCandidate:
     confidence: float
     select: list[str] | str | None = None  # OTA content selector(s), if any
     notes: str = ""
+    validated: bool = False
 
 
 @dataclass
@@ -380,12 +389,23 @@ def privacy_document_text(data: bytes, content_type: str, url: str) -> str:
     if data.startswith(b"%PDF") or "pdf" in content_type.casefold() or url.lower().endswith(".pdf"):
         try:
             from io import BytesIO
-            from pypdf import PdfReader
+            import fitz
 
-            reader = PdfReader(BytesIO(data))
-            return _normalize_ws(" ".join((page.extract_text() or "") for page in reader.pages[:12]))
+            with fitz.open(stream=BytesIO(data), filetype="pdf") as document:
+                return _normalize_ws(
+                    " ".join(page.get_text() for page in document[:12])
+                )
         except Exception:  # noqa: BLE001
-            return ""
+            try:
+                from io import BytesIO
+                from pypdf import PdfReader
+
+                reader = PdfReader(BytesIO(data))
+                return _normalize_ws(
+                    " ".join((page.extract_text() or "") for page in reader.pages[:12])
+                )
+            except Exception:  # noqa: BLE001
+                return ""
     return extract_text(data.decode("utf-8", "ignore"))
 
 
@@ -456,6 +476,63 @@ def fetch_validated_policy_html(
 
     status, html = fetch_static(url, timeout=timeout, attempts=attempts)
     return validate_policy_html(html) if status == 200 and html else ""
+
+
+def validate_policy_source_url(
+    url: str,
+    provider_name: str,
+    domain: str | None,
+    *,
+    timeout: float = 20.0,
+    max_bytes: int = 10 * 1024 * 1024,
+) -> str | None:
+    """Return the final URL when an HTML or PDF source is a usable policy.
+
+    This is the analyzer-facing validation boundary used by discovery paths.
+    It deliberately validates bytes, language/policy structure for HTML, and
+    extracted document text for PDFs without mutating a provider record.
+    """
+
+    try:
+        with open_client(timeout) as client:
+            with client.stream("GET", url) as response:
+                content_length = int(response.headers.get("content-length") or 0)
+                if response.status_code >= 400 or content_length > max_bytes:
+                    return None
+                body = bytearray()
+                for chunk in response.iter_bytes(256 * 1024):
+                    body.extend(chunk)
+                    if len(body) > max_bytes:
+                        return None
+                content = bytes(body)
+                content_type = response.headers.get("content-type", "")
+                response_url = str(response.url)
+                encoding = response.encoding or "utf-8"
+    except (httpx.HTTPError, ValueError, OSError):
+        return None
+
+    if len(content) < 500:
+        return None
+    document_is_pdf = (
+        content.startswith(b"%PDF")
+        or "pdf" in content_type.casefold()
+        or response_url.lower().split("?", 1)[0].endswith(".pdf")
+    )
+    if document_is_pdf:
+        text = privacy_document_text(content, content_type, response_url)
+    else:
+        validated_html = validate_policy_html(content.decode(encoding, "ignore"))
+        if not validated_html:
+            return None
+        text = extract_text(validated_html)
+
+    expected_domain = registrable_domain(domain or "")
+    same_domain = bool(
+        expected_domain and registrable_domain(response_url) == expected_domain
+    )
+    if not is_privacy_document(text, provider_name, same_domain=same_domain):
+        return None
+    return response_url
 
 
 def _normalize_ws(text: str) -> str:
@@ -664,6 +741,51 @@ class PolicySourceResolver:
     def __init__(self, allow_headless: bool = True):
         self.allow_headless = allow_headless
 
+    def resolve_linked_candidate(
+        self,
+        provider_name: str,
+        domain: str | None,
+        source_url: str,
+        *,
+        timeout: float = 12.0,
+        max_validation_candidates: int = 3,
+    ) -> SourceCandidate | None:
+        """Find a validated policy document linked by an official source hub."""
+
+        expected_domain = registrable_domain(domain or source_url)
+        status, html = fetch_static(source_url, timeout=timeout, attempts=1)
+        if status != 200 or not html or not expected_domain:
+            return None
+        candidates = discover_links(
+            html,
+            source_url,
+            expected_domain,
+            top=max_validation_candidates,
+        )
+        current = source_url.rstrip("/")
+        for score, url in candidates:
+            if url.rstrip("/") == current:
+                continue
+            validated_url = validate_policy_source_url(
+                url,
+                provider_name,
+                expected_domain,
+                timeout=timeout,
+            )
+            if not validated_url:
+                continue
+            # A weaker match can be one section of a multipart policy. Keep it
+            # visible for review, but only auto-run explicit policy/notice links.
+            confidence = 0.86 if score >= 8 else 0.7
+            return SourceCandidate(
+                validated_url,
+                "linked",
+                confidence,
+                notes=f"validated link from current official source (score {score})",
+                validated=True,
+            )
+        return None
+
     def resolve_candidate(
         self,
         provider_name: str,
@@ -860,6 +982,7 @@ class PolicySourceResolver:
                 "search",
                 confidence,
                 notes=f"validated public search result (score {score})",
+                validated=True,
             )
         return None
 

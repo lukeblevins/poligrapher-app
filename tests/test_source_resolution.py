@@ -4,9 +4,11 @@ from poligrapher_app.services.acquisition import (
     fetch_validated_policy_html,
     is_privacy_document,
     narrow_policy_reason,
+    privacy_document_text,
     reader_snapshot_url,
     search_result_links,
     validate_policy_html,
+    validate_policy_source_url,
 )
 from poligrapher_app.services.task_execution import _is_pdf_source
 from poligrapher_app.services import source_verification
@@ -43,6 +45,31 @@ def test_privacy_document_accepts_official_domain_without_brand_repetition():
     text = "Privacy policy " + ("personal information and your rights " * 30)
 
     assert is_privacy_document(text, "Example Corporation", same_domain=True)
+
+
+def test_pdf_policy_text_uses_pymupdf(monkeypatch):
+    class Page:
+        @staticmethod
+        def get_text():
+            return "Privacy notice personal information and consumer rights"
+
+    class Document:
+        def __getitem__(self, _slice):
+            return [Page()]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+    monkeypatch.setattr("fitz.open", lambda **_kwargs: Document())
+
+    assert privacy_document_text(
+        b"%PDF test",
+        "application/pdf",
+        "https://example.com/privacy.pdf",
+    ) == "Privacy notice personal information and consumer rights"
 
 
 def test_fetch_validated_policy_html_matches_pipeline_contract(monkeypatch):
@@ -90,6 +117,106 @@ def test_fetch_validated_policy_html_rejects_non_english_policy(monkeypatch):
     assert fetch_validated_policy_html("https://example.com/privacy") == ""
 
 
+def test_validate_policy_source_url_accepts_pdf(monkeypatch):
+    text = "Privacy notice " + ("personal information and your rights " * 30)
+    monkeypatch.setattr(
+        "poligrapher_app.services.acquisition.privacy_document_text",
+        lambda *_args: text,
+    )
+
+    class Response:
+        status_code = 200
+        headers = {"content-type": "application/pdf"}
+        url = "https://example.com/privacy-notice.pdf"
+        encoding = "utf-8"
+
+        @staticmethod
+        def iter_bytes(_size):
+            yield b"%PDF" + b"x" * 600
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+    class Client:
+        @staticmethod
+        def stream(*_args, **_kwargs):
+            return Response()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+    monkeypatch.setattr(
+        "poligrapher_app.services.acquisition.open_client",
+        lambda *_args, **_kwargs: Client(),
+    )
+
+    assert validate_policy_source_url(
+        "https://example.com/privacy-notice.pdf",
+        "Example Corporation",
+        "example.com",
+    ) == "https://example.com/privacy-notice.pdf"
+
+
+def test_resolver_prefers_validated_policy_link_from_current_hub(monkeypatch):
+    resolver = PolicySourceResolver(allow_headless=False)
+    html = """
+      <a href="https://vendor.test/privacy-policy">Privacy policy</a>
+      <a href="/careers/applicant-privacy">Applicant privacy notice</a>
+      <a href="/files/privacy-notice.pdf">Company privacy notice</a>
+    """
+    monkeypatch.setattr(
+        "poligrapher_app.services.acquisition.fetch_static",
+        lambda *_args, **_kwargs: (200, html),
+    )
+    monkeypatch.setattr(
+        "poligrapher_app.services.acquisition.validate_policy_source_url",
+        lambda url, *_args, **_kwargs: url,
+    )
+
+    result = resolver.resolve_linked_candidate(
+        "Example Corporation",
+        "example.com",
+        "https://www.example.com/privacy-center",
+    )
+
+    assert result is not None
+    assert result.url == "https://www.example.com/files/privacy-notice.pdf"
+    assert result.strategy == "linked"
+    assert result.confidence == 0.86
+    assert result.validated is True
+
+
+def test_resolver_keeps_weak_linked_policy_section_below_auto_threshold(monkeypatch):
+    resolver = PolicySourceResolver(allow_headless=False)
+    monkeypatch.setattr(
+        "poligrapher_app.services.acquisition.fetch_static",
+        lambda *_args, **_kwargs: (
+            200,
+            '<a href="/privacy-statement/retention/">Retention details</a>',
+        ),
+    )
+    monkeypatch.setattr(
+        "poligrapher_app.services.acquisition.validate_policy_source_url",
+        lambda url, *_args, **_kwargs: url,
+    )
+
+    result = resolver.resolve_linked_candidate(
+        "Example Corporation",
+        "example.com",
+        "https://www.example.com/privacy-statement/",
+    )
+
+    assert result is not None
+    assert result.confidence == 0.7
+    assert result.confidence < 0.75
+
+
 def test_resolver_excludes_current_url_from_site_discovery(monkeypatch):
     resolver = PolicySourceResolver(allow_headless=False)
     monkeypatch.setattr(resolver, "_search_candidate", lambda *_args, **_kwargs: None)
@@ -128,6 +255,8 @@ def test_narrow_policy_rejections_have_stable_reason_codes():
     assert narrow_policy_reason("/investors/privacy-policy") == "audience.investor"
     assert narrow_policy_reason("/2025-annual-report-privacy") == "document.report"
     assert narrow_policy_reason("/newsletter-subscription-privacy") == "document.subscription"
+    assert narrow_policy_reason("/privacy-notice-faq.pdf") == "document.support"
+    assert narrow_policy_reason("/vulnerability-disclosure-policy.pdf") == "document.security"
     assert narrow_policy_reason("/privacy-policy") is None
 
 
