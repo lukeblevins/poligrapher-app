@@ -331,7 +331,7 @@ def test_audit_source_target_requires_review_below_auto_confidence(monkeypatch):
 
     class Resolver:
         def __init__(self, allow_headless=False):
-            assert allow_headless is False
+            assert allow_headless is True
 
         def resolve_candidate(self, *_args, **_kwargs):
             return SimpleNamespace(
@@ -472,6 +472,79 @@ def test_graph_empty_audit_prefers_validated_linked_source(monkeypatch):
     assert result.replacement_strategy == "linked"
 
 
+def test_deep_audit_accepts_validated_off_domain_policy_link_from_official_hub(monkeypatch):
+    target = cohort_audit.SourceAuditTarget(
+        provider_id=uuid.uuid4(),
+        provider_name="Example",
+        domain="example.com",
+        source_url="https://www.example.com/privacy-center",
+        root_code="graph.empty",
+    )
+
+    class Resolver:
+        def __init__(self, allow_headless=False):
+            assert allow_headless is True
+
+        def resolve_linked_candidate(self, *_args, **_kwargs):
+            return SimpleNamespace(
+                url="https://privacy-portal.test/policy",
+                strategy="linked",
+                confidence=0.82,
+                notes="validated explicit link from current official source",
+                validated=True,
+            )
+
+        def resolve_candidate(self, *_args, **_kwargs):
+            raise AssertionError("broad discovery must follow linked-source discovery")
+
+    monkeypatch.setattr(cohort_audit, "PolicySourceResolver", Resolver)
+
+    result = cohort_audit.audit_source_target(target, deep=True)
+
+    assert result.status is cohort_audit.AuditStatus.REPLACEMENT_FOUND
+    assert result.replacement_url == "https://privacy-portal.test/policy"
+
+
+def test_deep_audit_prefers_linked_policy_over_valid_current_hub(monkeypatch):
+    target = cohort_audit.SourceAuditTarget(
+        provider_id=uuid.uuid4(),
+        provider_name="Example",
+        domain="example.com",
+        source_url="https://www.example.com/privacy-center",
+        root_code="source.not_policy",
+    )
+
+    class Resolver:
+        def __init__(self, allow_headless=False):
+            assert allow_headless is True
+
+        def resolve_linked_candidate(self, *_args, **_kwargs):
+            return SimpleNamespace(
+                url="https://privacy-portal.test/policy",
+                strategy="linked",
+                confidence=0.82,
+                notes="validated explicit link from current official source",
+                validated=True,
+            )
+
+        def resolve_candidate(self, *_args, **_kwargs):
+            raise AssertionError("linked policy must precede broad discovery")
+
+    monkeypatch.setattr(cohort_audit, "PolicySourceResolver", Resolver)
+    monkeypatch.setattr(
+        cohort_audit,
+        "fetch_validated_policy_html",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("linked policy must precede current hub retry")
+        ),
+    )
+
+    result = cohort_audit.audit_source_target(target, deep=True)
+
+    assert result.status is cohort_audit.AuditStatus.REPLACEMENT_FOUND
+    assert result.replacement_url == "https://privacy-portal.test/policy"
+
+
 def test_audit_current_source_requires_pipeline_valid_html(monkeypatch):
     target = cohort_audit.SourceAuditTarget(
         provider_id=uuid.uuid4(),
@@ -540,7 +613,7 @@ def test_deep_audit_revalidates_discovered_candidate(monkeypatch):
 
     class Resolver:
         def __init__(self, allow_headless=False):
-            assert allow_headless is False
+            assert allow_headless is True
 
         def resolve_candidate(self, *_args, **kwargs):
             assert kwargs["allow_site_discovery"] is True

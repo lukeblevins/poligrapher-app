@@ -219,6 +219,9 @@ _NARROW_POLICY_RULES = (
 _PIPELINE_POLICY_PATTERN = re.compile(
     r"(data|privacy)\s*(?:policy|notice|statement)", re.I
 )
+_EXPLICIT_POLICY_LINK_PATTERN = re.compile(
+    r"\b(?:data|privacy)\s*(?:policy|notice|statement)\b", re.I
+)
 _PIPELINE_HTML_REMOVE_SELECTORS = (
     "script, noscript, link, style, header, footer, nav, iframe, "
     "img, picture, video, audio, source, object, embed"
@@ -349,6 +352,43 @@ def discover_links(html: str, base_url: str, domain: str, top: int = 3) -> list[
         cands.append((sc, url))
     cands.sort(reverse=True)
     return cands[:top]
+
+
+def discover_explicit_policy_links(
+    html: str,
+    base_url: str,
+    *,
+    top: int = 3,
+) -> list[tuple[int, str]]:
+    """Return explicit policy links from a configured official source page.
+
+    Unlike broad site/search discovery, the source page itself supplies the
+    provenance here. This permits a company to host its policy on a dedicated
+    privacy portal with a different registrable domain, while requiring an
+    explicit policy label and leaving content validation to the caller.
+    """
+
+    soup = BeautifulSoup(html, "html.parser")
+    candidates: list[tuple[int, str]] = []
+    seen: set[str] = set()
+    for anchor in soup.find_all("a", href=True):
+        text = anchor.get_text(" ", strip=True)
+        href = str(anchor.get("href") or "")
+        absolute_url = urllib.parse.urljoin(base_url, href).split("#")[0]
+        if (
+            not absolute_url.startswith(("http://", "https://"))
+            or absolute_url in seen
+            or narrow_policy_reason(f"{text} {href}")
+            or not _EXPLICIT_POLICY_LINK_PATTERN.search(f"{text} {href}")
+        ):
+            continue
+        seen.add(absolute_url)
+        score = 5 if _EXPLICIT_POLICY_LINK_PATTERN.search(text) else 3
+        if _EXPLICIT_POLICY_LINK_PATTERN.search(href):
+            score += 4
+        candidates.append((score, absolute_url))
+    candidates.sort(reverse=True)
+    return candidates[:top]
 
 
 def search_result_links(html: str) -> list[tuple[str, str]]:
@@ -485,6 +525,7 @@ def validate_policy_source_url(
     *,
     timeout: float = 20.0,
     max_bytes: int = 10 * 1024 * 1024,
+    allow_headless: bool = False,
 ) -> str | None:
     """Return the final URL when an HTML or PDF source is a usable policy.
 
@@ -518,20 +559,35 @@ def validate_policy_source_url(
         or "pdf" in content_type.casefold()
         or response_url.lower().split("?", 1)[0].endswith(".pdf")
     )
+    validated_html = ""
     if document_is_pdf:
         text = privacy_document_text(content, content_type, response_url)
     else:
         validated_html = validate_policy_html(content.decode(encoding, "ignore"))
         if not validated_html:
-            return None
-        text = extract_text(validated_html)
+            text = ""
+        else:
+            text = extract_text(validated_html)
 
     expected_domain = registrable_domain(domain or "")
     same_domain = bool(
         expected_domain and registrable_domain(response_url) == expected_domain
     )
     if not is_privacy_document(text, provider_name, same_domain=same_domain):
-        return None
+        if document_is_pdf or not allow_headless:
+            return None
+        try:
+            rendered_html = fetch_rendered(
+                response_url,
+                timeout_ms=max(1, int(timeout * 1000)),
+                use_proxy=crawl_proxy_mode() == "always",
+            )
+        except Exception:  # noqa: BLE001
+            return None
+        validated_html = validate_policy_html(rendered_html)
+        text = extract_text(validated_html) if validated_html else ""
+        if not is_privacy_document(text, provider_name, same_domain=same_domain):
+            return None
     return response_url
 
 
@@ -762,6 +818,23 @@ class PolicySourceResolver:
             expected_domain,
             top=max_validation_candidates,
         )
+        seen_urls = {url for _, url in candidates}
+        for scored_candidate in discover_explicit_policy_links(
+            html,
+            source_url,
+            top=max_validation_candidates,
+        ):
+            if scored_candidate[1] not in seen_urls:
+                candidates.append(scored_candidate)
+        candidates.sort(
+            key=lambda item: (
+                registrable_domain(item[1]) == expected_domain,
+                item[0],
+                item[1],
+            ),
+            reverse=True,
+        )
+        candidates = candidates[:max_validation_candidates]
         current = source_url.rstrip("/")
         for score, url in candidates:
             if url.rstrip("/") == current:
@@ -771,12 +844,19 @@ class PolicySourceResolver:
                 provider_name,
                 expected_domain,
                 timeout=timeout,
+                allow_headless=self.allow_headless,
             )
             if not validated_url:
                 continue
             # A weaker match can be one section of a multipart policy. Keep it
             # visible for review, but only auto-run explicit policy/notice links.
-            confidence = 0.86 if score >= 8 else 0.7
+            same_domain = registrable_domain(validated_url) == expected_domain
+            if same_domain and score >= 8:
+                confidence = 0.86
+            elif score >= 5:
+                confidence = 0.82
+            else:
+                confidence = 0.7
             return SourceCandidate(
                 validated_url,
                 "linked",

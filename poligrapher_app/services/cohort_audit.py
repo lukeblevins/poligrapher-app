@@ -220,12 +220,32 @@ def audit_source_target(target: SourceAuditTarget, *, deep: bool = False) -> Sou
         result.status = AuditStatus.RETRY_CURRENT
         result.current_resolved_url = target.source_url
         return result
-    resolver = PolicySourceResolver(allow_headless=False)
+    resolver = PolicySourceResolver(allow_headless=deep)
     try:
+        # Prefer an explicit policy document linked by the configured official
+        # page for every unresolved representation class. A policy hub can pass
+        # the HTML contract yet still produce an empty graph, so retrying that
+        # shell before following its own policy link only repeats the failure.
+        candidate = None
+        if target.source_url:
+            linked_resolver = getattr(resolver, "resolve_linked_candidate", None)
+            if linked_resolver:
+                candidate = linked_resolver(
+                    target.provider_name,
+                    target.domain,
+                    target.source_url,
+                    timeout=15.0 if deep else 12.0,
+                    max_validation_candidates=3 if deep else 2,
+                )
+
         # An empty graph already proves the current source reached the pipeline.
-        # Auditing it again only repeats work; look for a distinct official
-        # representation that may expose the policy more cleanly instead.
-        if target.source_url and target.root_code != "graph.empty":
+        # For other roots, retain the current source when it is analyzer-valid
+        # and no distinct linked policy representation was found.
+        if (
+            candidate is None
+            and target.source_url
+            and target.root_code != "graph.empty"
+        ):
             current_html = fetch_validated_policy_html(
                 target.source_url,
                 timeout=20.0 if deep else 12.0,
@@ -237,17 +257,6 @@ def audit_source_target(target: SourceAuditTarget, *, deep: bool = False) -> Sou
                 result.current_resolved_url = target.source_url
                 return result
 
-        candidate = None
-        if target.source_url and target.root_code == "graph.empty":
-            linked_resolver = getattr(resolver, "resolve_linked_candidate", None)
-            if linked_resolver:
-                candidate = linked_resolver(
-                    target.provider_name,
-                    target.domain,
-                    target.source_url,
-                    timeout=15.0 if deep else 12.0,
-                    max_validation_candidates=3 if deep else 2,
-                )
         if candidate is None:
             candidate = resolver.resolve_candidate(
                 target.provider_name,
@@ -275,7 +284,13 @@ def audit_source_target(target: SourceAuditTarget, *, deep: bool = False) -> Sou
         result.status = (
             AuditStatus.REPLACEMENT_FOUND
             if (
-                _matches_provider_domain(candidate.url, target.domain)
+                (
+                    _matches_provider_domain(candidate.url, target.domain)
+                    or (
+                        candidate.strategy == "linked"
+                        and getattr(candidate, "validated", False)
+                    )
+                )
                 and candidate.confidence >= AUTO_CONFIDENCE
             )
             else AuditStatus.REVIEW_REQUIRED

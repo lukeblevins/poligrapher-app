@@ -163,6 +163,60 @@ def test_validate_policy_source_url_accepts_pdf(monkeypatch):
     ) == "https://example.com/privacy-notice.pdf"
 
 
+def test_validate_policy_source_url_uses_rendered_policy_when_static_page_is_shell(monkeypatch):
+    shell = b"<html><body><h1>Privacy Policy</h1></body></html>" + b" " * 600
+    rendered = """
+      <html><body><main><h1>Privacy Policy</h1><p>
+      Example Corporation explains how we collect, use, disclose, protect, and
+      retain personal information. Customers can exercise privacy rights and
+      make choices about processing. """ + ("personal information " * 40) + """
+      </p></main></body></html>
+    """
+
+    class Response:
+        status_code = 200
+        headers = {"content-type": "text/html"}
+        url = "https://privacy-portal.test/policy"
+        encoding = "utf-8"
+
+        @staticmethod
+        def iter_bytes(_size):
+            yield shell
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+    class Client:
+        @staticmethod
+        def stream(*_args, **_kwargs):
+            return Response()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+    monkeypatch.setattr(
+        "poligrapher_app.services.acquisition.open_client",
+        lambda *_args, **_kwargs: Client(),
+    )
+    monkeypatch.setattr(
+        "poligrapher_app.services.acquisition.fetch_rendered",
+        lambda *_args, **_kwargs: rendered,
+    )
+
+    assert validate_policy_source_url(
+        "https://privacy-portal.test/policy",
+        "Example Corporation",
+        "example.com",
+        allow_headless=True,
+    ) == "https://privacy-portal.test/policy"
+
+
 def test_resolver_prefers_validated_policy_link_from_current_hub(monkeypatch):
     resolver = PolicySourceResolver(allow_headless=False)
     html = """
@@ -190,6 +244,41 @@ def test_resolver_prefers_validated_policy_link_from_current_hub(monkeypatch):
     assert result.strategy == "linked"
     assert result.confidence == 0.86
     assert result.validated is True
+
+
+def test_resolver_accepts_rendered_explicit_policy_link_from_official_hub(monkeypatch):
+    resolver = PolicySourceResolver(allow_headless=True)
+    monkeypatch.setattr(
+        "poligrapher_app.services.acquisition.fetch_static",
+        lambda *_args, **_kwargs: (
+            200,
+            '<a href="https://privacy-portal.test/policy">Privacy Policy (U.S.)</a>',
+        ),
+    )
+
+    calls = []
+
+    def validate(url, *_args, **kwargs):
+        calls.append((url, kwargs))
+        return url
+
+    monkeypatch.setattr(
+        "poligrapher_app.services.acquisition.validate_policy_source_url",
+        validate,
+    )
+
+    result = resolver.resolve_linked_candidate(
+        "Example Corporation",
+        "example.com",
+        "https://www.example.com/privacy-center",
+    )
+
+    assert result is not None
+    assert result.url == "https://privacy-portal.test/policy"
+    assert result.strategy == "linked"
+    assert result.confidence == 0.82
+    assert result.validated is True
+    assert calls[0][1]["allow_headless"] is True
 
 
 def test_resolver_keeps_weak_linked_policy_section_below_auto_threshold(monkeypatch):
