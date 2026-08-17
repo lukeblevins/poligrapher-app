@@ -1,6 +1,6 @@
 # Azure Deployment Plan
 
-> **Status:** Deployed
+> **Status:** Validated
 
 Generated: 2026-07-28
 
@@ -337,6 +337,10 @@ Container App revisions and the existing migration-job template.
 | Uppercase-PDF correction deployment | GitHub Actions run `31995123957`; commit `f987e14d8910dcd29313659e5ca08472f7d391d6` | Exact web and worker images deployed as revision `poligrapherc1de43-app--0000056`; migration `poligrapherc1de43-migrations-ut1j4vk` and endpoint verification succeeded; app and worker identities remain `None`, so managed-identity role verification is not applicable | 2026-08-17 EDT |
 | Generic linked-PDF production acceptance | Task `99209480-8cd8-4f89-9680-73f65295c9a0` | Ameriprise recovered through the bounded official-hub link path with confidence 0.86; the exact official uppercase PDF was archived, normal analysis produced a non-empty standard graph, and the provider source was committed only after success | 2026-08-17 EDT |
 | S&P coverage reconciliation, linked-policy recovery | Production graph-aware bulk preview | 472 analyzed and 28 eligible (94.4% coverage). Ameriprise is now skipped as already analyzed; the remaining capability classes are 9 navigation failures, 6 graph-empty policies, 11 unresolved or review-required source cases, and 2 PDF timeouts | 2026-08-17 EDT |
+| Deep residual recovery | Task `701f7699-17de-490f-9a07-3cb67b475d62` | 28/28 settled terminally: LyondellBasell recovered through a validated official subpage; 12 analyses failed, 1 replacement was rolled back, 6 candidates require review, and 8 remained unresolved. Coverage reached 473/500 | 2026-08-17 EDT |
+| Validation, official-hub portal recovery | `./.venv/bin/pytest -q`; frontend typecheck, tests, and build; `git diff --check` | Passed: 147 backend tests, 36 frontend tests, TypeScript validation, production bundle, and whitespace validation | 2026-08-17 EDT |
+| Bicep and ARM validation, official-hub portal recovery | Azure validation helper; resource-level `az deployment group what-if` | CLI authentication, Bicep compilation, ARM validation, and what-if passed; exact preview has 15 existing resources to deploy, 1 GitHub identity ignored, and 0 resource deletions | 2026-08-17 EDT |
+| Policy and RBAC validation, official-hub portal recovery | Subscription policy inventory; `infra/main.bicep`; live app and worker identity configuration | Existing Security Center policy remains assigned; no Bicep role assignments; app and worker identities remain `None`, with no access or cost changes | 2026-08-17 EDT |
 
 **Validated by:** azure-validate workflow
 
