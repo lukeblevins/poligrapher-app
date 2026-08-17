@@ -330,10 +330,17 @@ Container App revisions and the existing migration-job template.
 | Acquisition and document residual recovery | Task `16deb7f4-4e0c-468e-8e4e-54495ff99d87` | 18/18 settled terminally: Medtronic recovered through a validated official replacement and non-empty graphs; 11 attempts failed analysis, 4 remained unresolved, and 2 lower-confidence candidates were retained for manual review instead of being auto-applied | 2026-08-16 EDT |
 | Final S&P maximized-safe coverage | Production graph-aware preview for collection `4cac831c-a33d-438c-a0d5-55ee871418e9` | 471 analyzed and 29 eligible (94.2% coverage), up from 468 before the final residual batches and from 440 before the broader recovery work; all remaining providers have terminal, bounded, or manual-review evidence | 2026-08-16 EDT |
 | Final residual taxonomy | Latest root class for the 29 graph-uncovered providers | 9 `crawl.navigation_failed`, 7 `graph.empty`, 11 unresolved or review-required source cases, and 2 `pdf.download_timeout`; direct, proxy, archive-origin, bounded discovery, isolated analysis, and graph-verification paths are exhausted without forcing unsafe one-off source changes | 2026-08-16 EDT |
+| Validation, linked-policy recovery | `./.venv/bin/pytest -q`; `git diff --check` | Passed: 141 backend tests for bounded official-page link discovery, byte-level HTML/PDF validation, PDF text extraction, derived document-type headings, and rollback-safe recovery; whitespace validation passed | 2026-08-17 EDT |
+| Linked-policy recovery deployment | GitHub Actions run `31994256513`; commit `234ade4405` | Exact immutable images, infrastructure, migrations, and endpoint verification succeeded as revision `poligrapherc1de43-app--0000055`; migration `poligrapherc1de43-migrations-13rbv36` succeeded | 2026-08-17 EDT |
+| Seven-company linked-source recovery | Task `610fd6af-4576-4be0-855d-0c2b9be66b90` | 7/7 settled terminally without unsafe source mutation. Ameriprise's official linked PDF was found, but its uppercase `.PDF` filename exposed a shared case-sensitive artifact lookup; the attempted replacement was rolled back. Coca-Cola's candidate was rejected as `source.not_policy`, and the other five remained unresolved | 2026-08-17 EDT |
+| Validation, case-insensitive PDF artifacts | `./.venv/bin/pytest -q`; `git diff --check` | Passed: 143 backend tests, including uppercase PDF discovery and standardized `pdf.invalid_source` classification; whitespace validation passed | 2026-08-17 EDT |
+| Uppercase-PDF correction deployment | GitHub Actions run `31995123957`; commit `f987e14d8910dcd29313659e5ca08472f7d391d6` | Exact web and worker images deployed as revision `poligrapherc1de43-app--0000056`; migration `poligrapherc1de43-migrations-ut1j4vk` and endpoint verification succeeded; app and worker identities remain `None`, so managed-identity role verification is not applicable | 2026-08-17 EDT |
+| Generic linked-PDF production acceptance | Task `99209480-8cd8-4f89-9680-73f65295c9a0` | Ameriprise recovered through the bounded official-hub link path with confidence 0.86; the exact official uppercase PDF was archived, normal analysis produced a non-empty standard graph, and the provider source was committed only after success | 2026-08-17 EDT |
+| S&P coverage reconciliation, linked-policy recovery | Production graph-aware bulk preview | 472 analyzed and 28 eligible (94.4% coverage). Ameriprise is now skipped as already analyzed; the remaining capability classes are 9 navigation failures, 6 graph-empty policies, 11 unresolved or review-required source cases, and 2 PDF timeouts | 2026-08-17 EDT |
 
 **Validated by:** azure-validate workflow
 
-**Validation timestamp:** 2026-08-16 21:23 EDT
+**Validation timestamp:** 2026-08-17 00:45 EDT
 
 ## 9. Files
 
@@ -347,7 +354,7 @@ Container App revisions and the existing migration-job template.
 
 ## 10. Next Step
 
-Route the remaining 29 companies by root class. The 7 `graph.empty` policies
+Route the remaining 28 companies by root class. The 6 `graph.empty` policies
 require a future extractor or representation improvement. The 11 unresolved or
 review-required source cases require a verified official replacement or user
 upload; do not auto-apply lower-confidence, regional, subsidiary, investor, or
@@ -356,7 +363,9 @@ retried after an upstream network or source change, but another unchanged bulk
 retry is not expected to improve coverage.
 
 Keep coverage recovery as a pipeline feature: standardized issue selection,
-bounded parallel audit, direct/proxy/archive-origin acquisition, isolated normal
-analysis, non-empty-graph acceptance, complete rollback, JSONL evidence, and
-task-level retry or manual actions. Do not add provider-specific code or force a
-source mutation merely to reach a nominal 500/500 count.
+bounded parallel audit, direct/proxy/archive-origin acquisition, bounded
+official-page link discovery, strict HTML/PDF validation, case-insensitive PDF
+artifact handling, isolated normal analysis, non-empty-graph acceptance,
+complete rollback, JSONL evidence, and task-level retry or manual actions. Do
+not add provider-specific code or force a source mutation merely to reach a
+nominal 500/500 count.
