@@ -545,6 +545,39 @@ def test_deep_audit_prefers_linked_policy_over_valid_current_hub(monkeypatch):
     assert result.replacement_url == "https://privacy-portal.test/policy"
 
 
+def test_fast_not_policy_audit_defers_current_hub_to_rendered_deep_pass(monkeypatch):
+    target = cohort_audit.SourceAuditTarget(
+        provider_id=uuid.uuid4(),
+        provider_name="Example",
+        domain="example.com",
+        source_url="https://www.example.com/privacy-center",
+        root_code="source.not_policy",
+    )
+
+    class Resolver:
+        def __init__(self, allow_headless=False):
+            assert allow_headless is False
+
+        def resolve_linked_candidate(self, *_args, **_kwargs):
+            return None
+
+        def resolve_candidate(self, *_args, **_kwargs):
+            return None
+
+    monkeypatch.setattr(cohort_audit, "PolicySourceResolver", Resolver)
+    monkeypatch.setattr(
+        cohort_audit,
+        "fetch_validated_policy_html",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("fast not-policy audit must defer hub validation")
+        ),
+    )
+
+    result = cohort_audit.audit_source_target(target, deep=False)
+
+    assert result.status is cohort_audit.AuditStatus.UNRESOLVED
+
+
 def test_audit_current_source_requires_pipeline_valid_html(monkeypatch):
     target = cohort_audit.SourceAuditTarget(
         provider_id=uuid.uuid4(),

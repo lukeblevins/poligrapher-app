@@ -60,6 +60,28 @@ def test_deep_audit_decision_replaces_fast_result():
     assert _merge_audit_result(fast_result, deep_result) is deep_result
 
 
+def test_deep_audit_timeout_preserves_fast_review_candidate():
+    target = cohort_audit.SourceAuditTarget(
+        provider_id=uuid.uuid4(),
+        provider_name="Example",
+        domain="example.test",
+        source_url="https://example.test/privacy",
+        root_code="source.not_policy",
+    )
+    fast_result = cohort_audit.SourceAuditResult(
+        target,
+        status=cohort_audit.AuditStatus.REVIEW_REQUIRED,
+        replacement_url="https://other.test/privacy",
+    )
+    deep_result = cohort_audit.SourceAuditResult(
+        target,
+        status=cohort_audit.AuditStatus.AUDIT_ERROR,
+        error="Source audit exceeded 150 seconds",
+    )
+
+    assert _merge_audit_result(fast_result, deep_result) is fast_result
+
+
 def test_recovery_url_only_allows_pipeline_validated_candidates():
     target = cohort_audit.SourceAuditTarget(
         provider_id=uuid.uuid4(),

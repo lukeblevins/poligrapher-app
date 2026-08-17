@@ -216,7 +216,11 @@ class CohortRecoveryRunner:
             deep_targets = [
                 targets_by_id[provider_id]
                 for provider_id, result in fast_results.items()
-                if result.status in {AuditStatus.UNRESOLVED, AuditStatus.AUDIT_ERROR}
+                if result.status in {
+                    AuditStatus.UNRESOLVED,
+                    AuditStatus.AUDIT_ERROR,
+                    AuditStatus.REVIEW_REQUIRED,
+                }
             ]
             self._set_phase(f"Deep-auditing sources (0/{len(deep_targets)})")
             deep_completed = 0

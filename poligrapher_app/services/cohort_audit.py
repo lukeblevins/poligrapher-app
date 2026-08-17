@@ -245,6 +245,11 @@ def audit_source_target(target: SourceAuditTarget, *, deep: bool = False) -> Sou
             candidate is None
             and target.source_url
             and target.root_code != "graph.empty"
+            # A lightweight fetch can misclassify a policy hub as analyzer-ready.
+            # For a recorded not-policy failure, defer that decision to the deep
+            # pass so rendered explicit links get a chance before we retry the
+            # same representation that already failed.
+            and (deep or target.root_code != "source.not_policy")
         ):
             current_html = fetch_validated_policy_html(
                 target.source_url,
