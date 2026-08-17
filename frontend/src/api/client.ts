@@ -1,4 +1,5 @@
 import type {
+  CapturedPolicyText,
   Assessments,
   BulkActionPreview,
   BulkOperation,
@@ -147,6 +148,12 @@ export const api = {
     form.append("pdf_file", file);
     return request<TaskStatus>(`/api/providers/${providerId}/uploads`, { method: "POST", body: form });
   },
+  uploadCapturedText: (providerId: string, capture: CapturedPolicyText) =>
+    request<TaskStatus>(`/api/providers/${providerId}/text-uploads`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(capture),
+    }),
   toggleSchedule: (providerId: string, enabled: boolean, cadence?: string) =>
     request<Schedule>(`/api/providers/${providerId}/schedule`, {
       method: "PUT",

@@ -32,6 +32,17 @@ def test_upload_rerun_requires_original_source(monkeypatch, tmp_path):
     assert _rerun_availability([policy]).available
 
 
+def test_captured_text_rerun_uses_saved_normalized_document(monkeypatch, tmp_path):
+    monkeypatch.setenv("STORAGE_BACKEND", "local")
+    monkeypatch.setenv("LOCAL_STORAGE_ROOT", str(tmp_path / "objects"))
+    storage = LocalObjectStorage(tmp_path / "objects")
+    policy = SimpleNamespace(method="captured_text", source_blob_key="sources/policy/captured.pdf")
+
+    _upload(storage, tmp_path, policy.source_blob_key, b"pdf")
+
+    assert _rerun_availability([policy]).available
+
+
 def test_website_rerun_requires_html_and_pdf(monkeypatch, tmp_path):
     monkeypatch.setenv("STORAGE_BACKEND", "local")
     monkeypatch.setenv("LOCAL_STORAGE_ROOT", str(tmp_path / "objects"))

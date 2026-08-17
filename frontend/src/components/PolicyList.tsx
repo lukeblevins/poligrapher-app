@@ -14,6 +14,7 @@ import { Modal } from "./Modal";
 import { SelectMenu } from "./SelectMenu";
 import { Tooltip } from "./Tooltip";
 import { CompanyLogo } from "./CompanyLogo";
+import { CapturedPolicyModal } from "./modals/CapturedPolicyModal";
 import { materialSelected, materialValue, MdFilledButton, MdOutlinedButton, MdOutlinedTextField, MdSwitch, MdTextButton } from "./MaterialControls";
 
 interface Props {
@@ -41,6 +42,7 @@ const METHOD_LABEL: Record<string, string> = {
   website: "Live policy page",
   pdf_from_page: "Policy page PDF",
   pdf_upload: "Uploaded policy PDF",
+  captured_text: "Captured policy text",
 };
 
 const SOURCE_STATUS_LABEL: Record<string, string> = {
@@ -287,6 +289,7 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, history
   const [rerunFallback, setRerunFallback] = useState<RunGroup | null>(null);
   const [checkingRunId, setCheckingRunId] = useState<string | null>(null);
   const [historyActionError, setHistoryActionError] = useState("");
+  const [showCapturedText, setShowCapturedText] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const newAnalysisRef = useRef<HTMLElement>(null);
 
@@ -332,12 +335,13 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, history
   }
 
   const scheduleOn = schedule?.enabled ?? false;
-  const busy = actions.runNow.isPending || actions.upload.isPending;
+  const busy = actions.runNow.isPending || actions.upload.isPending || actions.uploadCapturedText.isPending;
   const workspaceActionError = actions.setSource.error
     ?? actions.verifySource.error
     ?? actions.previewSource.error
     ?? actions.runNow.error
     ?? actions.upload.error
+    ?? actions.uploadCapturedText.error
     ?? actions.toggle.error;
   const normalizedSourceUrl = sourceUrl.trim();
   const sourceUrlIsValid = isValidWebUrl(normalizedSourceUrl);
@@ -480,6 +484,9 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, history
           >
               {actions.upload.isPending ? "Uploading PDF…" : "Choose PDF"}
           </MdOutlinedButton>
+            <MdTextButton className="mt-2 w-full" disabled={busy} onClick={() => setShowCapturedText(true)}>
+              Paste policy text
+            </MdTextButton>
           </article>
           <input
             ref={fileRef}
@@ -627,6 +634,18 @@ export function PolicyList({ provider, selectedPolicyId, onSelectPolicy, history
             </MdFilledButton>
           </div>
         </Modal>
+      )}
+      {showCapturedText && (
+        <CapturedPolicyModal
+          companyName={provider.name}
+          sourceUrl={savedSourceUrl}
+          pending={actions.uploadCapturedText.isPending}
+          error={actions.uploadCapturedText.error}
+          onClose={() => setShowCapturedText(false)}
+          onSubmit={(capture) => actions.uploadCapturedText.mutate(capture, {
+            onSuccess: () => setShowCapturedText(false),
+          })}
+        />
       )}
       </div>
     </div>

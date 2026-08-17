@@ -61,3 +61,30 @@ the same discovery, validation, analysis, and rollback workflow.
 `COHORT_AUDIT_MAX_WORKERS` controls audit concurrency and is capped at eight.
 Analysis remains sequential within a recovery task so multiple memory-heavy NLP
 pipelines do not contend inside one worker.
+
+## Browser-rendered text fallback
+
+When an official policy is visible to a researcher but automated acquisition is
+blocked by a JavaScript shell, bot protection, or an obsolete route, the company
+workspace exposes **Paste policy text**. The form requires the official source
+URL, capture date, title, and at least 500 characters of policy text.
+
+The API normalizes that text into a paginated PDF with the provenance embedded
+on the first page, stores it with the existing object-storage abstraction, and
+queues the standard upload pipeline. The resulting run uses the distinct
+`captured_text` method but otherwise shares graph generation, scoring, task
+issues, history, deletion, and rerun behavior with PDF uploads. The source URL
+is metadata, not a fetch target, so this fallback does not introduce a second
+network-acquisition implementation.
+
+```http
+POST /api/providers/{provider_id}/text-uploads
+Content-Type: application/json
+
+{
+  "title": "Example Privacy Notice",
+  "source_url": "https://example.com/privacy",
+  "capture_date": "2026-08-17",
+  "text": "...captured policy text..."
+}
+```

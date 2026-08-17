@@ -1,6 +1,7 @@
 import uuid
 from datetime import date, datetime
 from typing import Literal
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -55,6 +56,32 @@ class ProviderRead(BaseModel):
     analyzed_count: int = 0
     succeeded_count: int = 0
     failed_count: int = 0
+
+
+class CapturedPolicyText(BaseModel):
+    """Browser-rendered policy text plus the provenance needed to reproduce it."""
+
+    title: str = Field(min_length=1, max_length=200)
+    source_url: str = Field(min_length=8, max_length=2048)
+    capture_date: date | None = None
+    text: str = Field(min_length=500, max_length=1_000_000)
+
+    @field_validator("source_url")
+    @classmethod
+    def validate_source_url(cls, value: str) -> str:
+        normalized = value.strip()
+        parsed = urlparse(normalized)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("source_url must be a complete http or https URL")
+        return normalized
+
+    @field_validator("title", "text")
+    @classmethod
+    def trim_required_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("value cannot be blank")
+        return normalized
 
 
 class CompanyCollectionCreate(BaseModel):

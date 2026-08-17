@@ -78,8 +78,8 @@ class Policy(Base):
     )
     url: Mapped[str] = mapped_column(String, nullable=False)
     source: Mapped[str] = mapped_column(String(20), nullable=False)  # 'pdf' or 'webpage'
-    # Analysis method: 'website' | 'pdf_from_page' | 'pdf_upload'. The first two
-    # are the two halves of a single comparison run (grouped by run_group).
+    # Analysis method: 'website' | 'pdf_from_page' | 'pdf_upload' |
+    # 'captured_text'. The first two are the halves of a comparison run.
     method: Mapped[str] = mapped_column(String(20), default="website")
     run_group: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     rerun_of_policy_id: Mapped[uuid.UUID | None] = mapped_column(

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../api/client";
 import type { RunGroup } from "../api/types";
+import type { CapturedPolicyText } from "../api/types";
 
 /** Runs for a provider; polls while any run is still generating. */
 export function useRuns(providerId: string | null, pollForTasks = false) {
@@ -55,6 +56,10 @@ export function useRunActions(providerId: string) {
     }),
     upload: useMutation({
       mutationFn: (file: File) => api.uploadPdf(providerId, file),
+      onSuccess: registerTask,
+    }),
+    uploadCapturedText: useMutation({
+      mutationFn: (capture: CapturedPolicyText) => api.uploadCapturedText(providerId, capture),
       onSuccess: registerTask,
     }),
     rerun: useMutation({

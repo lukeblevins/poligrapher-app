@@ -198,6 +198,13 @@ export interface RerunAvailability {
   reason: string | null;
 }
 
+export interface CapturedPolicyText {
+  title: string;
+  source_url: string;
+  capture_date: string;
+  text: string;
+}
+
 export function isTaskActive(status: TaskState): boolean {
   return status === "running" || status === "cancelling";
 }
