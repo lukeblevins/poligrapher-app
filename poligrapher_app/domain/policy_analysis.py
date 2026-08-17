@@ -380,7 +380,7 @@ class PolicyDocumentInfo:
         # get first pdf item in folder
         pdf_path = None
         for fname in os.listdir(path):
-            if fname.endswith(".pdf"):
+            if fname.casefold().endswith(".pdf"):
                 pdf_path = os.path.join(path, fname)
                 break
 

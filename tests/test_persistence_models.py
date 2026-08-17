@@ -12,6 +12,30 @@ from fastapi import HTTPException
 import pytest
 
 from poligrapher_app.api.routers.analysis import _require_export_token, get_graph, get_stats
+from poligrapher_app.domain.policy_analysis import DocumentCaptureSource, PolicyDocumentInfo
+
+
+def test_pdf_text_extraction_accepts_uppercase_extension(monkeypatch, tmp_path):
+    (tmp_path / "PRIVACY-NOTICE.PDF").write_bytes(b"%PDF")
+
+    class Page:
+        @staticmethod
+        def get_text():
+            return "Privacy notice text"
+
+    monkeypatch.setattr(
+        "poligrapher_app.domain.policy_analysis.pymupdf4llm.pymupdf.open",
+        lambda _path: [Page()],
+    )
+    document = PolicyDocumentInfo(
+        "source.PDF",
+        str(tmp_path),
+        DocumentCaptureSource.PDF,
+        None,
+        False,
+    )
+
+    assert document.get_document_text() == "Privacy notice text\n"
 
 
 def test_canonical_json_round_trip():

@@ -88,7 +88,7 @@ def classify_failure(error: BaseException | str) -> dict:
             "graph.empty", "graph", "manual",
             "The pipeline did not produce a usable knowledge graph.", (REVIEW_CONTENT, TRY_OTHER_METHOD, MODEL_REVIEW),
         )
-    elif "did not return a pdf" in text:
+    elif "did not return a pdf" in text or "no pdf file found" in text:
         definition = FailureDefinition(
             "pdf.invalid_source", "pdf", "manual",
             "The configured PDF source did not return a PDF.", (REPLACE_SOURCE, UPLOAD_PDF),

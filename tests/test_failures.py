@@ -93,6 +93,13 @@ def test_failure_classifier_exposes_stable_codes_and_safe_actions():
             "transient",
             "retry",
         ),
+        (
+            "No PDF file found",
+            "pdf.invalid_source",
+            "pdf",
+            "manual",
+            "replace_source",
+        ),
     ],
 )
 def test_failure_classifier_recognizes_pipeline_failures(
