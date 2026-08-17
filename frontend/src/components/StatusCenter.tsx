@@ -114,6 +114,19 @@ export function TaskRow({
   ].some((action) => recommendedActionCodes.has(action));
   const progress = taskProgress(task);
   const statusIcon = STATUS_ICON[task.status];
+  const reviewCandidates = (task.issues ?? []).flatMap((issue) => {
+    const candidates = issue.details?.candidates;
+    if (!Array.isArray(candidates)) return [];
+    return candidates.filter((candidate): candidate is Record<string, unknown> => {
+      if (typeof candidate !== "object" || candidate === null || typeof candidate.url !== "string") return false;
+      try {
+        return ["http:", "https:"].includes(new URL(candidate.url).protocol);
+      } catch {
+        return false;
+      }
+    });
+  });
+  const suggestedCandidate = reviewCandidates.find((candidate) => candidate.selected === true) ?? reviewCandidates[0];
 
   return (
     <li className={`m3-task-banner m3-task-banner-${task.status} ${needsAttention ? "m3-task-banner-error" : ""} ${onDismiss ? "m3-task-banner-dismissible" : ""}`}>
@@ -174,6 +187,14 @@ export function TaskRow({
               {issueGroups.length > 3 ? <p className="m3-task-issue-more">Details include {issueGroups.length - 3} more issue types.</p> : null}
             </section>
           )}
+          {suggestedCandidate ? (
+            <p className="mt-2 text-xs leading-5 text-[var(--md-sys-color-on-surface-variant)]">
+              {suggestedCandidate.model_mode === "assist" && typeof suggestedCandidate.model_score === "number"
+                ? "Suggested from prior recovery outcomes: "
+                : "Candidate source: "}
+              <a className="break-all underline" href={String(suggestedCandidate.url)} target="_blank" rel="noreferrer">{String(suggestedCandidate.url)}</a>
+            </p>
+          ) : null}
           {(cancel.isError || retryTask.isError || retryFailed.isError) && <div role="alert" className="mt-1 text-xs leading-4 text-[var(--md-sys-color-error)]">{cancel.error instanceof Error ? cancel.error.message : retryTask.error instanceof Error ? retryTask.error.message : retryFailed.error instanceof Error ? retryFailed.error.message : "Could not update this task."}</div>}
         </div>
         <div className="m3-task-actions" role="group" aria-label={`${accessibleName} actions`}>

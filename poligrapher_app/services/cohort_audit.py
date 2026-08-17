@@ -19,6 +19,7 @@ from poligrapher_app.domain.policy_state import has_graph_elements
 from poligrapher_app.services.acquisition import (
     AUTO_CONFIDENCE,
     PolicySourceResolver,
+    SourceCandidate,
     fetch_validated_policy_html,
 )
 
@@ -70,6 +71,7 @@ class SourceAuditResult:
     replacement_strategy: str | None = None
     replacement_confidence: float | None = None
     replacement_notes: str | None = None
+    candidate_evidence: list[dict] | None = None
     error: str | None = None
 
     @property
@@ -98,7 +100,56 @@ class SourceAuditResult:
         }
         if self.error:
             record["error"] = self.error
+        if self.candidate_evidence:
+            record["candidates"] = self.candidate_evidence
         return record
+
+
+def _finish_with_candidate_evidence(
+    result: SourceAuditResult,
+    resolver: PolicySourceResolver,
+) -> SourceAuditResult:
+    """Attach bounded shadow scores without changing the resolver decision."""
+
+    from poligrapher_app.services.recovery_ranking import (
+        score_recovery_candidates,
+    )
+
+    selected_url = result.replacement_url
+    candidates = list(getattr(resolver, "observed_candidates", []) or [])
+    if not candidates and result.replacement_url:
+        candidates.append(SourceCandidate(
+            result.replacement_url,
+            result.replacement_strategy or "unknown",
+            result.replacement_confidence or 0.0,
+            notes=result.replacement_notes or "",
+            validated=result.replacement_strategy in {"search", "linked"},
+        ))
+    evidence, ranker = score_recovery_candidates(
+        result.target,
+        candidates,
+        selected_url=selected_url,
+        selected_status=result.status.value,
+    )
+    if ranker.state.mode == "assist" and result.status is AuditStatus.REVIEW_REQUIRED:
+        ranked_review = [
+            candidate
+            for candidate in evidence
+            if candidate["validated"]
+            and candidate["hard_rule_status"] == "review"
+            and candidate["model_score"] is not None
+        ]
+        if ranked_review:
+            suggested = max(ranked_review, key=lambda candidate: candidate["model_score"])
+            for candidate in evidence:
+                candidate["selected"] = candidate is suggested
+            result.replacement_url = suggested["url"]
+            result.replacement_strategy = suggested["strategy"]
+            result.replacement_confidence = suggested["heuristic_confidence"]
+            result.replacement_notes = "model-ranked review candidate"
+            evidence.sort(key=lambda candidate: (not candidate["selected"], -(candidate["model_score"] or -1)))
+    result.candidate_evidence = evidence
+    return result
 
 
 def _matches_provider_domain(url: str, domain: str | None) -> bool:
@@ -260,7 +311,7 @@ def audit_source_target(target: SourceAuditTarget, *, deep: bool = False) -> Sou
                 result.status = AuditStatus.CURRENT_VALID
                 result.current_valid = True
                 result.current_resolved_url = target.source_url
-                return result
+                return _finish_with_candidate_evidence(result, resolver)
 
         if candidate is None:
             candidate = resolver.resolve_candidate(
@@ -273,9 +324,9 @@ def audit_source_target(target: SourceAuditTarget, *, deep: bool = False) -> Sou
                 allow_site_discovery=deep,
             )
         if candidate is None:
-            return result
+            return _finish_with_candidate_evidence(result, resolver)
         if _source_identity(candidate.url) == _source_identity(target.source_url):
-            return result
+            return _finish_with_candidate_evidence(result, resolver)
         # Search candidates were validated by the resolver. Deep discovery and
         # sitemap candidates must satisfy the same analyzer-facing contract
         # before the audit is allowed to describe them as replacements.
@@ -285,7 +336,7 @@ def audit_source_target(target: SourceAuditTarget, *, deep: bool = False) -> Sou
         ):
             candidate_html = fetch_validated_policy_html(candidate.url)
             if not candidate_html:
-                return result
+                return _finish_with_candidate_evidence(result, resolver)
         result.status = (
             AuditStatus.REPLACEMENT_FOUND
             if (
@@ -304,11 +355,11 @@ def audit_source_target(target: SourceAuditTarget, *, deep: bool = False) -> Sou
         result.replacement_strategy = candidate.strategy
         result.replacement_confidence = candidate.confidence
         result.replacement_notes = candidate.notes
-        return result
+        return _finish_with_candidate_evidence(result, resolver)
     except Exception as exc:  # noqa: BLE001
         result.status = AuditStatus.AUDIT_ERROR
         result.error = str(exc)
-        return result
+        return _finish_with_candidate_evidence(result, resolver)
 
 
 def _audit_source_target_child(target: SourceAuditTarget, deep: bool, connection) -> None:

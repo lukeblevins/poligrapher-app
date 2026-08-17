@@ -723,6 +723,7 @@
     line-height: 1rem;
   }
   .m3-analysis-run-status { flex: none; margin-top: 3px; }
+  .m3-graph-download { flex: none; }
   .m3-analysis-panel { padding: 16px; }
   @media (min-width: 40rem) { .m3-analysis-panel { padding: 20px; } }
   .m3-graph-legend {
@@ -2187,6 +2188,8 @@
     .m3-analysis-report-header > div:first-child { min-width: 0; }
     .m3-analysis-report-header h2 { font-size: 1.125rem; line-height: 1.5rem; }
     .m3-analysis-run-status { display: none; }
+    .m3-graph-download { width: 40px; min-width: 40px; padding-inline: 8px; }
+    .m3-graph-download-label { display: none; }
     .m3-analysis-viewbar { padding-inline: 8px; }
     .m3-analysis-tabs { width: 100%; }
     .m3-analysis-tab { min-width: 0; flex: 1 1 0; justify-content: center; gap: 6px; padding-inline: 8px; }

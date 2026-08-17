@@ -353,6 +353,7 @@ resource analysisWorker 'Microsoft.App/jobs@2024-03-01' = {
             { name: 'AZURE_QUEUE_VISIBILITY_TIMEOUT_SECONDS', value: '900' }
             { name: 'TASK_CLAIM_RECOVERY_SECONDS', value: '1200' }
             { name: 'COLLECTION_SUBTASK_TIMEOUT_SECONDS', value: '900' }
+            { name: 'RECOVERY_RANKER_MODE', value: 'shadow' }
           ], proxyEnvironment)
         }
       ]

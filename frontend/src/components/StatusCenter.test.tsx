@@ -37,6 +37,64 @@ function task(overrides: Partial<TaskStatus>): TaskStatus {
 }
 
 describe("TaskRow", () => {
+  it("shows a model-assisted candidate as a review suggestion, not an automatic action", () => {
+    render(<TaskRow task={task({
+      status: "done",
+      outcome: "partially_succeeded",
+      kind: "cohort-recovery",
+      issues: [{
+        issue_id: "issue-ranked",
+        code: "recovery.review_required",
+        stage: "source_resolution",
+        severity: "warning",
+        retryability: "manual",
+        summary: "A possible policy source needs review",
+        technical_detail: null,
+        details: {
+          candidates: [{
+            url: "https://example.com/privacy",
+            selected: true,
+            model_mode: "assist",
+            model_score: 0.91,
+          }],
+        },
+        provider_id: "provider-1",
+        provider_name: "Example",
+        policy_id: null,
+        actions: [{ action: "replace_source", label: "Review and confirm the candidate source" }],
+        occurred_at: "2026-08-17T00:00:00Z",
+      }],
+    })} expanded={false} onToggleOutput={vi.fn()} />);
+
+    expect(screen.getByText(/Suggested from prior recovery outcomes/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "https://example.com/privacy" })).toHaveAttribute("href", "https://example.com/privacy");
+    expect(screen.queryByText(/automatically accepted/i)).not.toBeInTheDocument();
+  });
+
+  it("does not render an unsafe candidate URL from task details", () => {
+    render(<TaskRow task={task({
+      status: "done",
+      outcome: "partially_succeeded",
+      issues: [{
+        issue_id: "issue-unsafe",
+        code: "recovery.review_required",
+        stage: "source_resolution",
+        severity: "warning",
+        retryability: "manual",
+        summary: "A possible source needs review",
+        technical_detail: null,
+        details: { candidates: [{ url: "javascript:alert(1)", selected: true }] },
+        provider_id: "provider-1",
+        provider_name: "Example",
+        policy_id: null,
+        actions: [],
+        occurred_at: null,
+      }],
+    })} expanded={false} onToggleOutput={vi.fn()} />);
+
+    expect(screen.queryByRole("link", { name: "javascript:alert(1)" })).not.toBeInTheDocument();
+  });
+
   it("shows animated progress semantics only for active work", () => {
     const { container } = render(<TaskRow task={task({ status: "running", completed: 42, cancelable: true })} expanded={false} onToggleOutput={vi.fn()} />);
 

@@ -341,10 +341,14 @@ Container App revisions and the existing migration-job template.
 | Validation, official-hub portal recovery | `./.venv/bin/pytest -q`; frontend typecheck, tests, and build; `git diff --check` | Passed: 147 backend tests, 36 frontend tests, TypeScript validation, production bundle, and whitespace validation | 2026-08-17 EDT |
 | Bicep and ARM validation, official-hub portal recovery | Azure validation helper; resource-level `az deployment group what-if` | CLI authentication, Bicep compilation, ARM validation, and what-if passed; exact preview has 15 existing resources to deploy, 1 GitHub identity ignored, and 0 resource deletions | 2026-08-17 EDT |
 | Policy and RBAC validation, official-hub portal recovery | Subscription policy inventory; `infra/main.bicep`; live app and worker identity configuration | Existing Security Center policy remains assigned; no Bicep role assignments; app and worker identities remain `None`, with no access or cost changes | 2026-08-17 EDT |
+| Validation, recovery ranker and graph artifacts | `./.venv/bin/pytest -q`; frontend typecheck, tests, and build; fresh SQLite Alembic upgrade; OpenAPI inspection; `git diff --check` | Passed: 176 backend tests, 41 frontend tests, TypeScript validation, production bundle, migration through `20260817_09`, public graph-only endpoint boundary, and whitespace validation | 2026-08-17 12:14 EDT |
+| Bicep and ARM validation, recovery ranker and graph artifacts | `az bicep lint`; `az deployment group validate`; resource-level `az deployment group what-if --result-format ResourceIdOnly` | Bicep lint and ARM validation passed with correlation `7da08a13-26ad-48a4-8a41-09be17677458`; preview has 15 existing resources to deploy, 1 GitHub identity ignored, and 0 resource deletions | 2026-08-17 12:14 EDT |
+| Policy and RBAC validation, recovery ranker and graph artifacts | Azure MCP policy assignment inventory; `infra/main.bicep`; live app and worker provisioning state | East US 2 remains allowed; MFA write/delete policies and audit-only Security Center policy reviewed; no Bicep role assignments or new identities; both live resources report `Succeeded` | 2026-08-17 12:14 EDT |
+| Container image validation gate, recovery ranker and graph artifacts | Local Docker availability; `.github/workflows/deploy-azure.yml` | Docker daemon is unavailable locally; both immutable production image builds remain blocking CI prerequisites before deployment | 2026-08-17 12:14 EDT |
 
 **Validated by:** azure-validate workflow
 
-**Validation timestamp:** 2026-08-17 00:45 EDT
+**Validation timestamp:** 2026-08-17 12:14 EDT
 
 ## 9. Files
 
@@ -358,13 +362,11 @@ Container App revisions and the existing migration-job template.
 
 ## 10. Next Step
 
-Route the remaining 28 companies by root class. The 6 `graph.empty` policies
-require a future extractor or representation improvement. The 11 unresolved or
-review-required source cases require a verified official replacement or user
-upload; do not auto-apply lower-confidence, regional, subsidiary, investor, or
-lookalike candidates. The 9 navigation failures and 2 PDF timeouts may be
-retried after an upstream network or source change, but another unchanged bulk
-retry is not expected to improve coverage.
+Deploy the recovery-ranker observation schema and keep the worker in `shadow`.
+Run normal cohort recovery to collect implicit labels; do not train until the
+minimum population gate passes, and do not enable `assist` until every coded
+promotion check passes. The model remains subordinate to source validation,
+provenance, audience, graph acceptance, and rollback rules.
 
 Keep coverage recovery as a pipeline feature: standardized issue selection,
 bounded parallel audit, direct/proxy/archive-origin acquisition, bounded

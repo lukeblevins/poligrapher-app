@@ -3,11 +3,14 @@ import assessmentsIcon from "@material-symbols/svg-400/rounded/fact_check.svg?ur
 import closeIcon from "@material-symbols/svg-400/rounded/close.svg?url";
 import graphIcon from "@material-symbols/svg-400/rounded/account_tree.svg?url";
 import statsIcon from "@material-symbols/svg-400/rounded/bar_chart.svg?url";
+import downloadIcon from "@material-symbols/svg-400/rounded/download.svg?url";
 
 import { AssessmentsPanel } from "./AssessmentsPanel";
 import { GraphViewer } from "./GraphViewer";
 import { StatsPanel } from "./StatsPanel";
 import type { Policy } from "../api/types";
+import { api } from "../api/client";
+import { MdOutlinedButton } from "./MaterialControls";
 
 type Tab = "graph" | "stats" | "assessments";
 
@@ -47,8 +50,28 @@ function snapshotDate(policy: Policy) {
 
 export function DetailPane({ policy, providerName, onClose }: Props) {
   const [tab, setTab] = useState<Tab>("graph");
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const tabsId = useId();
   const status = analysisStatus(policy);
+
+  const downloadArtifacts = async () => {
+    setDownloading(true);
+    setDownloadError(null);
+    try {
+      const { blob, filename } = await api.downloadGraphArtifacts(policy.id);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename ?? `${policy.id}-graph-artifacts.zip`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setDownloadError(error instanceof Error ? error.message : "Graph artifacts could not be downloaded.");
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const selectAdjacentTab = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
@@ -78,6 +101,12 @@ export function DetailPane({ policy, providerName, onClose }: Props) {
         </div>
         <div className="flex flex-none items-center gap-2">
           <span className={`m3-analysis-run-status m3-status-${status.tone}`}>{status.label}</span>
+          {policy.graph_artifacts_available ? (
+            <MdOutlinedButton className="m3-graph-download" disabled={downloading} onClick={downloadArtifacts} aria-label={downloading ? "Downloading graph artifacts" : "Download graph artifacts"} aria-describedby={downloadError ? "graph-artifact-download-error" : undefined}>
+              <span slot="icon"><MaterialSymbol src={downloadIcon} /></span>
+              <span className="m3-graph-download-label">{downloading ? "Downloading…" : "Download graph artifacts"}</span>
+            </MdOutlinedButton>
+          ) : null}
           <button
             className="m3-analysis-close"
             onClick={onClose}
@@ -87,6 +116,7 @@ export function DetailPane({ policy, providerName, onClose }: Props) {
           </button>
         </div>
       </header>
+      {downloadError ? <p id="graph-artifact-download-error" role="alert" className="px-4 py-2 text-sm text-[var(--md-sys-color-error)]">{downloadError}</p> : null}
 
       <div className="m3-analysis-viewbar flex flex-shrink-0 items-center">
         <div role="tablist" aria-label="Analysis views" className="m3-analysis-tabs" onKeyDown={selectAdjacentTab}>

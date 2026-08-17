@@ -2,6 +2,8 @@ import uuid
 import hmac
 import io
 import os
+from pathlib import PurePosixPath
+import zipfile
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
@@ -16,6 +18,18 @@ from poligrapher_app.services.graph import gdpr_report, readability_from_gdpr
 router = APIRouter(tags=["analysis"])
 
 Db = Annotated[Session, Depends(get_db)]
+
+PUBLIC_GRAPH_ARTIFACT_NAMES = frozenset({
+    "graph.yml",
+    "graph.graphml",
+    "graph-original.yml",
+    "graph-original.full.yml",
+    "graph-original.graphml",
+})
+MAX_PUBLIC_GRAPH_ENTRIES = 10
+MAX_PRIVATE_ARTIFACT_BYTES = 256 * 1024 * 1024
+MAX_PRIVATE_ARTIFACT_ENTRIES = 500
+MAX_PUBLIC_GRAPH_EXPANDED_BYTES = 100 * 1024 * 1024
 
 
 def _get_policy_or_404(policy_id: uuid.UUID, db: Session) -> Policy:
@@ -71,6 +85,77 @@ def _require_export_token(authorization: str | None) -> None:
     supplied = authorization.removeprefix("Bearer ") if authorization else ""
     if not expected or not hmac.compare_digest(supplied, expected):
         raise HTTPException(status_code=401, detail="A valid export token is required")
+
+
+def build_public_graph_archive(payload: bytes) -> bytes:
+    """Return a graph-only ZIP from a private pipeline artifact archive."""
+
+    if len(payload) > MAX_PRIVATE_ARTIFACT_BYTES:
+        raise ValueError("Artifact archive exceeds public download limits")
+    output = io.BytesIO()
+    try:
+        with zipfile.ZipFile(io.BytesIO(payload)) as source:
+            if len(source.infolist()) > MAX_PRIVATE_ARTIFACT_ENTRIES:
+                raise ValueError("Artifact archive contains too many entries")
+            selected: list[zipfile.ZipInfo] = []
+            selected_names: set[str] = set()
+            expanded_bytes = 0
+            for info in source.infolist():
+                path = PurePosixPath(info.filename)
+                if (
+                    info.is_dir()
+                    or path.is_absolute()
+                    or ".." in path.parts
+                    or path.name not in PUBLIC_GRAPH_ARTIFACT_NAMES
+                    or path.name in selected_names
+                ):
+                    continue
+                expanded_bytes += info.file_size
+                if (
+                    len(selected) >= MAX_PUBLIC_GRAPH_ENTRIES
+                    or expanded_bytes > MAX_PUBLIC_GRAPH_EXPANDED_BYTES
+                ):
+                    raise ValueError("Graph artifact archive exceeds public download limits")
+                selected.append(info)
+                selected_names.add(path.name)
+            if not selected:
+                raise FileNotFoundError("No graph artifacts found in archive")
+            with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as target:
+                for info in selected:
+                    target.writestr(path_name(info.filename), source.read(info))
+    except zipfile.BadZipFile as exc:
+        raise ValueError("Artifact archive is not a valid ZIP") from exc
+    return output.getvalue()
+
+
+def path_name(value: str) -> str:
+    """Use a stable flat filename for an allowlisted ZIP member."""
+
+    return PurePosixPath(value).name
+
+
+@router.get("/api/policies/{policy_id}/graph-artifacts")
+def download_graph_artifacts(policy_id: uuid.UUID, db: Db):
+    policy = _get_policy_or_404(policy_id, db)
+    if not policy.graph_artifacts_available:
+        raise HTTPException(status_code=404, detail="No graph artifact archive found")
+    from poligrapher_app.services.storage import get_storage
+
+    try:
+        private_payload = get_storage().open_bytes(policy.artifact_blob_key)
+        payload = build_public_graph_archive(private_payload)
+    except (FileNotFoundError, OSError):
+        raise HTTPException(status_code=404, detail="No graph artifact archive found") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return StreamingResponse(
+        io.BytesIO(payload),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{policy.id}-graph-artifacts.zip"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.get("/api/policies/{policy_id}/artifacts")

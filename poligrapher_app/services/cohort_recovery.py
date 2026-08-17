@@ -12,7 +12,13 @@ import uuid
 
 from sqlalchemy.orm import Session
 
-from poligrapher_app.api.models import Policy, Provider
+from poligrapher_app.api.models import (
+    Policy,
+    Provider,
+    RecoveryCandidateObservation,
+    TaskIssue,
+    TaskRecord,
+)
 from poligrapher_app.domain.policy_state import has_graph_elements
 from poligrapher_app.services import cohort_audit
 from poligrapher_app.services.cohort_audit import AuditStatus, SourceAuditResult
@@ -63,6 +69,15 @@ def _merge_audit_result(
         and fast_result.status is not AuditStatus.AUDIT_ERROR
     ):
         return fast_result
+    seen = {
+        (candidate.get("strategy"), candidate.get("url"))
+        for candidate in (deep_result.candidate_evidence or [])
+    }
+    deep_result.candidate_evidence = list(deep_result.candidate_evidence or []) + [
+        candidate
+        for candidate in (fast_result.candidate_evidence or [])
+        if (candidate.get("strategy"), candidate.get("url")) not in seen
+    ]
     return deep_result
 
 
@@ -103,6 +118,16 @@ def _terminal_issue(result: SourceAuditResult) -> dict | None:
     """Translate a safe non-action into the same issue model used by the UI."""
 
     if result.status is AuditStatus.REVIEW_REQUIRED:
+        candidates = [
+            {
+                key: candidate.get(key)
+                for key in (
+                    "url", "strategy", "heuristic_confidence", "model_mode",
+                    "model_version", "model_score", "hard_rule_reasons", "selected",
+                )
+            }
+            for candidate in (result.candidate_evidence or [])[:3]
+        ]
         return {
             "code": "recovery.review_required",
             "stage": "source_resolution",
@@ -110,6 +135,7 @@ def _terminal_issue(result: SourceAuditResult) -> dict | None:
             "retryability": "manual",
             "summary": "A possible policy source needs review",
             "technical_detail": json.dumps(result.as_record(), sort_keys=True),
+            "details": {"candidates": candidates},
             "actions": [
                 {"action": "replace_source", "label": "Review and confirm the candidate source"},
                 {"action": "review_content", "label": "Check that it is the general privacy policy"},
@@ -139,6 +165,149 @@ def _terminal_issue(result: SourceAuditResult) -> dict | None:
             "actions": [{"action": "retry", "label": "Retry recovery"}],
         }
     return None
+
+
+def _record_candidate_observations(
+    db: Session,
+    task_id: str,
+    result: SourceAuditResult,
+) -> None:
+    """Persist final audit evidence once; retries update rather than duplicate it."""
+
+    try:
+        durable_task_id = uuid.UUID(task_id)
+    except ValueError:
+        return
+    if db.get(TaskRecord, durable_task_id) is None:
+        return
+    evidence = list(result.candidate_evidence or [])
+    chosen_url = result.auto_attempt_url or result.replacement_url
+    if not evidence and chosen_url:
+        from poligrapher_app.services.acquisition import SourceCandidate
+        from poligrapher_app.services.recovery_ranking import (
+            RecoveryCandidateRanker,
+            extract_candidate_features,
+        )
+
+        candidate = SourceCandidate(
+            chosen_url,
+            "current",
+            1.0,
+            notes="configured source retry",
+            validated=bool(result.current_valid or result.target.source_revalidated),
+        )
+        features = extract_candidate_features(result.target, candidate)
+        ranker = RecoveryCandidateRanker()
+        evidence.append({
+            "url": candidate.url,
+            "strategy": candidate.strategy,
+            "heuristic_confidence": candidate.confidence,
+            "features": features,
+            "hard_rule_status": "eligible",
+            "hard_rule_reasons": [],
+            "model_mode": ranker.state.mode,
+            "model_version": ranker.state.version,
+            "model_score": ranker.score(features),
+            "selected": True,
+        })
+    for candidate in evidence:
+        url = str(candidate.get("url") or "").strip()
+        strategy = str(candidate.get("strategy") or "unknown")
+        if not url:
+            continue
+        selected = bool(candidate.get("selected")) or url.rstrip("/") == (chosen_url or "").rstrip("/")
+        decision = (
+            "attempt"
+            if selected and result.auto_attempt_url
+            else "review"
+            if selected and result.status is AuditStatus.REVIEW_REQUIRED
+            else "unselected"
+        )
+        observation = (
+            db.query(RecoveryCandidateObservation)
+            .filter_by(
+                task_id=durable_task_id,
+                provider_id=result.provider_id,
+                candidate_url=url,
+                strategy=strategy,
+            )
+            .first()
+        )
+        values = {
+            "features": dict(candidate.get("features") or {}),
+            "heuristic_confidence": float(candidate.get("heuristic_confidence") or 0.0),
+            "hard_rule_status": str(candidate.get("hard_rule_status") or "unselected"),
+            "hard_rule_reasons": list(candidate.get("hard_rule_reasons") or []),
+            "model_mode": str(candidate.get("model_mode") or "off"),
+            "model_version": candidate.get("model_version"),
+            "model_score": candidate.get("model_score"),
+            "decision": decision,
+        }
+        if observation is None:
+            observation = RecoveryCandidateObservation(
+                task_id=durable_task_id,
+                provider_id=result.provider_id,
+                candidate_url=url,
+                strategy=strategy,
+                **values,
+            )
+            db.add(observation)
+        else:
+            for key, value in values.items():
+                setattr(observation, key, value)
+    db.commit()
+
+
+def _settle_candidate_observation(
+    db: Session,
+    task_id: str,
+    provider_id: uuid.UUID,
+    *,
+    recovered: bool,
+) -> None:
+    """Apply a conservative implicit outcome label to the attempted candidate."""
+
+    try:
+        durable_task_id = uuid.UUID(task_id)
+    except ValueError:
+        return
+    observation = (
+        db.query(RecoveryCandidateObservation)
+        .filter_by(task_id=durable_task_id, provider_id=provider_id, decision="attempt")
+        .order_by(RecoveryCandidateObservation.created_at.desc())
+        .first()
+    )
+    if observation is None:
+        return
+    now = datetime.now(timezone.utc)
+    observation.attempted_at = observation.attempted_at or now
+    observation.settled_at = now
+    newest_policy = (
+        db.query(Policy)
+        .filter(Policy.provider_id == provider_id)
+        .order_by(Policy.created_at.desc())
+        .first()
+    )
+    observation.policy_id = newest_policy.id if newest_policy else None
+    if recovered:
+        observation.outcome_code = "retained_graph_success"
+    else:
+        issue = (
+            db.query(TaskIssue)
+            .filter(
+                TaskIssue.task_id == durable_task_id,
+                TaskIssue.provider_id == str(provider_id),
+            )
+            .order_by(TaskIssue.occurred_at.desc())
+            .first()
+        )
+        if issue and issue.code == "graph.empty":
+            observation.outcome_code = "graph_empty"
+        elif issue and issue.stage in {"acquisition", "validation", "extraction", "graph"}:
+            observation.outcome_code = f"{issue.stage}_failed"
+        else:
+            observation.outcome_code = "transient_execution_failure"
+    db.commit()
 
 
 class CohortRecoveryRunner:
@@ -272,6 +441,8 @@ class CohortRecoveryRunner:
                 self.registry.incr(self.task_id, "completed")
                 self._advance_analysis_phase(index, len(provider_ids))
                 continue
+            with self.session_factory() as db:
+                _record_candidate_observations(db, self.task_id, result)
             url = recovery_url(result)
             if not url:
                 counts[result.status.value] += 1
@@ -324,6 +495,13 @@ class CohortRecoveryRunner:
                     self.registry.incr(self.task_id, "failed")
                     recovery_status = "rolled_back" if replacement else "analysis_failed"
                     analysis_detail = analysis_result
+                with self.session_factory() as db:
+                    _settle_candidate_observation(
+                        db,
+                        self.task_id,
+                        provider_id,
+                        recovered=recovered,
+                    )
             except Exception as exc:  # noqa: BLE001
                 logger.exception("Cohort recovery failed for provider %s", provider_id)
                 if snapshot is not None:
@@ -336,6 +514,13 @@ class CohortRecoveryRunner:
                 self.registry.incr(self.task_id, "failed")
                 recovery_status = "rolled_back" if replacement else "analysis_failed"
                 recovery_error = str(exc)
+                with self.session_factory() as db:
+                    _settle_candidate_observation(
+                        db,
+                        self.task_id,
+                        provider_id,
+                        recovered=False,
+                    )
             self._record_result(
                 result,
                 recovery_status=recovery_status,

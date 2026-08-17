@@ -154,6 +154,7 @@ class PolicyRead(BaseModel):
     privacy_score: float | None
     gdpr_score: float | None
     graph_kind: str
+    graph_artifacts_available: bool = False
     created_at: datetime
 
 
@@ -170,6 +171,7 @@ class TaskIssueRead(BaseModel):
     retryability: str
     summary: str
     technical_detail: str | None = None
+    details: dict = Field(default_factory=dict)
     provider_id: str | None = None
     provider_name: str | None = None
     policy_id: str | None = None

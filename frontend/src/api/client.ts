@@ -35,6 +35,23 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function download(url: string): Promise<{ blob: Blob; filename: string | null }> {
+  const res = await fetch(url);
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const body = await res.json();
+      detail = body.detail ?? detail;
+    } catch {
+      /* non-JSON error body */
+    }
+    throw new Error(`${res.status}: ${detail}`);
+  }
+  const disposition = res.headers.get("Content-Disposition");
+  const filename = disposition?.match(/filename="([^"]+)"/)?.[1] ?? null;
+  return { blob: await res.blob(), filename };
+}
+
 export const api = {
   // Providers
   listProviders: () => request<Provider[]>("/api/providers"),
@@ -90,6 +107,8 @@ export const api = {
     request<TaskStatus>(`/api/collections/${id}/runs`, { method: "POST" }),
 
   // Policies
+  downloadGraphArtifacts: (policyId: string) =>
+    download(`/api/policies/${policyId}/graph-artifacts`),
   refreshAll: () => request<TaskStatus>("/api/refresh", { method: "POST" }),
   scoreAll: () => request<TaskStatus>("/api/score-all", { method: "POST" }),
   previewBulkAction: (body: {

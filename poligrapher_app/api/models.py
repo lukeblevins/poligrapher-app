@@ -112,6 +112,16 @@ class Policy(Base):
         "AnalysisResult", back_populates="policy", cascade="all, delete-orphan"
     )
 
+    @property
+    def graph_artifacts_available(self) -> bool:
+        """Expose download eligibility without leaking the private blob key."""
+
+        return bool(
+            self.artifact_blob_key
+            and self.persistence_status == "persisted"
+            and self.pipeline_status == "succeeded"
+        )
+
 
 class Schedule(Base):
     """A recurring 'acquire → generate → score' job for a provider."""
@@ -205,9 +215,41 @@ class TaskIssue(Base):
     retryability: Mapped[str] = mapped_column(String(20), nullable=False, default="manual")
     summary: Mapped[str] = mapped_column(String(255), nullable=False)
     technical_detail: Mapped[str | None] = mapped_column(Text)
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
     provider_id: Mapped[str | None] = mapped_column(String(36), index=True)
     policy_id: Mapped[str | None] = mapped_column(String(36), index=True)
     actions: Mapped[list] = mapped_column(JSON, default=list)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     task: Mapped[TaskRecord] = relationship("TaskRecord", back_populates="issues")
+
+
+class RecoveryCandidateObservation(Base):
+    """Pre-decision evidence and eventual outcome for one recovery candidate."""
+
+    __tablename__ = "recovery_candidate_observations"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    provider_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("providers.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    policy_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("policies.id", ondelete="SET NULL"), index=True
+    )
+    candidate_url: Mapped[str] = mapped_column(String, nullable=False)
+    strategy: Mapped[str] = mapped_column(String(32), nullable=False)
+    features: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    heuristic_confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    hard_rule_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    hard_rule_reasons: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    model_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="off")
+    model_version: Mapped[str | None] = mapped_column(String(128))
+    model_score: Mapped[float | None] = mapped_column(Float)
+    decision: Mapped[str] = mapped_column(String(24), nullable=False, default="unselected")
+    outcome_code: Mapped[str | None] = mapped_column(String(64), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

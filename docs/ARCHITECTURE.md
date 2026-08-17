@@ -46,6 +46,7 @@ scoring/    In-repo heuristic PrivacyScorer + its TOML rules/criteria.
    - `GET /api/policies/{id}/graph` → cytoscape `elements` (rendered client-side)
    - `GET /api/policies/{id}/stats` → graph statistics
    - `GET /api/policies/{id}/assessments` → privacy + GDPR + readability
+   - `GET /api/policies/{id}/graph-artifacts` → public graph-only ZIP rebuilt from the retained Blob archive
 
 Tasks are durable `TaskRecord` rows. Production publishes task IDs to Azure Queue
 Storage; local development executes the same dispatcher in a thread. Clients
@@ -54,6 +55,9 @@ Captured worker output is available from `GET /api/tasks/{task_id}/output`.
 Known credential values and their encoded forms are redacted before output is
 persisted. Retained source and artifact downloads remain protected by the
 `EXPORT_TOKEN` bearer credential.
+The graph-only ZIP is public because the canonical graph is already public. A
+strict filename allowlist prevents source captures, HTML, PDFs, accessibility
+data, logs, and the protected full artifact archive from crossing that boundary.
 
 ## Persistence
 

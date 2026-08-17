@@ -105,7 +105,7 @@ export interface Policy {
   provider_id: string;
   url: string;
   source: "webpage" | "pdf";
-  method: "website" | "pdf_from_page" | "pdf_upload";
+  method: "website" | "pdf_from_page" | "pdf_upload" | "captured_text";
   run_group: string | null;
   rerun_of_policy_id: string | null;
   scheduled: boolean;
@@ -117,6 +117,7 @@ export interface Policy {
   privacy_score: number | null;
   gdpr_score: number | null;
   graph_kind: string;
+  graph_artifacts_available: boolean;
   created_at: string;
 }
 
@@ -136,6 +137,7 @@ export interface TaskIssue {
   retryability: "transient" | "manual" | "blocked";
   summary: string;
   technical_detail: string | null;
+  details?: Record<string, unknown>;
   provider_id: string | null;
   provider_name: string | null;
   policy_id: string | null;

@@ -35,6 +35,11 @@ from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
+# Domain comparison is part of the safety boundary for automatic recovery. Use
+# tldextract's bundled Public Suffix List snapshot so workers remain
+# deterministic and never need network or a writable user cache at runtime.
+_TLD_EXTRACT = tldextract.TLDExtract(cache_dir=None, suffix_list_urls=())
+
 OTA_COLLECTIONS = ("contrib-declarations",)
 OTA_RAW = "https://raw.githubusercontent.com/OpenTermsArchive/{col}/main/declarations/{name}.json"
 
@@ -175,7 +180,7 @@ AUTO_CONFIDENCE = 0.75
 _PRIVACY_PATH = re.compile(r"privacy[-_/]?(policy|notice|statement|center|centre)?", re.I)
 _NARROW_POLICY_RULES = (
     ("audience.workforce", re.compile(
-        r"(?:^|[\s/_-])(?:applicant|candidate|recruit|employee|workday|pension|retiree|"
+        r"(?:^|[\s/_-])(?:applicant|candidate|recruit|employees?|workday|pension|retiree|"
         r"careers?|jobs?|human[-_ ]resources?|hr[-_ ]information)(?:$|[\s/?#&._=-])",
         re.I,
     )),
@@ -243,6 +248,7 @@ class SourceCandidate:
     select: list[str] | str | None = None  # OTA content selector(s), if any
     notes: str = ""
     validated: bool = False
+    features: dict[str, str | float | int | bool] = field(default_factory=dict)
 
 
 @dataclass
@@ -276,7 +282,7 @@ def registrable_domain(url_or_host: str) -> str:
     host = url_or_host
     if "//" in host or host.startswith("http"):
         host = urllib.parse.urlparse(url_or_host).netloc
-    ext = tldextract.extract(host or url_or_host)
+    ext = _TLD_EXTRACT(host or url_or_host)
     return ".".join(p for p in (ext.domain, ext.suffix) if p)
 
 
@@ -796,6 +802,18 @@ def ota_declaration(provider_name: str) -> dict | None:
 class PolicySourceResolver:
     def __init__(self, allow_headless: bool = True):
         self.allow_headless = allow_headless
+        self.observed_candidates: list[SourceCandidate] = []
+
+    def _observe(self, candidate: SourceCandidate) -> SourceCandidate:
+        """Retain pre-decision evidence without changing resolver ordering."""
+
+        for index, existing in enumerate(self.observed_candidates):
+            if existing.strategy == candidate.strategy and existing.url.rstrip("/") == candidate.url.rstrip("/"):
+                if candidate.validated or candidate.confidence >= existing.confidence:
+                    self.observed_candidates[index] = candidate
+                return candidate
+        self.observed_candidates.append(candidate)
+        return candidate
 
     def resolve_linked_candidate(
         self,
@@ -839,6 +857,15 @@ class PolicySourceResolver:
         for score, url in candidates:
             if url.rstrip("/") == current:
                 continue
+            same_domain = registrable_domain(url) == expected_domain
+            confidence = 0.86 if same_domain and score >= 8 else 0.82 if score >= 5 else 0.7
+            self._observe(SourceCandidate(
+                url,
+                "linked",
+                confidence,
+                notes=f"link from current official source (score {score})",
+                features={"link_score": score, "same_registrable_domain": same_domain},
+            ))
             validated_url = validate_policy_source_url(
                 url,
                 provider_name,
@@ -857,13 +884,14 @@ class PolicySourceResolver:
                 confidence = 0.82
             else:
                 confidence = 0.7
-            return SourceCandidate(
+            return self._observe(SourceCandidate(
                 validated_url,
                 "linked",
                 confidence,
                 notes=f"validated link from current official source (score {score})",
                 validated=True,
-            )
+                features={"link_score": score, "same_registrable_domain": same_domain},
+            ))
         return None
 
     def resolve_candidate(
@@ -881,13 +909,13 @@ class PolicySourceResolver:
     ) -> SourceCandidate | None:
         """Pick the best source URL for a provider without fetching its text."""
         if override_url:
-            return SourceCandidate(override_url, "override", 1.0, notes="user-confirmed")
+            return self._observe(SourceCandidate(override_url, "override", 1.0, notes="user-confirmed"))
 
         pp = ota_declaration(provider_name) if not exclude_urls else None
         if pp:
             conf = 0.9 if not pp.get("executeClientScripts") else 0.88
-            return SourceCandidate(pp["fetch"], "ota", conf, select=pp.get("select"),
-                                   notes="Open Terms Archive declaration")
+            return self._observe(SourceCandidate(pp["fetch"], "ota", conf, select=pp.get("select"),
+                                   notes="Open Terms Archive declaration"))
 
         searched = self._search_candidate(
             provider_name,
@@ -913,15 +941,24 @@ class PolicySourceResolver:
                     if candidate[1].rstrip("/") not in excluded
                 ]
                 if cands:
+                    for link_score, link_url in cands:
+                        self._observe(SourceCandidate(
+                            link_url,
+                            "discovery",
+                            round(0.8 if link_score >= 8 and _PRIVACY_PATH.search(link_url) else min(0.5 + 0.05 * link_score, 0.7), 2),
+                            notes=f"footer/link match (score {link_score})",
+                            features={"link_score": link_score, "same_registrable_domain": True},
+                        ))
                     score, url = cands[0]
                     # strong path match on same domain -> high confidence
                     conf = 0.8 if score >= 8 and _PRIVACY_PATH.search(url) else min(0.5 + 0.05 * score, 0.7)
-                    return SourceCandidate(url, "discovery", round(conf, 2),
-                                           notes=f"footer/link match (score {score})")
+                    return self._observe(SourceCandidate(url, "discovery", round(conf, 2),
+                                           notes=f"footer/link match (score {score})",
+                                           features={"link_score": score, "same_registrable_domain": True}))
 
             sm = self._sitemap_candidate(domain)
             if sm and sm.url.rstrip("/") not in excluded:
-                return sm
+                return self._observe(sm)
         return None
 
     def _search_candidate(
@@ -982,6 +1019,19 @@ class PolicySourceResolver:
                 ranked.append((score, url))
 
         ordered = sorted(ranked, reverse=True)
+        for score, url in ordered[:max_validation_candidates]:
+            same_domain = bool(expected_domain and registrable_domain(url) == expected_domain)
+            self._observe(SourceCandidate(
+                url,
+                "search",
+                0.8 if same_domain else 0.75,
+                notes=f"indexed privacy candidate (score {score})",
+                features={
+                    "search_score": score,
+                    "same_registrable_domain": same_domain,
+                    "is_pdf": url.lower().split("?", 1)[0].endswith(".pdf"),
+                },
+            ))
         for score, url in ordered:
             is_pdf = url.lower().split("?", 1)[0].endswith(".pdf")
             if (
@@ -992,21 +1042,23 @@ class PolicySourceResolver:
                 and not is_pdf
                 and not require_validation
             ):
-                return SourceCandidate(
+                return self._observe(SourceCandidate(
                     url,
                     "search",
                     0.8,
                     notes="official-domain indexed privacy document",
-                )
+                    features={"search_score": score, "same_registrable_domain": True, "is_pdf": False},
+                ))
         if ordered and not prefer_pdf and not require_validation:
             score, url = ordered[0]
             if score >= 3 and _PRIVACY_PATH.search(url):
-                return SourceCandidate(
+                return self._observe(SourceCandidate(
                     url,
                     "search",
                     0.75,
                     notes="brand-matched indexed privacy document",
-                )
+                    features={"search_score": score, "same_registrable_domain": False, "is_pdf": False},
+                ))
 
         for score, url in ordered[:max_validation_candidates]:
             try:
@@ -1030,12 +1082,13 @@ class PolicySourceResolver:
                 and same_domain
                 and _PRIVACY_PATH.search(url)
             ):
-                return SourceCandidate(
+                return self._observe(SourceCandidate(
                     url,
                     "search",
                     0.8,
                     notes=f"official-domain privacy result; live access restricted (HTTP {response.status_code})",
-                )
+                    features={"search_score": score, "same_registrable_domain": True, "access_restricted": True},
+                ))
             if response.status_code >= 400 or len(content) < 500 or len(content) > 10 * 1024 * 1024:
                 continue
             content_type = response.headers.get("content-type", "")
@@ -1057,13 +1110,18 @@ class PolicySourceResolver:
             if not is_privacy_document(text, provider_name, same_domain=same_domain):
                 continue
             confidence = 0.84 if same_domain else 0.76
-            return SourceCandidate(
+            return self._observe(SourceCandidate(
                 str(response.url),
                 "search",
                 confidence,
                 notes=f"validated public search result (score {score})",
                 validated=True,
-            )
+                features={
+                    "search_score": score,
+                    "same_registrable_domain": same_domain,
+                    "is_pdf": document_is_pdf,
+                },
+            ))
         return None
 
     def _sitemap_candidate(self, domain: str) -> SourceCandidate | None:

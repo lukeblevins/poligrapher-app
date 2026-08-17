@@ -43,6 +43,7 @@ analysis = [
     "textstat",
     "lxml==6.1.0",
     "scikit-learn==1.8.0",
+    "skops>=0.13,<0.14",
     "spacy==3.8.13",
     "spacy-transformers==1.4.0",
     "sentence-transformers==5.5.0",
