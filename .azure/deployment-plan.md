@@ -320,6 +320,16 @@ Container App revisions and the existing migration-job template.
 | Validation, challenge-class recovery | `./.venv/bin/pytest -q`; focused pipeline and comparison tests; `git diff --check` | Passed: 119 backend tests, including hard probe termination, strict PDF probing, browser-challenge routing, and canonical-vs-archive source selection; whitespace validation passed | 2026-08-16 EDT |
 | Final S&P coverage reconciliation | Production graph-aware bulk preview for collection `4cac831c-a33d-438c-a0d5-55ee871418e9` | 459 analyzed and 41 eligible (91.8% coverage), up from 451 analyzed at the start of this recovery phase; all remaining companies retain terminal or bounded recovery evidence | 2026-08-16 EDT |
 | Remaining recovery taxonomy | Latest issue per graph-uncovered provider | 13 `recovery.unresolved`, 12 `crawl.navigation_failed`, 9 bounded `recovery.audit_error`, 3 `graph.empty`, 2 `pdf.download_timeout`, and 2 `source.not_policy`; no `execution.unclassified` result remains | 2026-08-16 EDT |
+| Validation, bounded fallback and recovery-result preservation | `./.venv/bin/pytest -q`; `git diff --check` | Passed: 133 backend tests and whitespace validation; ordinary analysis fallback is bounded to 12 seconds and two candidates, while successful fast-audit results survive an optional deep-audit failure | 2026-08-16 EDT |
+| Bounded fallback and recovery-result deployment | GitHub Actions run `31978816480`; commits `933c9f9` and `d3fdda9` | Exact `933c9f9` images, infrastructure, migrations, and endpoint verification succeeded as revision `poligrapherc1de43-app--0000052` | 2026-08-16 EDT |
+| Nine-company residual recovery | Task `b794b214-1bfc-4d3c-b6d9-fae7e3599242` | 9/9 settled terminally; Cummins and Warner Bros. Discovery recovered with non-empty graphs, while seven failures retained standardized root causes. Cummins completed fallback discovery and comparison in under one second instead of repeating multi-minute deep discovery | 2026-08-16 EDT |
+| Stale-archive origin recovery deployment | GitHub Actions run `31979619557`; commit `e374f44` | Exact immutable images, infrastructure, migrations, and endpoint verification succeeded; unreachable Wayback replay URLs now yield their embedded official origins before a bounded archive lookup of that origin | 2026-08-16 EDT |
+| Content-negotiation challenge deployment | GitHub Actions run `31980218911`; commit `67ff7ed` | Exact immutable images, infrastructure, migrations, and endpoint verification succeeded; website status 406 joins the centralized 403/429 browser-challenge path while binary PDF validation remains strict | 2026-08-16 EDT |
+| Content-negotiation production acceptance | Task `709b9989-b1d6-478c-84a7-d53081b9298e` | Mettler Toledo's unavailable archive resolved to its official origin; an HTTP 406 probe was admitted to Chromium and captured successfully. Both analysis modes produced no canonical elements, so the terminal root was correctly refined to `graph.empty` | 2026-08-16 EDT |
+| Non-policy residual recovery | Task `61b33e17-4faa-4e61-a616-a1636395899c` | 6/6 settled terminally with no audit errors or unsafe source mutation; Coca-Cola's current official policy reached both analyzers but remained `graph.empty`, and five companies retained `recovery.unresolved` evidence | 2026-08-16 EDT |
+| Acquisition and document residual recovery | Task `16deb7f4-4e0c-468e-8e4e-54495ff99d87` | 18/18 settled terminally: Medtronic recovered through a validated official replacement and non-empty graphs; 11 attempts failed analysis, 4 remained unresolved, and 2 lower-confidence candidates were retained for manual review instead of being auto-applied | 2026-08-16 EDT |
+| Final S&P maximized-safe coverage | Production graph-aware preview for collection `4cac831c-a33d-438c-a0d5-55ee871418e9` | 471 analyzed and 29 eligible (94.2% coverage), up from 468 before the final residual batches and from 440 before the broader recovery work; all remaining providers have terminal, bounded, or manual-review evidence | 2026-08-16 EDT |
+| Final residual taxonomy | Latest root class for the 29 graph-uncovered providers | 9 `crawl.navigation_failed`, 7 `graph.empty`, 11 unresolved or review-required source cases, and 2 `pdf.download_timeout`; direct, proxy, archive-origin, bounded discovery, isolated analysis, and graph-verification paths are exhausted without forcing unsafe one-off source changes | 2026-08-16 EDT |
 
 **Validated by:** azure-validate workflow
 
@@ -337,13 +347,16 @@ Container App revisions and the existing migration-job template.
 
 ## 10. Next Step
 
-Route the remaining 41 companies by root class: reviewed source replacement or
-PDF upload for unresolved/not-policy/download failures, and a future extractor
-or representation improvement for graph-empty policies. The production recovery
-cards expose task-level transient retry, but another unchanged bulk retry is not
-expected to improve coverage.
-Automated fast/deep audit, fresh-source retry, hard process deadlines, browser
-challenge routing, canonical live retry, and the persisted-403 class run are
-exhausted. Preserve each standardized root issue and avoid audience-specific,
-regional, investor, jobs, subsidiary, competitor, lookalike, or otherwise
-analyzer-invalid candidates.
+Route the remaining 29 companies by root class. The 7 `graph.empty` policies
+require a future extractor or representation improvement. The 11 unresolved or
+review-required source cases require a verified official replacement or user
+upload; do not auto-apply lower-confidence, regional, subsidiary, investor, or
+lookalike candidates. The 9 navigation failures and 2 PDF timeouts may be
+retried after an upstream network or source change, but another unchanged bulk
+retry is not expected to improve coverage.
+
+Keep coverage recovery as a pipeline feature: standardized issue selection,
+bounded parallel audit, direct/proxy/archive-origin acquisition, isolated normal
+analysis, non-empty-graph acceptance, complete rollback, JSONL evidence, and
+task-level retry or manual actions. Do not add provider-specific code or force a
+source mutation merely to reach a nominal 500/500 count.
