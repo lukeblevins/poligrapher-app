@@ -345,6 +345,10 @@ Container App revisions and the existing migration-job template.
 | Bicep and ARM validation, recovery ranker and graph artifacts | `az bicep lint`; `az deployment group validate`; resource-level `az deployment group what-if --result-format ResourceIdOnly` | Bicep lint and ARM validation passed with correlation `7da08a13-26ad-48a4-8a41-09be17677458`; preview has 15 existing resources to deploy, 1 GitHub identity ignored, and 0 resource deletions | 2026-08-17 12:14 EDT |
 | Policy and RBAC validation, recovery ranker and graph artifacts | Azure MCP policy assignment inventory; `infra/main.bicep`; live app and worker provisioning state | East US 2 remains allowed; MFA write/delete policies and audit-only Security Center policy reviewed; no Bicep role assignments or new identities; both live resources report `Succeeded` | 2026-08-17 12:14 EDT |
 | Container image validation gate, recovery ranker and graph artifacts | Local Docker availability; `.github/workflows/deploy-azure.yml` | Docker daemon is unavailable locally; both immutable production image builds remain blocking CI prerequisites before deployment | 2026-08-17 12:14 EDT |
+| Recovery ranker and graph-artifact deployment | GitHub Actions run `32044955981`; commit `f2be879170163b12ffa2327c54e326df7e686cf8` | Both immutable images, protected real-secret what-if, Bicep deployment, migration execution `poligrapherc1de43-migrations-5xm32h2`, and endpoint verification succeeded; revision `poligrapherc1de43-app--0000060` is healthy | 2026-08-17 12:44 EDT |
+| Graph-artifact production acceptance | Public graph-only download for Abbott Laboratories policy `4561791c-de06-4f84-8c83-ecca3a63fbe9`; corresponding private archive request | Public ZIP returned only three allowlisted graph files with HTTP 200; the complete artifact archive remained bearer-protected with HTTP 401 | 2026-08-17 12:44 EDT |
+| Shadow-ranker production acceptance | Worker configuration; app-container observation query; graph-aware S&P preview; task `050e90db-2ae2-452e-b9e3-351736d647be` | Worker uses exact `f2be879` image with `RECOVERY_RANKER_MODE=shadow`; migration table exists with 0 observations and 0 labels; coverage is 500/500, so the bounded recovery run correctly settled with zero targets and no fabricated labels | 2026-08-17 12:44 EDT |
+| Live role verification, recovery ranker and graph artifacts | Container App and worker job identity configuration | Both identities remain `None`; managed-identity role verification is not applicable and existing secret-backed database, Blob, and Queue access remains operational | 2026-08-17 12:44 EDT |
 
 **Validated by:** azure-validate workflow
 
@@ -362,11 +366,13 @@ Container App revisions and the existing migration-job template.
 
 ## 10. Next Step
 
-Deploy the recovery-ranker observation schema and keep the worker in `shadow`.
-Run normal cohort recovery to collect implicit labels; do not train until the
-minimum population gate passes, and do not enable `assist` until every coded
-promotion check passes. The model remains subordinate to source validation,
-provenance, audience, graph acceptance, and rollback rules.
+Keep the deployed recovery ranker in `shadow` and collect implicit labels from
+future natural recovery attempts. Current graph-aware S&P coverage is 500/500,
+so do not create synthetic failures or rerun successful companies merely to
+populate the dataset. Do not train until the minimum population gate passes,
+and do not enable `assist` until every coded promotion check passes. The model
+remains subordinate to source validation, provenance, audience, graph
+acceptance, and rollback rules.
 
 Keep coverage recovery as a pipeline feature: standardized issue selection,
 bounded parallel audit, direct/proxy/archive-origin acquisition, bounded
