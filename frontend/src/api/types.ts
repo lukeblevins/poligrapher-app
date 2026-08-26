@@ -47,7 +47,7 @@ export interface CompanyCatalogResult {
   name: string;
   domain: string | null;
   source_url: string;
-  source: "open_terms_archive";
+  source: "open_terms_archive" | "verified_source_catalog";
   attribution_url: string;
   requires_javascript: boolean;
 }

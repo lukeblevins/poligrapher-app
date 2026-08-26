@@ -185,7 +185,7 @@ export function AddProviderModal({
           <div className="add-company-flow">
             <MdFilledTextField id="company-catalog-search" type="search" className="w-full" label="Company name" value={query} onInput={(event) => setQuery(materialValue(event))} placeholder="GitHub, Microsoft, YouTube…" />
             <div className="add-company-results" aria-live="polite">
-              {catalog.isFetching && <p role="status" className="quiet-state py-6">Searching Open Terms Archive…</p>}
+              {catalog.isFetching && <p role="status" className="quiet-state py-6">Searching company sources…</p>}
               {catalog.isError && !catalog.isFetching && (
                 <p role="alert" className="status-error">Company search is unavailable. Try again or add the company by website.</p>
               )}

@@ -18,7 +18,7 @@ from poligrapher_app.api.schemas import (
 from poligrapher_app.domain.industries import INDUSTRIES
 from poligrapher_app.domain.policy_state import has_graph_elements
 from poligrapher_app.services.importer import import_policies, read_policy_csv
-from poligrapher_app.services.company_catalog import search_open_terms
+from poligrapher_app.services.company_catalog import search_company_catalog as search_catalog_sources
 from poligrapher_app.services.source_verification import verify_provider_sources
 
 router = APIRouter(prefix="/api/providers", tags=["providers"])
@@ -72,7 +72,7 @@ def list_providers(db: Db):
 
 @router.get("/catalog/search", response_model=CompanyCatalogSearch)
 def search_company_catalog(q: Annotated[str, Query(min_length=2, max_length=100)]):
-    results, available = search_open_terms(q)
+    results, available = search_catalog_sources(q)
     return CompanyCatalogSearch(results=results, source_available=available)
 
 
