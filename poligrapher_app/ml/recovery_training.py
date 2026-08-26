@@ -12,6 +12,7 @@ import platform
 import random
 import time
 from typing import Iterable
+import urllib.parse
 
 from poligrapher_app.services.recovery_ranking import (
     FEATURE_SCHEMA_VERSION,
@@ -27,6 +28,11 @@ ASSIST_MIN_LABELS = 100
 ASSIST_MIN_PROVIDERS = 50
 ASSIST_MIN_AP_IMPROVEMENT = 0.05
 ASSIST_MAX_P95_INFERENCE_MS = 50.0
+SOURCE_VIABILITY_SCHEMA_VERSION = "source-viability-v1"
+SOURCE_ROUTING_TARGET_RECALL = 0.95
+SOURCE_MIN_AP_IMPROVEMENT = 0.05
+SOURCE_MIN_FAILED_ATTEMPTS_AVOIDED = 0.15
+SOURCE_MIN_TOTAL_ATTEMPTS_AVOIDED = 0.10
 
 
 def build_recovery_dataset(session) -> list[dict]:
@@ -59,7 +65,69 @@ def build_recovery_dataset(session) -> list[dict]:
     return rows
 
 
-def validate_training_population(rows: list[dict]) -> None:
+def extract_policy_attempt_features(policy, provider) -> dict:
+    """Return identity-free features available before graph generation."""
+
+    from poligrapher_app.services.acquisition import narrow_policy_reason, registrable_domain
+
+    parsed = urllib.parse.urlparse(policy.url)
+    host = (parsed.hostname or "").casefold().removeprefix("www.")
+    expected_host = (provider.domain or "").casefold().removeprefix("www.")
+    path = parsed.path.casefold()
+    return {
+        "feature_schema": SOURCE_VIABILITY_SCHEMA_VERSION,
+        "method": policy.method,
+        "source": policy.source,
+        "scheduled": bool(policy.scheduled),
+        "rerun": policy.rerun_of_policy_id is not None,
+        "secure_scheme": parsed.scheme == "https",
+        "canonical_host": bool(expected_host and host == expected_host),
+        "same_registrable_domain": bool(
+            expected_host
+            and registrable_domain(policy.url) == registrable_domain(expected_host)
+        ),
+        "privacy_in_path": "privacy" in path or "data-protection" in path,
+        "is_pdf": path.endswith(".pdf") or policy.source == "pdf",
+        "path_depth": len([part for part in path.split("/") if part]),
+        "host_depth": len([part for part in host.split(".") if part]),
+        "has_query": bool(parsed.query),
+        "audience_or_document_reason": narrow_policy_reason(policy.url) or "none",
+    }
+
+
+def build_policy_attempt_dataset(session) -> list[dict]:
+    """Build a retrospective graph-viability dataset without policy text or identities."""
+
+    from poligrapher_app.api.models import Policy, Provider
+    from poligrapher_app.domain.policy_state import has_graph_elements
+
+    providers = {provider.id: provider for provider in session.query(Provider).all()}
+    policies = session.query(Policy).order_by(Policy.created_at, Policy.id).all()
+    rows = []
+    for policy in policies:
+        if has_graph_elements(policy.graph_data):
+            label = 1
+        elif policy.pipeline_status == "failed":
+            label = 0
+        else:
+            continue
+        provider = providers.get(policy.provider_id)
+        if provider is None:
+            continue
+        rows.append({
+            "observation_id": f"policy:{policy.id}",
+            "provider_id": str(policy.provider_id),
+            "created_at": policy.created_at,
+            "features": extract_policy_attempt_features(policy, provider),
+            # Historical attempts crossed the existing eligibility gates. The
+            # honest operational baseline is therefore to attempt all of them.
+            "heuristic_confidence": 1.0,
+            "label": label,
+        })
+    return rows
+
+
+def training_population_summary(rows: list[dict]) -> dict:
     labels = Counter(row["label"] for row in rows)
     providers = {row["provider_id"] for row in rows}
     errors = []
@@ -70,8 +138,20 @@ def validate_training_population(rows: list[dict]) -> None:
             errors.append(f"{labels[label]} {name} outcomes; need {MIN_CLASS_EXAMPLES}")
     if len(providers) < MIN_DISTINCT_PROVIDERS:
         errors.append(f"{len(providers)} providers; need {MIN_DISTINCT_PROVIDERS}")
-    if errors:
-        raise ValueError("Training population is not ready: " + "; ".join(errors))
+    return {
+        "ready": not errors,
+        "observations": len(rows),
+        "providers": len(providers),
+        "positive": labels[1],
+        "negative": labels[0],
+        "errors": errors,
+    }
+
+
+def validate_training_population(rows: list[dict]) -> None:
+    summary = training_population_summary(rows)
+    if summary["errors"]:
+        raise ValueError("Training population is not ready: " + "; ".join(summary["errors"]))
 
 
 def split_by_provider_and_time(rows: list[dict]) -> tuple[list[dict], list[dict], list[dict]]:
@@ -235,13 +315,92 @@ def assess_assist_readiness(report: dict, shadow_summary: dict) -> dict:
     }
 
 
-def train_candidate_models(rows: list[dict]):
+def assess_source_viability(report: dict) -> dict:
+    """Require both predictive improvement and meaningful pipeline simplification."""
+
+    routing = report.get("routing") or {}
+    checks = {
+        "average_precision_gain": (
+            report.get("average_precision_improvement", 0)
+            >= SOURCE_MIN_AP_IMPROVEMENT
+        ),
+        "success_recall": (
+            routing.get("success_recall", 0) >= SOURCE_ROUTING_TARGET_RECALL
+        ),
+        "failed_attempts_avoided": (
+            routing.get("failed_attempts_avoided", 0)
+            >= SOURCE_MIN_FAILED_ATTEMPTS_AVOIDED
+        ),
+        "total_attempts_avoided": (
+            routing.get("total_attempts_avoided", 0)
+            >= SOURCE_MIN_TOTAL_ATTEMPTS_AVOIDED
+        ),
+    }
+    return {
+        "eligible": all(checks.values()),
+        "checks": checks,
+        "failed_checks": [name for name, passed in checks.items() if not passed],
+    }
+
+
+def _routing_threshold(model, rows: list[dict], target_recall: float) -> float:
+    labels = [row["label"] for row in rows]
+    scores = list(model.predict_proba([row["features"] for row in rows])[:, 1])
+    positives = sum(labels)
+    eligible = []
+    for threshold in sorted(set(float(score) for score in scores)):
+        recall = sum(
+            bool(label and score >= threshold)
+            for label, score in zip(labels, scores, strict=True)
+        ) / positives
+        if recall >= target_recall:
+            avoided = sum(bool(score < threshold) for score in scores) / len(scores)
+            eligible.append((avoided, threshold))
+    return max(eligible)[1] if eligible else 0.0
+
+
+def _routing_metrics(model, rows: list[dict], threshold: float) -> dict:
+    labels = [row["label"] for row in rows]
+    scores = list(model.predict_proba([row["features"] for row in rows])[:, 1])
+    attempted = [bool(score >= threshold) for score in scores]
+    positive = sum(labels)
+    negative = len(labels) - positive
+    true_positive = sum(
+        label and decision for label, decision in zip(labels, attempted, strict=True)
+    )
+    false_positive = sum(
+        not label and decision for label, decision in zip(labels, attempted, strict=True)
+    )
+    true_negative = sum(
+        not label and not decision for label, decision in zip(labels, attempted, strict=True)
+    )
+    false_negative = sum(
+        label and not decision for label, decision in zip(labels, attempted, strict=True)
+    )
+    return {
+        "threshold": threshold,
+        "success_recall": true_positive / positive,
+        "failed_attempts_avoided": true_negative / negative,
+        "total_attempts_avoided": (true_negative + false_negative) / len(labels),
+        "attempted_success_rate": true_positive / (true_positive + false_positive),
+        "successful_attempts_deferred": false_negative,
+        "failed_attempts_still_run": false_positive,
+    }
+
+
+def train_candidate_models(
+    rows: list[dict],
+    *,
+    feature_schema_version: str = FEATURE_SCHEMA_VERSION,
+    baseline_name: str = "heuristic_confidence",
+    routing_target_recall: float | None = None,
+):
+    validate_training_population(rows)
     from sklearn.ensemble import HistGradientBoostingClassifier
     from sklearn.feature_extraction import DictVectorizer
     from sklearn.linear_model import LogisticRegression
     from sklearn.pipeline import Pipeline
 
-    validate_training_population(rows)
     train_rows, validation_rows, test_rows = split_by_provider_and_time(rows)
     train_x, train_y = _xy(train_rows)
     models = {
@@ -276,14 +435,24 @@ def train_candidate_models(rows: list[dict]):
         else "logistic_regression"
     )
     selected = models[selected_name]
-    combined_x, combined_y = _xy(train_rows + validation_rows)
-    selected.fit(combined_x, combined_y)
+    routing_threshold = (
+        _routing_threshold(selected, validation_rows, routing_target_recall)
+        if routing_target_recall is not None
+        else None
+    )
+    # A routing threshold is calibrated against the validation model's score
+    # scale, so evaluate that exact fitted model on the untouched test split.
+    # Artifact training keeps the established train+validation refit behavior.
+    if routing_threshold is None:
+        combined_x, combined_y = _xy(train_rows + validation_rows)
+        selected.fit(combined_x, combined_y)
     test_metrics = _metrics(selected, test_rows)
     heuristic_metrics = _heuristic_metrics(test_rows)
     confidence_interval = _bootstrap_ap_improvement(selected, test_rows)
     report = {
         "selected_model": selected_name,
-        "feature_schema_version": FEATURE_SCHEMA_VERSION,
+        "feature_schema_version": feature_schema_version,
+        "baseline_name": baseline_name,
         "population": {
             "observations": len(rows),
             "providers": len({row["provider_id"] for row in rows}),
@@ -303,6 +472,11 @@ def train_candidate_models(rows: list[dict]):
         "bootstrap_ap_improvement_95ci": list(confidence_interval),
         "p95_inference_ms": _p95_inference_ms(selected, test_rows),
     }
+    if routing_threshold is not None:
+        report["routing"] = {
+            "target_validation_recall": routing_target_recall,
+            **_routing_metrics(selected, test_rows, routing_threshold),
+        }
     return selected, report
 
 
@@ -331,7 +505,7 @@ def write_model_bundle(model, report: dict, rows: list[dict], output_dir: Path) 
     manifest = {
         "version": version,
         "sha256": digest,
-        "feature_schema_version": FEATURE_SCHEMA_VERSION,
+        "feature_schema_version": report["feature_schema_version"],
         "dataset_sha256": dataset_digest(rows),
         "python_version": platform.python_version(),
         "scikit_learn_version": sklearn.__version__,
@@ -359,13 +533,43 @@ def write_model_bundle(model, report: dict, rows: list[dict], output_dir: Path) 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Train the recovery candidate ranker")
-    parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--output-dir", type=Path)
+    parser.add_argument(
+        "--dataset",
+        choices=("recovery-candidates", "policy-attempts"),
+        default="recovery-candidates",
+    )
+    parser.add_argument("--readiness", action="store_true")
+    parser.add_argument("--evaluate-only", action="store_true")
     args = parser.parse_args()
+    if args.dataset == "policy-attempts" and not (args.readiness or args.evaluate_only):
+        parser.error("policy-attempts is evaluation-only and cannot produce a recovery-ranker artifact")
     from poligrapher_app.api.database import SessionLocal
 
     with SessionLocal() as session:
-        rows = build_recovery_dataset(session)
-    model, report = train_candidate_models(rows)
+        rows = (
+            build_recovery_dataset(session)
+            if args.dataset == "recovery-candidates"
+            else build_policy_attempt_dataset(session)
+        )
+    if args.readiness:
+        print(json.dumps(training_population_summary(rows), indent=2, sort_keys=True))
+        return 0
+    if args.dataset == "policy-attempts":
+        model, report = train_candidate_models(
+            rows,
+            feature_schema_version=SOURCE_VIABILITY_SCHEMA_VERSION,
+            baseline_name="attempt_all",
+            routing_target_recall=SOURCE_ROUTING_TARGET_RECALL,
+        )
+        report["deployment_assessment"] = assess_source_viability(report)
+    else:
+        model, report = train_candidate_models(rows)
+    if args.evaluate_only:
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return 0
+    if args.output_dir is None:
+        parser.error("--output-dir is required when writing a model bundle")
     bundle = write_model_bundle(model, report, rows, args.output_dir)
     print(json.dumps(bundle, indent=2, sort_keys=True))
     return 0
