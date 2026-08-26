@@ -227,6 +227,7 @@ def _rerun_upload(task_id: str, payload: dict, registry) -> None:
 
     original_id = uuid.UUID(payload["original_policy_id"])
     policy_id = uuid.UUID(payload["policy_id"])
+    telemetry = None
     with SessionLocal() as db:
         original = db.get(Policy, original_id)
         policy = db.get(Policy, policy_id)
@@ -276,6 +277,7 @@ def _generate(task_id: str, payload: dict, registry) -> None:
     from poligrapher_app.api.models import Policy
     from poligrapher_app.services.persistence import persist_workspace, temporary_document
     from poligrapher_app.services.pipeline import PipelineCancelled, generate_graph
+    from poligrapher_app.services.attempt_telemetry import telemetry_for_policy
 
     policy_id = uuid.UUID(payload["policy_id"])
     with SessionLocal() as db:
@@ -284,9 +286,15 @@ def _generate(task_id: str, payload: dict, registry) -> None:
             if policy is None:
                 registry.set_failed(task_id, "Policy no longer exists")
                 return
+            telemetry = telemetry_for_policy(policy)
             with temporary_document(policy) as (doc, workspace):
-                generate_graph(doc, should_cancel=lambda: registry.is_cancelled(task_id))
+                generate_graph(
+                    doc,
+                    should_cancel=lambda: registry.is_cancelled(task_id),
+                    telemetry=telemetry,
+                )
                 persist_workspace(policy, doc, workspace / "artifacts.zip")
+                policy.acquisition_telemetry = dict(telemetry)
                 sync_policy_from_doc(policy, doc, db)
             registry.incr(task_id, "completed")
             registry.set_done(task_id)
@@ -295,6 +303,8 @@ def _generate(task_id: str, payload: dict, registry) -> None:
         except Exception as exc:
             failed = db.get(Policy, policy_id)
             if failed:
+                if telemetry is not None:
+                    failed.acquisition_telemetry = dict(telemetry)
                 if not failed.graph_data:
                     failed.pipeline_status = "failed"
                 failed.pipeline_errors = list(failed.pipeline_errors or []) + [{"message": str(exc)}]
@@ -334,6 +344,7 @@ def _refresh(task_id: str, payload: dict, registry) -> None:
     from poligrapher_app.api.models import Policy
     from poligrapher_app.services.persistence import persist_workspace, temporary_document
     from poligrapher_app.services.pipeline import PipelineCancelled, generate_graph
+    from poligrapher_app.services.attempt_telemetry import telemetry_for_policy
 
     with SessionLocal() as db:
         for raw_id in payload.get("policy_ids", []):
@@ -344,16 +355,25 @@ def _refresh(task_id: str, payload: dict, registry) -> None:
             if policy is None:
                 registry.incr(task_id, "completed")
                 continue
+            telemetry = None
             try:
+                telemetry = telemetry_for_policy(policy)
                 with temporary_document(policy) as (doc, workspace):
-                    generate_graph(doc, should_cancel=lambda: registry.is_cancelled(task_id))
+                    generate_graph(
+                        doc,
+                        should_cancel=lambda: registry.is_cancelled(task_id),
+                        telemetry=telemetry,
+                    )
                     persist_workspace(policy, doc, workspace / "artifacts.zip")
+                    policy.acquisition_telemetry = dict(telemetry)
                     sync_policy_from_doc(policy, doc, db)
             except PipelineCancelled:
                 registry.set_cancelled(task_id)
                 return
             except Exception:
                 logger.exception("Refresh failed for policy %s", policy.id)
+                if telemetry is not None:
+                    policy.acquisition_telemetry = dict(telemetry)
                 if not policy.graph_data:
                     policy.pipeline_status = "failed"
                 policy.pipeline_errors = list(policy.pipeline_errors or []) + [{"message": "Refresh failed"}]

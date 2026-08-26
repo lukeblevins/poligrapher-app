@@ -53,6 +53,10 @@ def test_canonical_json_round_trip():
             graph_stats={"nodes": 1, "edges": 0},
             artifact_blob_key=f"artifacts/{uuid.uuid4()}/artifacts.zip",
             persistence_status="persisted",
+            acquisition_telemetry={
+                "schema_version": "policy-attempt-telemetry-v1",
+                "preflight": {"http_status": 200},
+            },
         )
         db.add(policy)
         db.commit()
@@ -61,6 +65,7 @@ def test_canonical_json_round_trip():
         assert stored.graph_data["elements"][0]["data"]["id"] == "n1"
         assert stored.graph_stats == {"nodes": 1, "edges": 0}
         assert stored.output_dir is None
+        assert stored.acquisition_telemetry["preflight"]["http_status"] == 200
         assert get_graph(stored.id, db).elements == [{"data": {"id": "n1"}}]
         assert get_stats(stored.id, db).stats == {"nodes": 1, "edges": 0}
 

@@ -264,6 +264,10 @@ def run_comparison(
     from poligrapher_app.api.database import SessionLocal
     from poligrapher_app.api.models import Policy, Provider
     from poligrapher_app.services.acquisition import PolicySourceResolver
+    from poligrapher_app.services.attempt_telemetry import (
+        new_attempt_telemetry,
+        probe_source_metadata,
+    )
     from poligrapher_app.services.pipeline import PipelineCancelled, generate_comparison
     from poligrapher_app.domain.policy_analysis import DocumentCaptureSource, PolicyDocumentInfo
 
@@ -303,10 +307,21 @@ def run_comparison(
 
         day = date.today()
         grp = uuid.uuid4()
+        source_probe = probe_source_metadata(url)
+        website_telemetry = new_attempt_telemetry(
+            probe=source_probe,
+            analysis_path="website",
+        )
+        pdf_telemetry = new_attempt_telemetry(
+            probe=source_probe,
+            analysis_path="pdf_from_page",
+        )
         website = Policy(provider_id=provider.id, url=url, source="webpage", method="website",
-                         run_group=grp, scheduled=scheduled, capture_date=day)
+                         run_group=grp, scheduled=scheduled, capture_date=day,
+                         acquisition_telemetry=website_telemetry)
         pdf = Policy(provider_id=provider.id, url=url, source="pdf", method="pdf_from_page",
-                     run_group=grp, scheduled=scheduled, capture_date=day)
+                     run_group=grp, scheduled=scheduled, capture_date=day,
+                     acquisition_telemetry=pdf_telemetry)
         db.add_all([website, pdf])
         db.commit()
         db.refresh(website)
@@ -320,8 +335,15 @@ def run_comparison(
             pdf_dir = Path(workspace) / "pdf"
             try:
                 pdf_generation_error = generate_comparison(
-                    url, str(web_dir), str(pdf_dir), should_cancel
+                    url,
+                    str(web_dir),
+                    str(pdf_dir),
+                    should_cancel,
+                    website_telemetry=website_telemetry,
+                    pdf_telemetry=pdf_telemetry,
                 )
+                website.acquisition_telemetry = dict(website_telemetry)
+                pdf.acquisition_telemetry = dict(pdf_telemetry)
                 web_doc = PolicyDocumentInfo(url, str(web_dir), DocumentCaptureSource.WEBPAGE,
                                              day, False)
                 pdf_doc = PolicyDocumentInfo(str(web_dir / "output.pdf"), str(pdf_dir),
@@ -360,10 +382,14 @@ def run_comparison(
                 )
             except PipelineCancelled:
                 db.rollback()
+                website.acquisition_telemetry = dict(website_telemetry)
+                pdf.acquisition_telemetry = dict(pdf_telemetry)
                 _mark_failed([website, pdf], db, "Run cancelled")
                 return "cancelled"
             except Exception as exc:  # noqa: BLE001
                 db.rollback()
+                website.acquisition_telemetry = dict(website_telemetry)
+                pdf.acquisition_telemetry = dict(pdf_telemetry)
                 _mark_failed([website, pdf], db, f"Comparison failed: {exc}")
                 raise
     finally:
@@ -378,6 +404,7 @@ def run_upload(policy_id, *, registry=None, task_id=None) -> str:
     from poligrapher_app.domain.policy_analysis import DocumentCaptureSource, PolicyDocumentInfo
     from poligrapher_app.services.persistence import persist_workspace
     from poligrapher_app.services.storage import get_storage
+    from poligrapher_app.services.attempt_telemetry import new_attempt_telemetry
 
     should_cancel = (lambda: registry.is_cancelled(task_id)) if (task_id and registry) else None
     db = SessionLocal()
@@ -396,8 +423,12 @@ def run_upload(policy_id, *, registry=None, task_id=None) -> str:
             doc = PolicyDocumentInfo(str(source), str(output), DocumentCaptureSource.PDF,
                                      policy.capture_date or date.today(), policy.has_results,
                                      policy.pipeline_errors)
+            telemetry = policy.acquisition_telemetry or new_attempt_telemetry(
+                analysis_path=policy.method,
+            )
             try:
-                generate_graph(doc, should_cancel=should_cancel)
+                generate_graph(doc, should_cancel=should_cancel, telemetry=telemetry)
+                policy.acquisition_telemetry = dict(telemetry)
                 _score(policy, db, doc)
                 persist_workspace(policy, doc, Path(workspace) / "artifacts.zip")
                 policy.content_hash = file_hash(str(source))
@@ -405,10 +436,12 @@ def run_upload(policy_id, *, registry=None, task_id=None) -> str:
                 return "ok"
             except PipelineCancelled:
                 db.rollback()
+                policy.acquisition_telemetry = dict(telemetry)
                 _mark_failed([policy], db, "Run cancelled")
                 return "cancelled"
             except Exception as exc:  # noqa: BLE001
                 db.rollback()
+                policy.acquisition_telemetry = dict(telemetry)
                 _mark_failed([policy], db, f"Upload analysis failed: {exc}")
                 raise
     finally:
@@ -422,12 +455,17 @@ def run_remote_pdf(
     from poligrapher_app.api.database import SessionLocal
     from poligrapher_app.api.models import Policy, Provider
     from poligrapher_app.services.storage import get_storage, source_key
+    from poligrapher_app.services.attempt_telemetry import (
+        new_attempt_telemetry,
+        probe_source_metadata,
+    )
 
     with SessionLocal() as db:
         provider = db.get(Provider, provider_id)
         if not provider or not provider.source_url:
             return "needs_source"
         url = provider.source_url
+        source_probe = probe_source_metadata(url)
         filename = Path(urllib.parse.urlparse(url).path).name or "privacy-policy.pdf"
         if not filename.lower().endswith(".pdf"):
             filename += ".pdf"
@@ -454,6 +492,10 @@ def run_remote_pdf(
                 capture_date=date.today(),
                 source_filename=filename,
                 content_hash=digest,
+                acquisition_telemetry=new_attempt_telemetry(
+                    probe=source_probe,
+                    analysis_path="pdf_upload",
+                ),
             )
             db.add(policy)
             db.commit()
@@ -477,6 +519,7 @@ def run_archived_comparison(
     from poligrapher_app.services.persistence import persist_workspace
     from poligrapher_app.services.pipeline import PipelineCancelled, generate_graph_from_html
     from poligrapher_app.services.storage import get_storage
+    from poligrapher_app.services.attempt_telemetry import new_attempt_telemetry
 
     should_cancel = (lambda: registry.is_cancelled(task_id)) if (task_id and registry) else None
     with SessionLocal() as db:
@@ -492,6 +535,8 @@ def run_archived_comparison(
         with tempfile.TemporaryDirectory(prefix="poligrapher-rerun-", dir=temp_root) as workspace:
             root = Path(workspace)
             archive_path = root / "source.zip"
+            website_telemetry = new_attempt_telemetry(analysis_path="website")
+            pdf_telemetry = new_attempt_telemetry(analysis_path="pdf_from_page")
             try:
                 get_storage().download_file(original.artifact_blob_key, archive_path)
                 with zipfile.ZipFile(archive_path) as archive:
@@ -513,10 +558,18 @@ def run_archived_comparison(
                 web_dir = root / "website"
                 pdf_dir = root / "pdf"
                 generate_graph_from_html(
-                    str(html_path), str(web_dir), capture_pdf=False, should_cancel=should_cancel
+                    str(html_path),
+                    str(web_dir),
+                    capture_pdf=False,
+                    should_cancel=should_cancel,
+                    telemetry=website_telemetry,
                 )
                 generate_graph_from_html(
-                    str(pdf_path), str(pdf_dir), capture_pdf=True, should_cancel=should_cancel
+                    str(pdf_path),
+                    str(pdf_dir),
+                    capture_pdf=True,
+                    should_cancel=should_cancel,
+                    telemetry=pdf_telemetry,
                 )
                 web_doc = PolicyDocumentInfo(
                     str(html_path), str(web_dir), DocumentCaptureSource.WEBPAGE,
@@ -530,14 +583,20 @@ def run_archived_comparison(
                 _score(pdf, db, pdf_doc)
                 persist_workspace(website, web_doc, root / "website.zip")
                 persist_workspace(pdf, pdf_doc, root / "pdf.zip")
+                website.acquisition_telemetry = dict(website_telemetry)
+                pdf.acquisition_telemetry = dict(pdf_telemetry)
                 website.content_hash = _website_text_hash(website, db, web_doc)
                 db.commit()
                 return "ok"
             except PipelineCancelled:
                 db.rollback()
+                website.acquisition_telemetry = dict(website_telemetry)
+                pdf.acquisition_telemetry = dict(pdf_telemetry)
                 _mark_failed([website, pdf], db, "Run cancelled")
                 return "cancelled"
             except Exception as exc:  # noqa: BLE001
                 db.rollback()
+                website.acquisition_telemetry = dict(website_telemetry)
+                pdf.acquisition_telemetry = dict(pdf_telemetry)
                 _mark_failed([website, pdf], db, f"Archived comparison failed: {exc}")
                 raise

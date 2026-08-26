@@ -102,6 +102,9 @@ class Policy(Base):
     has_results: Mapped[bool] = mapped_column(Boolean, default=False)
     pipeline_status: Mapped[str] = mapped_column(String(20), default="pending")
     pipeline_errors: Mapped[list] = mapped_column(JSON, default=list)
+    # Versioned preflight and capture-quality signals used only for offline ML
+    # evaluation until a candidate passes the explicit promotion gates.
+    acquisition_telemetry: Mapped[dict | None] = mapped_column(JSON, default=dict)
     privacy_score: Mapped[float | None] = mapped_column(Float)
     gdpr_score: Mapped[float | None] = mapped_column(Float)
     graph_kind: Mapped[str] = mapped_column(String(20), default="none")

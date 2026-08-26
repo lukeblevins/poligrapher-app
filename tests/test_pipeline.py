@@ -280,14 +280,21 @@ def test_live_navigation_dead_end_retries_once_from_wayback(monkeypatch, tmp_pat
     _stub_remaining_stages(monkeypatch)
 
     output = tmp_path / "output"
+    telemetry = {"capture": {}}
     pipeline.generate_graph_from_html(
-        live_url, str(output), capture_pdf=False, emit_pdf=True
+        live_url,
+        str(output),
+        capture_pdf=False,
+        emit_pdf=True,
+        telemetry=telemetry,
     )
 
     assert crawled == [(live_url, True), (archive_url, True)]
     assert probes == [live_url]
     assert output.is_dir()
     assert not list(tmp_path.glob("output.staging-*"))
+    assert telemetry["capture"]["succeeded"] is True
+    assert "failure" not in telemetry
 
 
 def test_unreachable_wayback_source_retries_embedded_original(monkeypatch):

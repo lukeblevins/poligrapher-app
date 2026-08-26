@@ -68,6 +68,35 @@ def test_policy_attempt_features_are_identity_free_and_available_before_graph_ge
     assert "domain" not in features
 
 
+def test_enriched_policy_features_use_only_versioned_attempt_telemetry():
+    policy = SimpleNamespace(
+        url="https://example.com/privacy",
+        method="website",
+        source="webpage",
+        scheduled=False,
+        rerun_of_policy_id=None,
+        acquisition_telemetry={
+            "schema_version": "policy-attempt-telemetry-v1",
+            "analysis_path": "website",
+            "preflight": {"succeeded": True, "http_status": 200},
+            "capture": {"succeeded": True, "readability_text_chars": 2000},
+        },
+    )
+    provider = SimpleNamespace(domain="example.com")
+
+    features = recovery_training.extract_policy_attempt_features(
+        policy,
+        provider,
+        enriched=True,
+    )
+
+    assert features["feature_schema"] == (
+        recovery_training.ENRICHED_SOURCE_VIABILITY_SCHEMA_VERSION
+    )
+    assert features["probe_http_status"] == "200"
+    assert features["readability_text_chars"] == 2000
+
+
 def test_split_keeps_every_provider_in_one_partition():
     train, validation, test = recovery_training.split_by_provider_and_time(_rows())
     provider_sets = [{row["provider_id"] for row in partition} for partition in (train, validation, test)]

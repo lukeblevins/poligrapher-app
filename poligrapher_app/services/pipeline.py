@@ -12,6 +12,7 @@ import re
 import shutil
 import sys
 import tempfile
+import time
 import urllib.parse
 import uuid
 from contextlib import contextmanager
@@ -30,6 +31,10 @@ from poligrapher_app.services.acquisition import (
     httpx_proxy,
     open_client,
     wayback_snapshot_url,
+)
+from poligrapher_app.services.attempt_telemetry import (
+    record_attempt_failure,
+    record_capture_snapshot,
 )
 
 logger = logging.getLogger(__name__)
@@ -478,6 +483,7 @@ def generate_graph_from_html(
     should_cancel: Callable[[], bool] | None = None,
     emit_pdf: bool = False,
     _archive_fallback_attempted: bool = False,
+    telemetry: dict | None = None,
 ) -> None:
     """Run the PoliGraph pipeline stages for a single input into output_folder.
 
@@ -494,6 +500,7 @@ def generate_graph_from_html(
         output_folder,
     )
     # Normalize file:// URIs to filesystem paths.
+    current_stage = "source_resolution"
     try:
         parsed = urllib.parse.urlparse(path)
         if parsed.scheme == "file":
@@ -594,13 +601,24 @@ def generate_graph_from_html(
             if _cancelled():
                 raise PipelineCancelled(f"Cancelled before: {message}")
             logger.info("[%d/%d] %s", idx, total_steps, message)
+            current_stage = message
+            stage_started = time.perf_counter()
             step_fn()
+            if message.startswith("Crawling"):
+                record_capture_snapshot(
+                    telemetry,
+                    staging,
+                    elapsed_ms=(time.perf_counter() - stage_started) * 1000,
+                )
 
         if _cancelled():
             raise PipelineCancelled("Cancelled before finalizing output")
 
         _swap_into_place(staging, output_folder)
+        if telemetry is not None:
+            telemetry.pop("failure", None)
     except BaseException as exc:
+        record_attempt_failure(telemetry, exc, stage=current_stage)
         shutil.rmtree(staging, ignore_errors=True)
         if (
             not capture_pdf
@@ -634,6 +652,7 @@ def generate_graph_from_html(
                         should_cancel=should_cancel,
                         emit_pdf=emit_pdf,
                         _archive_fallback_attempted=True,
+                        telemetry=telemetry,
                     )
                 finally:
                     try:
@@ -667,6 +686,7 @@ def generate_graph_from_html(
                         should_cancel=should_cancel,
                         emit_pdf=emit_pdf,
                         _archive_fallback_attempted=True,
+                        telemetry=telemetry,
                     )
                 finally:
                     try:
@@ -687,6 +707,7 @@ def generate_graph_from_html(
                     should_cancel=should_cancel,
                     emit_pdf=emit_pdf,
                     _archive_fallback_attempted=True,
+                    telemetry=telemetry,
                 )
         raise
 
@@ -696,6 +717,7 @@ def generate_graph_from_html(
 def generate_graph(
     policy: PolicyDocumentInfo,
     should_cancel: Callable[[], bool] | None = None,
+    telemetry: dict | None = None,
 ) -> bool:
     """Run the full PoliGraph pipeline for a single policy document."""
     match policy.source:
@@ -708,7 +730,13 @@ def generate_graph(
 
     try:
         logger.info("Triggering pipeline for policy %s (source=%s)", policy.path, policy.source)
-        generate_graph_from_html(policy.path, policy.output_dir, capture_pdf, should_cancel)
+        generate_graph_from_html(
+            policy.path,
+            policy.output_dir,
+            capture_pdf,
+            should_cancel,
+            telemetry=telemetry,
+        )
     except PipelineCancelled:
         logger.info("Pipeline cancelled for %s; output left unchanged", policy.output_dir)
         raise
@@ -716,6 +744,7 @@ def generate_graph(
         policy.record_error(f"Pipeline exited early: {exc}")
         raise RuntimeError("Graph generation pipeline exited") from exc
     except BaseException as exc:
+        record_attempt_failure(telemetry, exc, stage="pipeline")
         policy.record_error(f"Graph generation failed: {exc}")
         raise
     else:
@@ -729,6 +758,8 @@ def generate_comparison(
     website_dir: str,
     pdf_dir: str,
     should_cancel: Callable[[], bool] | None = None,
+    website_telemetry: dict | None = None,
+    pdf_telemetry: dict | None = None,
 ) -> Exception | None:
     """Produce two graphs from a single website fetch, for method comparison.
 
@@ -741,8 +772,13 @@ def generate_comparison(
     callers can persist that usable result. Website failures still raise.
     """
     logger.info("Comparison run for %s -> website=%s pdf=%s", url, website_dir, pdf_dir)
-    generate_graph_from_html(url, website_dir, capture_pdf=False,
-                             should_cancel=should_cancel, emit_pdf=True)
+    try:
+        generate_graph_from_html(url, website_dir, capture_pdf=False,
+                                 should_cancel=should_cancel, emit_pdf=True,
+                                 telemetry=website_telemetry)
+    except BaseException as exc:
+        record_attempt_failure(website_telemetry, exc, stage="website_pipeline")
+        raise
 
     shared_pdf = os.path.join(website_dir, "output.pdf")
     if not os.path.exists(shared_pdf):
@@ -750,7 +786,11 @@ def generate_comparison(
 
     try:
         generate_graph_from_html(
-            shared_pdf, pdf_dir, capture_pdf=True, should_cancel=should_cancel
+            shared_pdf,
+            pdf_dir,
+            capture_pdf=True,
+            should_cancel=should_cancel,
+            telemetry=pdf_telemetry,
         )
     except PipelineCancelled:
         raise

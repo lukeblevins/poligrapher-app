@@ -29,6 +29,7 @@ ASSIST_MIN_PROVIDERS = 50
 ASSIST_MIN_AP_IMPROVEMENT = 0.05
 ASSIST_MAX_P95_INFERENCE_MS = 50.0
 SOURCE_VIABILITY_SCHEMA_VERSION = "source-viability-v1"
+ENRICHED_SOURCE_VIABILITY_SCHEMA_VERSION = "source-viability-v2-enriched"
 SOURCE_ROUTING_TARGET_RECALL = 0.95
 SOURCE_MIN_AP_IMPROVEMENT = 0.05
 SOURCE_MIN_FAILED_ATTEMPTS_AVOIDED = 0.15
@@ -65,7 +66,7 @@ def build_recovery_dataset(session) -> list[dict]:
     return rows
 
 
-def extract_policy_attempt_features(policy, provider) -> dict:
+def extract_policy_attempt_features(policy, provider, *, enriched: bool = False) -> dict:
     """Return identity-free features available before graph generation."""
 
     from poligrapher_app.services.acquisition import narrow_policy_reason, registrable_domain
@@ -74,8 +75,12 @@ def extract_policy_attempt_features(policy, provider) -> dict:
     host = (parsed.hostname or "").casefold().removeprefix("www.")
     expected_host = (provider.domain or "").casefold().removeprefix("www.")
     path = parsed.path.casefold()
-    return {
-        "feature_schema": SOURCE_VIABILITY_SCHEMA_VERSION,
+    features = {
+        "feature_schema": (
+            ENRICHED_SOURCE_VIABILITY_SCHEMA_VERSION
+            if enriched
+            else SOURCE_VIABILITY_SCHEMA_VERSION
+        ),
         "method": policy.method,
         "source": policy.source,
         "scheduled": bool(policy.scheduled),
@@ -93,18 +98,27 @@ def extract_policy_attempt_features(policy, provider) -> dict:
         "has_query": bool(parsed.query),
         "audience_or_document_reason": narrow_policy_reason(policy.url) or "none",
     }
+    if enriched:
+        from poligrapher_app.services.attempt_telemetry import enriched_ml_features
+
+        features.update(enriched_ml_features(policy.acquisition_telemetry or {}))
+    return features
 
 
-def build_policy_attempt_dataset(session) -> list[dict]:
+def build_policy_attempt_dataset(session, *, enriched_only: bool = False) -> list[dict]:
     """Build a retrospective graph-viability dataset without policy text or identities."""
 
     from poligrapher_app.api.models import Policy, Provider
     from poligrapher_app.domain.policy_state import has_graph_elements
+    from poligrapher_app.services.attempt_telemetry import TELEMETRY_SCHEMA_VERSION
 
     providers = {provider.id: provider for provider in session.query(Provider).all()}
     policies = session.query(Policy).order_by(Policy.created_at, Policy.id).all()
     rows = []
     for policy in policies:
+        telemetry = policy.acquisition_telemetry or {}
+        if enriched_only and telemetry.get("schema_version") != TELEMETRY_SCHEMA_VERSION:
+            continue
         if has_graph_elements(policy.graph_data):
             label = 1
         elif policy.pipeline_status == "failed":
@@ -118,7 +132,11 @@ def build_policy_attempt_dataset(session) -> list[dict]:
             "observation_id": f"policy:{policy.id}",
             "provider_id": str(policy.provider_id),
             "created_at": policy.created_at,
-            "features": extract_policy_attempt_features(policy, provider),
+            "features": extract_policy_attempt_features(
+                policy,
+                provider,
+                enriched=enriched_only,
+            ),
             # Historical attempts crossed the existing eligibility gates. The
             # honest operational baseline is therefore to attempt all of them.
             "heuristic_confidence": 1.0,
@@ -536,29 +554,37 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument(
         "--dataset",
-        choices=("recovery-candidates", "policy-attempts"),
+        choices=("recovery-candidates", "policy-attempts", "enriched-policy-attempts"),
         default="recovery-candidates",
     )
     parser.add_argument("--readiness", action="store_true")
     parser.add_argument("--evaluate-only", action="store_true")
     args = parser.parse_args()
-    if args.dataset == "policy-attempts" and not (args.readiness or args.evaluate_only):
-        parser.error("policy-attempts is evaluation-only and cannot produce a recovery-ranker artifact")
+    if args.dataset != "recovery-candidates" and not (args.readiness or args.evaluate_only):
+        parser.error("policy-attempt datasets are evaluation-only and cannot produce a recovery-ranker artifact")
     from poligrapher_app.api.database import SessionLocal
 
     with SessionLocal() as session:
         rows = (
             build_recovery_dataset(session)
             if args.dataset == "recovery-candidates"
-            else build_policy_attempt_dataset(session)
+            else build_policy_attempt_dataset(
+                session,
+                enriched_only=args.dataset == "enriched-policy-attempts",
+            )
         )
     if args.readiness:
         print(json.dumps(training_population_summary(rows), indent=2, sort_keys=True))
         return 0
-    if args.dataset == "policy-attempts":
+    if args.dataset != "recovery-candidates":
+        feature_schema_version = (
+            ENRICHED_SOURCE_VIABILITY_SCHEMA_VERSION
+            if args.dataset == "enriched-policy-attempts"
+            else SOURCE_VIABILITY_SCHEMA_VERSION
+        )
         model, report = train_candidate_models(
             rows,
-            feature_schema_version=SOURCE_VIABILITY_SCHEMA_VERSION,
+            feature_schema_version=feature_schema_version,
             baseline_name="attempt_all",
             routing_target_recall=SOURCE_ROUTING_TARGET_RECALL,
         )
