@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import addIcon from "@material-symbols/svg-400/rounded/add.svg?url";
 import arrowBackIcon from "@material-symbols/svg-400/rounded/arrow_back.svg?url";
@@ -13,6 +13,7 @@ import closeIcon from "@material-symbols/svg-400/rounded/close.svg?url";
 import { api } from "../api/client";
 import type { BulkActionPreview, BulkOperation, CompanyCollection, Provider } from "../api/types";
 import { useCollections, useProviders } from "../hooks/queries";
+import { CollectionAnalysisAction } from "./CollectionAnalysisAction";
 import { CompanyLogo } from "./CompanyLogo";
 import { materialValue, MdCheckbox, MdFilledButton, MdFilledTextField, MdOutlinedButton, MdTextButton } from "./MaterialControls";
 import { Modal } from "./Modal";
@@ -74,6 +75,7 @@ export function CollectionsWorkspace() {
   const [notice, setNotice] = useState("");
   const [confirmDelete, setConfirmDelete] = useState<CompanyCollection | null>(null);
   const [bulk, setBulk] = useState<BulkConfirmation | null>(null);
+  const [analysisConfirming, setAnalysisConfirming] = useState(false);
 
   const selected = collections.find((collection) => collection.id === selectedId) ?? null;
   const invalidate = () => {
@@ -159,6 +161,30 @@ export function CollectionsWorkspace() {
   }, [providers, query, selected]);
   const readyCount = selected ? providers.filter((provider) => selected.provider_ids.includes(provider.id) && provider.source_status === "available").length : 0;
   const analyzedCount = selected ? providers.filter((provider) => selected.provider_ids.includes(provider.id) && provider.analyzed_count > 0).length : 0;
+  const analysisPreview = useQuery({
+    queryKey: ["bulk-preview", "generate", selected?.id, providersQuery.dataUpdatedAt],
+    queryFn: () => api.previewBulkAction({
+      operation: "generate",
+      provider_ids: [],
+      collection_ids: [selected!.id],
+    }),
+    enabled: Boolean(selected && !editing && !creating),
+    retry: false,
+    staleTime: 30_000,
+  });
+  const queueAnalysis = useMutation({
+    mutationFn: (collectionId: string) => api.runBulkAction({
+      operation: "generate",
+      provider_ids: [],
+      collection_ids: [collectionId],
+    }),
+    onSuccess: () => {
+      invalidate();
+      qc.invalidateQueries({ queryKey: ["bulk-preview"] });
+      setAnalysisConfirming(false);
+      setNotice("Collection analysis queued.");
+    },
+  });
   const renderedMembers = members.slice(0, visibleMemberCount);
   const pending = create.isPending || update.isPending;
   const mutationError = create.error || update.error || remove.error || sync.error || verify.error || recover.error;
@@ -204,6 +230,7 @@ export function CollectionsWorkspace() {
 
   useEffect(() => {
     setVisibleMemberCount(100);
+    setAnalysisConfirming(false);
   }, [query, selectedId]);
 
   useEffect(() => {
@@ -364,7 +391,15 @@ export function CollectionsWorkspace() {
                     <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--md-sys-color-on-surface-variant)]">{selected.description || "No collection description."}</p>
                   </div>
                   <div className="m3-collection-action-group" role="group" aria-label="Collection actions">
-                    <button type="button" onClick={() => previewBulk("generate", selected)}><span className="m3-button-label"><span className="m3-material-symbol" style={{ "--m3-symbol-url": `url("${analyzeIcon}")` } as CSSProperties} aria-hidden="true" />Analyze</span></button>
+                    <button
+                      type="button"
+                      aria-controls="collection-analysis-action"
+                      aria-expanded={analysisConfirming}
+                      disabled={analysisPreview.isLoading || analysisPreview.isError || !analysisPreview.data?.eligible_count}
+                      onClick={() => setAnalysisConfirming(true)}
+                    >
+                      <span className="m3-button-label"><span className="m3-material-symbol" style={{ "--m3-symbol-url": `url("${analyzeIcon}")` } as CSSProperties} aria-hidden="true" />{analysisPreview.data ? `Analyze ${analysisPreview.data.eligible_count}` : "Analyze"}</span>
+                    </button>
                     <button type="button" disabled={verify.isPending} onClick={() => verify.mutate(selected.id)}><span className="m3-button-label"><span className="m3-material-symbol" style={{ "--m3-symbol-url": `url("${verifyIcon}")` } as CSSProperties} aria-hidden="true" />{verify.isPending ? "Queueing…" : "Verify"}</span></button>
                     <button type="button" disabled={recover.isPending} onClick={() => recover.mutate(selected.id)}><span className="m3-button-label"><span className="m3-material-symbol" style={{ "--m3-symbol-url": `url("${recoverIcon}")` } as CSSProperties} aria-hidden="true" />{recover.isPending ? "Queueing…" : "Recover"}</span></button>
                     <button type="button" onClick={() => previewBulk("score", selected)}><span className="m3-button-label"><span className="m3-material-symbol" style={{ "--m3-symbol-url": `url("${scoreIcon}")` } as CSSProperties} aria-hidden="true" />Score</span></button>
@@ -377,6 +412,18 @@ export function CollectionsWorkspace() {
                   <div><dt className="section-kicker">Analyzed</dt><dd className="data-value mt-1 text-xl font-semibold">{analyzedCount}</dd></div>
                   <div><dt className="section-kicker">Snapshot</dt><dd className="data-value mt-1 text-sm font-semibold">{selected.snapshot_date ?? "Not applicable"}</dd></div>
                 </dl>
+                <CollectionAnalysisAction
+                  preview={analysisPreview.data}
+                  isLoading={analysisPreview.isLoading}
+                  isError={analysisPreview.isError}
+                  confirming={analysisConfirming}
+                  isPending={queueAnalysis.isPending}
+                  error={queueAnalysis.error}
+                  onReview={() => setAnalysisConfirming(true)}
+                  onCancel={() => { setAnalysisConfirming(false); queueAnalysis.reset(); }}
+                  onConfirm={() => selected && queueAnalysis.mutate(selected.id)}
+                  onRetry={() => analysisPreview.refetch()}
+                />
               </header>
 
               {mutationError && <p role="alert" className="mt-5 status-error">{mutationError instanceof Error ? mutationError.message : "The action could not be completed."}</p>}

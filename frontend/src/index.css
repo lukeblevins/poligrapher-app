@@ -1311,6 +1311,89 @@
     .m3-collection-action-group button { transition: none; }
     .m3-collection-action-group button:active:not(:disabled) { transform: none; }
   }
+  .m3-collection-analysis-action {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--md-sys-spacing-4);
+    align-items: center;
+    margin-top: var(--md-sys-spacing-5);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-extra-large);
+    padding: var(--md-sys-spacing-4);
+    background: var(--md-sys-color-surface-container-low);
+  }
+  .m3-collection-analysis-summary {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: var(--md-sys-spacing-3);
+  }
+  .m3-collection-analysis-summary p,
+  .m3-collection-analysis-confirmation > p {
+    margin-top: var(--md-sys-spacing-1);
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: var(--md-sys-typescale-body-medium-size);
+    line-height: var(--md-sys-typescale-body-medium-line-height);
+  }
+  .m3-collection-analysis-icon {
+    display: grid;
+    width: 48px;
+    height: 48px;
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: var(--md-sys-shape-corner-large);
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+  }
+  .m3-collection-analysis-icon .m3-material-symbol { width: 24px; height: 24px; }
+  .m3-collection-analysis-controls { justify-self: end; }
+  .m3-collection-analysis-button {
+    display: inline-flex;
+    min-height: 40px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    border-radius: var(--md-sys-shape-corner-full);
+    padding: 0 var(--md-sys-spacing-4);
+    font-size: var(--md-sys-typescale-label-large-size);
+    font-weight: var(--md-sys-typescale-weight-medium);
+  }
+  .m3-collection-analysis-button.primary {
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
+  }
+  .m3-collection-analysis-button.secondary {
+    border-color: var(--md-sys-color-outline);
+    color: var(--md-sys-color-primary);
+  }
+  .m3-collection-analysis-button:hover:not(:disabled) { box-shadow: inset 0 0 0 999px color-mix(in srgb, currentColor 8%, transparent); }
+  .m3-collection-analysis-button:focus-visible { outline: 3px solid var(--md-sys-color-primary); outline-offset: 2px; }
+  .m3-collection-analysis-button:disabled { opacity: 0.38; }
+  .m3-collection-analysis-confirmation {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--md-sys-spacing-3);
+    align-items: center;
+    border-top: 1px solid var(--md-sys-color-outline-variant);
+    padding-top: var(--md-sys-spacing-4);
+  }
+  .m3-collection-analysis-confirmation > p { margin-top: 0; }
+  .m3-collection-analysis-confirmation > .status-error { grid-column: 1 / -1; }
+  .m3-collection-analysis-confirmation-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--md-sys-spacing-2);
+  }
+  @media (max-width: 39.99rem) {
+    .m3-collection-analysis-action,
+    .m3-collection-analysis-confirmation { grid-template-columns: 1fr; }
+    .m3-collection-analysis-controls,
+    .m3-collection-analysis-controls > *,
+    .m3-collection-analysis-confirmation-actions,
+    .m3-collection-analysis-confirmation-actions > * { width: 100%; }
+    .m3-collection-analysis-confirmation-actions { flex-direction: column-reverse; }
+  }
   .m3-snackbar {
     position: fixed;
     z-index: 60;
