@@ -125,6 +125,27 @@ def test_training_reports_high_recall_routing_tradeoffs():
     assert report["routing"]["target_validation_recall"] == 0.95
     assert 0.0 <= report["routing"]["success_recall"] <= 1.0
     assert 0.0 <= report["routing"]["failed_attempts_avoided"] <= 1.0
+    assert report["routing_calibration"]["strategy"] == "minimum_provider_fold_threshold"
+    assert len(report["routing_calibration"]["folds"]) == 5
+    assert all(
+        fold["success_recall"] >= 0.95
+        for fold in report["routing_calibration"]["folds"]
+    )
+    assert report["routing"]["threshold"] == report["routing_calibration"]["threshold_min"]
+
+
+def test_exploratory_training_reports_but_cannot_pass_deployment_readiness():
+    _model, report = recovery_training.train_candidate_models(
+        _rows(300),
+        baseline_name="attempt_all",
+        routing_target_recall=0.95,
+        enforce_population_readiness=False,
+    )
+
+    assert report["population_readiness"]["ready"] is False
+    assessment = recovery_training.assess_source_viability(report)
+    assert assessment["eligible"] is False
+    assert "training_population_ready" in assessment["failed_checks"]
 
 
 def test_model_bundle_round_trip_is_checksum_verified(tmp_path, monkeypatch):

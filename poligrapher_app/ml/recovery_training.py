@@ -337,7 +337,9 @@ def assess_source_viability(report: dict) -> dict:
     """Require both predictive improvement and meaningful pipeline simplification."""
 
     routing = report.get("routing") or {}
+    population_readiness = report.get("population_readiness") or {"ready": True}
     checks = {
+        "training_population_ready": bool(population_readiness.get("ready")),
         "average_precision_gain": (
             report.get("average_precision_improvement", 0)
             >= SOURCE_MIN_AP_IMPROVEMENT
@@ -406,24 +408,82 @@ def _routing_metrics(model, rows: list[dict], threshold: float) -> dict:
     }
 
 
+def _cross_validated_routing_threshold(
+    model,
+    rows: list[dict],
+    target_recall: float,
+    *,
+    folds: int = 5,
+) -> tuple[float, dict]:
+    """Choose a conservative threshold from provider-disjoint calibration folds."""
+
+    from sklearn.base import clone
+    from sklearn.model_selection import StratifiedGroupKFold
+
+    provider_count = len({row["provider_id"] for row in rows})
+    split_count = min(folds, provider_count)
+    if split_count < 2:
+        raise ValueError("Routing calibration requires at least two providers")
+    x, labels = _xy(rows)
+    groups = [row["provider_id"] for row in rows]
+    splitter = StratifiedGroupKFold(
+        n_splits=split_count,
+        shuffle=True,
+        random_state=RANDOM_SEED,
+    )
+    fold_reports = []
+    for fold, (train_indexes, calibration_indexes) in enumerate(
+        splitter.split(x, labels, groups),
+        start=1,
+    ):
+        training_rows = [rows[index] for index in train_indexes]
+        calibration_rows = [rows[index] for index in calibration_indexes]
+        if {row["label"] for row in training_rows} != {0, 1}:
+            raise ValueError(f"Routing calibration fold {fold} training data lacks both classes")
+        if {row["label"] for row in calibration_rows} != {0, 1}:
+            raise ValueError(f"Routing calibration fold {fold} holdout lacks both classes")
+        candidate = clone(model)
+        candidate.fit(*_xy(training_rows))
+        threshold = _routing_threshold(candidate, calibration_rows, target_recall)
+        metrics = _routing_metrics(candidate, calibration_rows, threshold)
+        fold_reports.append({
+            "fold": fold,
+            "providers": len({row["provider_id"] for row in calibration_rows}),
+            "observations": len(calibration_rows),
+            **metrics,
+        })
+    thresholds = [report["threshold"] for report in fold_reports]
+    return min(thresholds), {
+        "strategy": "minimum_provider_fold_threshold",
+        "folds": fold_reports,
+        "threshold_min": min(thresholds),
+        "threshold_max": max(thresholds),
+    }
+
+
 def train_candidate_models(
     rows: list[dict],
     *,
     feature_schema_version: str = FEATURE_SCHEMA_VERSION,
     baseline_name: str = "heuristic_confidence",
     routing_target_recall: float | None = None,
+    enforce_population_readiness: bool = True,
 ):
-    validate_training_population(rows)
+    population_readiness = training_population_summary(rows)
+    if enforce_population_readiness:
+        validate_training_population(rows)
     from sklearn.ensemble import HistGradientBoostingClassifier
     from sklearn.feature_extraction import DictVectorizer
     from sklearn.linear_model import LogisticRegression
     from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import StandardScaler
 
     train_rows, validation_rows, test_rows = split_by_provider_and_time(rows)
     train_x, train_y = _xy(train_rows)
     models = {
         "logistic_regression": Pipeline([
             ("features", DictVectorizer(sparse=False)),
+            ("scaler", StandardScaler()),
             ("classifier", LogisticRegression(
                 class_weight="balanced",
                 max_iter=2000,
@@ -453,17 +513,18 @@ def train_candidate_models(
         else "logistic_regression"
     )
     selected = models[selected_name]
-    routing_threshold = (
-        _routing_threshold(selected, validation_rows, routing_target_recall)
-        if routing_target_recall is not None
-        else None
-    )
-    # A routing threshold is calibrated against the validation model's score
-    # scale, so evaluate that exact fitted model on the untouched test split.
-    # Artifact training keeps the established train+validation refit behavior.
-    if routing_threshold is None:
-        combined_x, combined_y = _xy(train_rows + validation_rows)
-        selected.fit(combined_x, combined_y)
+    calibration_report = None
+    combined_rows = train_rows + validation_rows
+    if routing_target_recall is not None:
+        routing_threshold, calibration_report = _cross_validated_routing_threshold(
+            selected,
+            combined_rows,
+            routing_target_recall,
+        )
+    else:
+        routing_threshold = None
+    combined_x, combined_y = _xy(combined_rows)
+    selected.fit(combined_x, combined_y)
     test_metrics = _metrics(selected, test_rows)
     heuristic_metrics = _heuristic_metrics(test_rows)
     confidence_interval = _bootstrap_ap_improvement(selected, test_rows)
@@ -480,6 +541,7 @@ def train_candidate_models(
             "validation": len(validation_rows),
             "test": len(test_rows),
         },
+        "population_readiness": population_readiness,
         "validation": validation_metrics,
         "test": test_metrics,
         "heuristic_test": heuristic_metrics,
@@ -495,6 +557,7 @@ def train_candidate_models(
             "target_validation_recall": routing_target_recall,
             **_routing_metrics(selected, test_rows, routing_threshold),
         }
+        report["routing_calibration"] = calibration_report
     return selected, report
 
 
@@ -559,7 +622,16 @@ def main() -> int:
     )
     parser.add_argument("--readiness", action="store_true")
     parser.add_argument("--evaluate-only", action="store_true")
+    parser.add_argument(
+        "--exploratory",
+        action="store_true",
+        help="Evaluate an undersized policy-attempt dataset without writing or activating a model",
+    )
     args = parser.parse_args()
+    if args.exploratory and not args.evaluate_only:
+        parser.error("--exploratory requires --evaluate-only")
+    if args.exploratory and args.dataset == "recovery-candidates":
+        parser.error("--exploratory is only supported for policy-attempt datasets")
     if args.dataset != "recovery-candidates" and not (args.readiness or args.evaluate_only):
         parser.error("policy-attempt datasets are evaluation-only and cannot produce a recovery-ranker artifact")
     from poligrapher_app.api.database import SessionLocal
@@ -587,7 +659,10 @@ def main() -> int:
             feature_schema_version=feature_schema_version,
             baseline_name="attempt_all",
             routing_target_recall=SOURCE_ROUTING_TARGET_RECALL,
+            enforce_population_readiness=not args.exploratory,
         )
+        report["evaluation_mode"] = "exploratory" if args.exploratory else "gated"
+        report["model_artifact_written"] = False
         report["deployment_assessment"] = assess_source_viability(report)
     else:
         model, report = train_candidate_models(rows)
