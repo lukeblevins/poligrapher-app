@@ -254,15 +254,19 @@ resource scheduledRuns 'Microsoft.App/jobs@2024-03-01' = {
   name: '${namePrefix}-scheduled-runs'
   location: location
   tags: tags
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: { '${resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'poligrapher-cost-dispatcher')}': {} }
+  }
   properties: {
     environmentId: containerEnv.id
     workloadProfileName: 'Consumption'
     configuration: {
       triggerType: 'Schedule'
-      replicaTimeout: 3600
+      replicaTimeout: 60
       replicaRetryLimit: 0
       scheduleTriggerConfig: {
-        cronExpression: '0 * * * *'
+        cronExpression: '*/10 * * * *'
         parallelism: 1
         replicaCompletionCount: 1
       }
@@ -276,10 +280,13 @@ resource scheduledRuns 'Microsoft.App/jobs@2024-03-01' = {
         {
           name: 'scheduler'
           image: webImage
-          command: [ 'python', '-m', 'poligrapher_app.run_due_schedules' ]
-          resources: { cpu: json('0.5'), memory: '1Gi' }
+          command: [ 'python', '-m', 'poligrapher_app.cost_dispatcher' ]
+          resources: { cpu: json('0.25'), memory: '0.5Gi' }
           env: concat([
             { name: 'APP_ENV', value: 'production' }
+            { name: 'COST_WORKER_ID', value: analysisWorker.id }
+            { name: 'COST_STORAGE_ACCOUNT', value: storage.name }
+            { name: 'AZURE_CLIENT_ID', value: costAccess.outputs.clientId }
             { name: 'DATABASE_URL', secretRef: 'database-url' }
             { name: 'STORAGE_BACKEND', value: 'azure' }
             { name: 'AZURE_STORAGE_CONNECTION_STRING', secretRef: 'storage-connection' }
@@ -301,35 +308,11 @@ resource analysisWorker 'Microsoft.App/jobs@2024-03-01' = {
     environmentId: containerEnv.id
     workloadProfileName: 'Consumption'
     configuration: {
-      triggerType: 'Event'
+      triggerType: 'Manual'
       replicaTimeout: 43200
       replicaRetryLimit: 0
-      eventTriggerConfig: {
-        parallelism: 1
-        replicaCompletionCount: 1
-        scale: {
-          minExecutions: 0
-          // Keep one spare execution slot so a platform-level replica stuck
-          // before container startup cannot block the durable queue for hours.
-          // Task claims remain atomic, so duplicate delivery is still a no-op.
-          maxExecutions: 2
-          pollingInterval: 30
-          rules: [
-            {
-              name: 'analysis-queue'
-              type: 'azure-queue'
-              metadata: {
-                accountName: storage.name
-                queueName: analysisQueue.name
-                queueLength: '1'
-              }
-              auth: [
-                { triggerParameter: 'connection', secretRef: 'storage-connection' }
-              ]
-            }
-          ]
-        }
-      }
+      // Only the cost dispatcher may automatically start paid analysis.
+      manualTriggerConfig: { parallelism: 1, replicaCompletionCount: 1 }
       secrets: concat([
         { name: 'database-url', value: databaseUrl }
         { name: 'storage-connection', value: storageConnection }
@@ -340,7 +323,7 @@ resource analysisWorker 'Microsoft.App/jobs@2024-03-01' = {
         {
           name: 'worker'
           image: workerImage
-          command: [ 'python', '-m', 'poligrapher_app.worker' ]
+          command: [ 'python', '-m', 'poligrapher_app.cost_worker' ]
           resources: { cpu: json('4.0'), memory: '8Gi' }
           env: concat([
             { name: 'APP_ENV', value: 'production' }
@@ -358,6 +341,14 @@ resource analysisWorker 'Microsoft.App/jobs@2024-03-01' = {
         }
       ]
     }
+  }
+}
+
+module costAccess './cost-access.bicep' = {
+  name: 'cost-control-access'
+  params: {
+    workerName: analysisWorker.name
+    storageName: storage.name
   }
 }
 

@@ -511,7 +511,11 @@ def test_azure_deploy_uses_oidc_and_gated_migrations():
     assert "Verify deployed application" in workflow
     assert "triggerType: 'Manual'" in infrastructure
     assert "replicaTimeout: 43200" in infrastructure
-    assert "maxExecutions: 2" in infrastructure
+    worker = infrastructure.split("resource analysisWorker ", 1)[1]
+    assert "triggerType: 'Manual'" in worker
+    assert "eventTriggerConfig" not in worker
+    assert "poligrapher_app.cost_worker" in worker
+    assert "poligrapher_app.cost_dispatcher" in infrastructure
     assert "AZURE_QUEUE_VISIBILITY_TIMEOUT_SECONDS" in infrastructure
     assert "COLLECTION_SUBTASK_TIMEOUT_SECONDS" in infrastructure
     assert "alembic upgrade head && python -m poligrapher_app.sync_source_catalog" in infrastructure

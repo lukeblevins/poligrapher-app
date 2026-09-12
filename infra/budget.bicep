@@ -14,6 +14,8 @@ resource budget 'Microsoft.Consumption/budgets@2023-11-01' = {
     timePeriod: { startDate: startDate }
     filter: { dimensions: { name: 'ResourceGroupName', operator: 'In', values: [ resourceGroupName ] } }
     notifications: {
+      // Budgets notify only; they do not stop worker executions.
+      Forecast80: { enabled: true, operator: 'GreaterThan', threshold: 80, thresholdType: 'Forecasted', contactEmails: [ contactEmail ] }
       Alert50: { enabled: true, operator: 'GreaterThan', threshold: 50, contactEmails: [ contactEmail ] }
       Alert80: { enabled: true, operator: 'GreaterThan', threshold: 80, contactEmails: [ contactEmail ] }
       Alert100: { enabled: true, operator: 'GreaterThan', threshold: 100, contactEmails: [ contactEmail ] }

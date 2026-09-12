@@ -61,14 +61,16 @@ def main() -> None:
         daemon=True,
     )
     renewal.start()
+    registry = TaskRegistry()
     try:
-        claimed = execute_task(body["task_id"], TaskRegistry())
+        claimed = execute_task(body["task_id"], registry)
     finally:
         stop_renewal.set()
         renewal.join(timeout=5)
-    # A duplicate delivery that is still inside the recovery grace remains on
-    # the queue. A claimed task is deleted only after its dispatcher settles.
-    if claimed:
+    # Retain live duplicates for crash recovery, but acknowledge settled tasks
+    # so their messages cannot repeatedly launch billed worker executions.
+    task = registry.get(body["task_id"]) if not claimed else None
+    if claimed or (task and task["status"] in ("done", "failed", "cancelled")):
         queue.delete_message(message.id, lease_state["pop_receipt"])
 
 
