@@ -197,6 +197,9 @@ class Azure:
                 return
             template = copy.deepcopy(props["template"])
             container = template["containers"][0]
+            # CLI GET may add fields from a newer API; the Start API rejects
+            # read-only imageType even though it appeared in the saved template.
+            container.pop("imageType", None)
             container["env"] = [e for e in container.get("env", [])
                                 if e["name"] != "COST_MAX_RUNTIME_SECONDS"]
             container["env"].append({"name": "COST_MAX_RUNTIME_SECONDS", "value": str(item["seconds"])})
