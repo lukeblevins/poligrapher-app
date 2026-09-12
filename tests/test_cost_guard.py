@@ -80,7 +80,7 @@ def valid_job():
     return {'properties': {'workloadProfileName': 'Consumption', 'configuration': {
         'triggerType': 'Manual', 'replicaRetryLimit': 0,
         'manualTriggerConfig': {'parallelism': 1, 'replicaCompletionCount': 1}},
-        'template': {'containers': [{'name': 'worker', 'imageType': 'ContainerImage', 'resources': {'cpu': 4, 'memory': '8Gi'},
+        'template': {'volumes': None, 'initContainers': None, 'containers': [{'name': 'worker', 'imageType': 'ContainerImage', 'resources': {'cpu': 4, 'memory': '8Gi'},
             'command': ['python', '-m', 'poligrapher_app.cost_worker'], 'env': []}]}}}
 
 
@@ -95,6 +95,7 @@ def test_persists_reservation_before_start_and_overrides_runtime():
         assert saved['reservations'][-1]['execution'] is None
         env = body['containers'][0]['env']
         assert 'imageType' not in body['containers'][0]
+        assert set(body) == {'containers'}
         assert int(env[-1]['value']) == saved['reservations'][-1]['seconds']
         return {'name': 'execution-1'}
     azure.arm.side_effect = arm

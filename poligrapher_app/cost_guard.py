@@ -186,6 +186,7 @@ class Azure:
                     or config["manualTriggerConfig"] != {"parallelism": 1, "replicaCompletionCount": 1}
                     or props.get("workloadProfileName") != "Consumption"
                     or len(containers) != 1 or props["template"].get("initContainers")
+                    or props["template"].get("volumes")
                     or containers[0]["resources"]["cpu"] != 4
                     or containers[0]["resources"]["memory"] != "8Gi"
                     or containers[0].get("command") != ["python", "-m", "poligrapher_app.cost_worker"]):
@@ -195,11 +196,11 @@ class Azure:
             if item is None:
                 print("No dispatch:", state.get("reason"), flush=True)
                 return
-            template = copy.deepcopy(props["template"])
-            container = template["containers"][0]
-            # CLI GET may add fields from a newer API; the Start API rejects
-            # read-only imageType even though it appeared in the saved template.
-            container.pop("imageType", None)
+            # Start accepts a narrower schema than GET (no volumes/imageType).
+            fields = {"name", "image", "command", "args", "env", "resources", "volumeMounts"}
+            container = {k: copy.deepcopy(v) for k, v in containers[0].items()
+                         if k in fields and v is not None}
+            template = {"containers": [container]}
             container["env"] = [e for e in container.get("env", [])
                                 if e["name"] != "COST_MAX_RUNTIME_SECONDS"]
             container["env"].append({"name": "COST_MAX_RUNTIME_SECONDS", "value": str(item["seconds"])})
