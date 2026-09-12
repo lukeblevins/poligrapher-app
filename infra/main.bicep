@@ -256,7 +256,7 @@ resource scheduledRuns 'Microsoft.App/jobs@2024-03-01' = {
   tags: tags
   identity: {
     type: 'UserAssigned'
-    userAssignedIdentities: { '${costAccess.outputs.identityId}': {} }
+    userAssignedIdentities: { '${resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'poligrapher-cost-dispatcher')}': {} }
   }
   properties: {
     environmentId: containerEnv.id
